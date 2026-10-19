@@ -369,7 +369,9 @@ function Get-PlatformWebsiteUrl {
 # и даёт смещённую, нестабильную выборку, к тому же O(n log n) вместо O(n).
 function Get-ShuffledArray {
     param([object[]]$Items)
-    $array = @($Items)
+    # Копия обязательна: @($Items) для уже готового object[] возвращает ту же ссылку,
+    # и перемешивание изменило бы массив вызывающего кода.
+    $array = @($Items).Clone()
     for ($i = $array.Length - 1; $i -gt 0; $i--) {
         $j = Get-Random -Minimum 0 -Maximum ($i + 1)
         $temp = $array[$i]
