@@ -57,6 +57,8 @@ BeforeAll {
         'New-SecurePassword',
         'Convert-ToNickToken',
         'Get-ShuffledArray',
+        'Write-AtomicFile',
+        'Write-AtomicJsonFile',
         'Export-AppSettings',
         'Import-AppSettings'
     )
@@ -285,6 +287,52 @@ Describe 'New-SecurePassword' {
     It 'отклоняет длину вне диапазона 16-32' {
         { New-SecurePassword -Length 15 } | Should -Throw
         { New-SecurePassword -Length 33 } | Should -Throw
+    }
+}
+
+Describe 'Write-AtomicJsonFile и Write-AtomicFile' {
+    BeforeAll {
+        $script:AtomicDirectory = Join-Path $TestDrive ('atomic-' + [guid]::NewGuid().ToString('N'))
+        $null = [System.IO.Directory]::CreateDirectory($script:AtomicDirectory)
+    }
+
+    It 'пишет JSON в UTF-8 с BOM' {
+        # Регрессия: Encoding.GetBytes() не добавляет BOM, его возвращает только GetPreamble().
+        # Без BOM Windows PowerShell 5.1 читает файл как ANSI, и кириллица ломается.
+        $file = Join-Path $script:AtomicDirectory 'bom.json'
+        Write-AtomicJsonFile -Path $file -Json (@{ Style = 'Английские' } | ConvertTo-Json -Depth 3)
+        $bytes = [System.IO.File]::ReadAllBytes($file)
+        $bytes[0] | Should -Be 0xEF
+        $bytes[1] | Should -Be 0xBB
+        $bytes[2] | Should -Be 0xBF
+        ([System.IO.File]::ReadAllText($file) | ConvertFrom-Json).Style | Should -Be 'Английские'
+    }
+
+    It 'перезаписывает существующий файл' {
+        # Регрессия: резервный путь использовал File.Move поверх существующего файла,
+        # что в .NET Framework даёт IOException «Cannot create a file when that file
+        # already exists». Перезапись должна идти через File.Copy(..., true).
+        $file = Join-Path $script:AtomicDirectory 'overwrite.json'
+        Write-AtomicJsonFile -Path $file -Json '{"a":1}'
+        Write-AtomicJsonFile -Path $file -Json '{"b":2}'
+        $loaded = [System.IO.File]::ReadAllText($file) | ConvertFrom-Json
+        $loaded.b | Should -Be 2
+        $loaded.PSObject.Properties.Name -contains 'a' | Should -BeFalse
+    }
+
+    It 'создаёт отсутствующую папку и не оставляет временных файлов' {
+        $nested = Join-Path (Join-Path $script:AtomicDirectory 'deep') 'inner'
+        $file = Join-Path $nested 'created.json'
+        Write-AtomicFile -Path $file -Bytes ([byte[]](0xEF, 0xBB, 0xBF, 0x7B, 0x7D))
+        Test-Path -LiteralPath $file | Should -BeTrue
+        [System.IO.File]::ReadAllText($file) | Should -Be '{}'
+        @(Get-ChildItem -LiteralPath $nested -Filter '*.tmp').Count | Should -Be 0
+    }
+
+    It 'записывает пустую строку как валидный пустой JSON' {
+        $file = Join-Path $script:AtomicDirectory 'empty.json'
+        Write-AtomicJsonFile -Path $file -Json ''
+        ([System.IO.File]::ReadAllText($file)).Length | Should -Be 0
     }
 }
 

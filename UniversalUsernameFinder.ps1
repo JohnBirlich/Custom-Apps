@@ -1477,6 +1477,58 @@ function Clear-CandidateIndex {
     $script:CandidateIndex = @{}
 }
 
+# --- Атомарная запись файлов ----------------------------------------------------
+# Используется и для истории ников, и для настроек: оба файла содержат кириллицу и
+# пишутся во время работы, поэтому сбой посреди записи не должен их портить.
+
+function Write-AtomicFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][byte[]]$Bytes
+    )
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $directory = [System.IO.Path]::GetDirectoryName($fullPath)
+    if (-not [string]::IsNullOrWhiteSpace($directory)) { $null = [System.IO.Directory]::CreateDirectory($directory) }
+    $fileName = [System.IO.Path]::GetFileName($fullPath)
+    $tempPath = [System.IO.Path]::Combine($directory, ($fileName + '.' + [guid]::NewGuid().ToString('N') + '.tmp'))
+    try {
+        [System.IO.File]::WriteAllBytes($tempPath, $Bytes)
+        if (-not [System.IO.File]::Exists($fullPath)) {
+            [System.IO.File]::Move($tempPath, $fullPath)
+            return
+        }
+        try {
+            [System.IO.File]::Replace($tempPath, $fullPath, $null)
+        } catch {
+            # File.Replace требует того же тома и поддержки со стороны файловой системы,
+            # и в части окружений завершается ошибкой. Резервный путь — перезапись
+            # копированием: перегрузки Move с перезаписью в .NET Framework (Windows
+            # PowerShell 5.1) не существует, а Move поверх существующего файла бросает
+            # IOException «Cannot create a file when that file already exists».
+            [System.IO.File]::Copy($tempPath, $fullPath, $true)
+        }
+    } finally {
+        if ([System.IO.File]::Exists($tempPath)) { try { [System.IO.File]::Delete($tempPath) } catch { } }
+    }
+}
+
+function Write-AtomicJsonFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Json
+    )
+    # Encoding.GetBytes() не добавляет BOM — его возвращает только GetPreamble().
+    # Без BOM Windows PowerShell 5.1 читает файл как ANSI (Get-Content без -Encoding),
+    # и кириллица в сохранённых настройках и истории ников ломается.
+    $encoding = New-Object System.Text.UTF8Encoding -ArgumentList $true
+    $preamble = $encoding.GetPreamble()
+    $body = $encoding.GetBytes($Json)
+    $bytes = New-Object byte[] ($preamble.Length + $body.Length)
+    [System.Array]::Copy($preamble, 0, $bytes, 0, $preamble.Length)
+    [System.Array]::Copy($body, 0, $bytes, $preamble.Length, $body.Length)
+    Write-AtomicFile -Path $Path -Bytes $bytes
+}
+
 function Save-UsernameHistory {
     try {
         if (-not (Test-Path -LiteralPath $script:HistoryDirectory)) { [void](New-Item -ItemType Directory -Path $script:HistoryDirectory -Force) }
@@ -1489,20 +1541,7 @@ function Save-UsernameHistory {
         # Атомарная запись: раньше Set-Content писал прямо в целевой файл, и падение
         # программы посреди записи оставляло побитый username_history.json.
         $historyFull = [System.IO.Path]::GetFullPath($script:HistoryPath)
-        $directoryFull = [System.IO.Path]::GetFullPath($script:HistoryDirectory)
-        $tempPath = [System.IO.Path]::Combine($directoryFull, 'username_history.' + [guid]::NewGuid().ToString('N') + '.tmp')
-        $bytes = (New-Object System.Text.UTF8Encoding -ArgumentList $true).GetBytes($json)
-        [System.IO.File]::WriteAllBytes($tempPath, $bytes)
-        try {
-            if ([System.IO.File]::Exists($historyFull)) {
-                [System.IO.File]::Replace($tempPath, $historyFull, $null)
-            } else {
-                [System.IO.File]::Move($tempPath, $historyFull)
-            }
-        } catch {
-            # Файл мог быть заблокирован: пробуем простое перемещение поверх.
-            try { [System.IO.File]::Move($tempPath, $historyFull) } catch { throw }
-        }
+        Write-AtomicJsonFile -Path $historyFull -Json $json
         $script:HistoryDirty = $false
         $script:HistoryDirtySince = $null
     } catch { Write-AppLog ('Не удалось сохранить историю ников: ' + $_.Exception.Message) }
@@ -1532,27 +1571,9 @@ function Export-AppSettings {
         [Parameter(Mandatory = $true)][hashtable]$Settings,
         [Parameter(Mandatory = $true)][string]$Path
     )
-    $fullPath = [System.IO.Path]::GetFullPath($Path)
-    $directory = [System.IO.Path]::GetDirectoryName($fullPath)
-    if (-not [string]::IsNullOrWhiteSpace($directory)) { $null = [System.IO.Directory]::CreateDirectory($directory) }
     $json = ConvertTo-Json -InputObject $Settings -Depth 5
     if ([string]::IsNullOrWhiteSpace($json)) { $json = '{}' }
-    $fileName = [System.IO.Path]::GetFileName($fullPath)
-    $tempPath = [System.IO.Path]::Combine($directory, ($fileName + '.' + [guid]::NewGuid().ToString('N') + '.tmp'))
-    $bytes = (New-Object System.Text.UTF8Encoding -ArgumentList $true).GetBytes($json)
-    [System.IO.File]::WriteAllBytes($tempPath, $bytes)
-    try {
-        if ([System.IO.File]::Exists($fullPath)) {
-            [System.IO.File]::Replace($tempPath, $fullPath, $null)
-        } else {
-            [System.IO.File]::Move($tempPath, $fullPath)
-        }
-    } catch {
-        # Целевой файл мог быть заблокирован: пробуем простое перемещение поверх.
-        try { [System.IO.File]::Move($tempPath, $fullPath) } catch { throw }
-    } finally {
-        if ([System.IO.File]::Exists($tempPath)) { try { [System.IO.File]::Delete($tempPath) } catch { } }
-    }
+    Write-AtomicJsonFile -Path $Path -Json $json
 }
 
 function Import-AppSettings {
