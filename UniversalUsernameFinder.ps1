@@ -1,16 +1,56 @@
 ﻿$ErrorActionPreference = 'Stop'
+$script:AppVersion = '2.5.1'
 $script:LogPath = Join-Path $PSScriptRoot 'UniversalUsernameFinder.log'
 Add-Type -AssemblyName System.Security
 $script:VaultDirectory = Join-Path $env:LOCALAPPDATA 'RobloxNickFinder'
 $script:VaultPath = Join-Path $script:VaultDirectory 'accounts.dat'
 $script:VaultEntropy = [System.Text.Encoding]::UTF8.GetBytes('RobloxNickFinder:account-vault:v1')
 $script:PasswordRng = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
-$script:LastErrorDetail = ''
-$script:HadRequestError = $false
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+[Net.ServicePointManager]::DefaultConnectionLimit = 10
+
+function Write-StartupLog {
+    param([string]$Message)
+    try {
+        $logPath = $script:LogPath
+        if ([string]::IsNullOrWhiteSpace($logPath)) { $logPath = Join-Path $PSScriptRoot 'UniversalUsernameFinder.log' }
+        $line = '[{0}] {1}{2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message, [Environment]::NewLine
+        [System.IO.File]::AppendAllText($logPath, $line, (New-Object System.Text.UTF8Encoding -ArgumentList $true))
+    } catch { }
+}
+
+function Show-FatalError {
+    param([string]$Title, [string]$Message)
+    try { [System.Windows.Forms.MessageBox]::Show($Message, $Title, 'OK', 'Error') | Out-Null } catch { }
+}
+
+# Необработанные исключения больше не закрывают приложение молча: они пишутся в журнал
+# и показываются пользователю. Регистрация обёрнута в try/catch, чтобы сбой самого
+# механизма не мешал запуску.
+try {
+    [System.Windows.Forms.Application]::SetUnhandledExceptionMode([System.Windows.Forms.UnhandledExceptionMode]::CatchException)
+    [System.Windows.Forms.Application]::Add_ThreadException({
+        param($sender, $e)
+        $detail = 'неизвестная ошибка интерфейса'
+        try { $detail = [string]$e.Exception } catch { }
+        Write-StartupLog ('Необработанное исключение интерфейса: ' + $detail)
+        Show-FatalError 'Ошибка интерфейса' ("Произошла непредвиденная ошибка:`r`n`r`n{0}`r`n`r`nПодробности записаны в UniversalUsernameFinder.log. Приложение продолжает работу." -f $detail)
+    })
+    [System.AppDomain]::CurrentDomain.add_UnhandledException({
+        param($sender, $e)
+        $detail = 'неизвестная ошибка'
+        try { $detail = [string]$e.ExceptionObject } catch { }
+        Write-StartupLog ('Критическое необработанное исключение: ' + $detail)
+        if ($e.IsTerminating) {
+            Show-FatalError 'Критическая ошибка' ("Приложение будет закрыто:`r`n`r`n{0}`r`n`r`nПодробности: UniversalUsernameFinder.log" -f $detail)
+        }
+    })
+} catch {
+    Write-StartupLog ('Не удалось зарегистрировать обработчики необработанных исключений: ' + $_.Exception.Message)
+}
 
 $script:AppSeeds = @(
     @{Word='Discord'; Meaning='приложение для общения'}, @{Word='Spotify'; Meaning='музыкальный сервис'}, @{Word='Steam'; Meaning='игровая платформа'},
@@ -127,72 +167,6 @@ $script:Modifiers = @(
     @{Word='One'; Meaning='один, единственный'}, @{Word='X'; Meaning='загадочный символ'}
 )
 
-function Add-PoolEntry {
-    param($Pool, $Seen, [string]$Name, [string]$Meaning, [bool]$UseNumbers)
-    $clean = [regex]::Replace($Name, '[^A-Za-z0-9_]', '')
-    if ($clean -notmatch '^[A-Za-z0-9][A-Za-z0-9_]{2,19}$' -or $clean -match '__|_$') { return }
-    $key = $clean.ToLowerInvariant()
-    if (-not $Seen.ContainsKey($key)) {
-        $Seen[$key] = $true
-        [void]$Pool.Add([pscustomobject]@{Name=$clean; Meaning=$Meaning})
-    }
-    if ($UseNumbers -and $clean.Length -le 17 -and (Get-Random -Minimum 0 -Maximum 100) -lt 40) {
-        $number = Get-Random -Minimum 2 -Maximum 999
-        $withNumber = "$clean$number"
-        $numberKey = $withNumber.ToLowerInvariant()
-        if ($withNumber -match '^[A-Za-z0-9][A-Za-z0-9_]{2,19}$' -and -not $Seen.ContainsKey($numberKey)) {
-            $Seen[$numberKey] = $true
-            [void]$Pool.Add([pscustomobject]@{Name=$withNumber; Meaning="$Meaning + число $number"})
-        }
-    }
-}
-
-function New-CandidatePool {
-    param([string]$Category, [string]$CustomWord, [bool]$UseNumbers, [int]$Count)
-    switch ($Category) {
-        'Приложения и бренды' { $bases = @($script:AppSeeds) }
-        'Осмысленные слова' { $bases = @($script:MeaningSeeds) }
-        'Природа и космос' { $bases = @($script:NatureSeeds) }
-        'Мифология' { $bases = @($script:MythSeeds) }
-        'Игровой стиль' { $bases = @($script:GamingSeeds) }
-        'Короткие и минималистичные' { $bases = @($script:MinimalSeeds); $localMods = @($script:Modifiers | Where-Object { $_.Word.Length -le 5 }) }
-        default { $bases = @($script:AppSeeds + $script:MeaningSeeds + $script:NatureSeeds + $script:MythSeeds + $script:GamingSeeds + $script:MinimalSeeds) }
-    }
-    if (-not $localMods) { $localMods = @($script:Modifiers) }
-    if (-not [string]::IsNullOrWhiteSpace($CustomWord)) {
-        $customClean = [regex]::Replace($CustomWord, '[^A-Za-z0-9_]', '')
-        if ($customClean.Length -ge 1) {
-            $bases += @{Word=$customClean; Meaning='ваше ключевое слово'}
-        }
-    }
-    $pool = New-Object System.Collections.ArrayList
-    $seen = @{}
-    foreach ($base in $bases) {
-        Add-PoolEntry $pool $seen $base.Word $base.Meaning $UseNumbers
-        foreach ($mod in $localMods) {
-            if ($mod.Word.ToLowerInvariant() -ne $base.Word.ToLowerInvariant()) {
-                Add-PoolEntry $pool $seen ($base.Word + $mod.Word) ("{0} + {1}" -f $base.Meaning, $mod.Meaning) $UseNumbers
-                Add-PoolEntry $pool $seen ($mod.Word + $base.Word) ("{0} + {1}" -f $mod.Meaning, $base.Meaning) $UseNumbers
-            }
-        }
-    }
-    $array = $pool.ToArray()
-    if ($array.Count -eq 0) { return @() }
-    $take = [Math]::Min($Count, $array.Count)
-    return @((Get-Random -InputObject $array -Count $take))
-}
-
-$script:AppGroups = @{
-    'Мессенджеры' = @('Discord','Telegram','WhatsApp','Viber','Signal')
-    'Музыка' = @('Spotify','SoundCloud','Deezer','AppleMusic')
-    'Игровые платформы' = @('Roblox','Steam','Xbox','PlayStation','Nintendo','EpicGames')
-    'Стриминг и видео' = @('YouTube','Twitch','TikTok','Netflix')
-    'Разработка' = @('GitHub','GitLab','VisualStudio','JetBrains')
-    'Графика и дизайн' = @('Blender','Figma','Photoshop','Canva','CapCut')
-    'Технологии' = @('NVIDIA','Intel','AMD','ASUS','Apple','Android','Adobe')
-    'Браузеры' = @('Firefox','Chrome','Opera','Edge')
-    'Продуктивность' = @('Notion','Trello','Slack','Google')
-}
 $script:MeaningGroups = @{
     'Свет и энергия' = @('Aurora','Ember','Blaze','Nova','Pulse','Solar','Stellar','Lux','Radiant','Cinder')
     'Космос' = @('Orion','Lyra','Nova','Lunar','Solar','Comet','Orbit','Nebula','Cosmos','Meteor','Stellar','Astra','Altair','Auriga')
@@ -276,6 +250,16 @@ function Test-RobloxUsernameFormat {
     return ($Username.Length -ge 3 -and $Username.Length -le 20 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9_]*$' -and $Username -notmatch '__|_$' -and ([regex]::Matches($Username, '_').Count -le 1))
 }
 
+# Единый источник правды: платформы, для которых в воркере реализована реальная проверка.
+# Список используется и для заполнения ComboBox, и для валидации, чтобы они не расходились.
+$script:SupportedPlatforms = @('Roblox','Google','Mail.ru','VK','Discord','TikTok','Microsoft','Outlook','Telegram','GitHub','YouTube','Apple')
+
+function Test-SupportedPlatform {
+    param([string]$Platform)
+    if ([string]::IsNullOrWhiteSpace($Platform)) { return $false }
+    return ($script:SupportedPlatforms -contains $Platform)
+}
+
 function Test-UsernameFormat {
     param([string]$Username, [string]$Platform)
     if ([string]::IsNullOrWhiteSpace($Username)) { return $false }
@@ -288,30 +272,13 @@ function Test-UsernameFormat {
         'Outlook' { return ($Username.Length -ge 3 -and $Username.Length -le 64 -and $Username -match '^[A-Za-z][A-Za-z0-9._-]*$' -and $Username -notmatch '([._-]$|\.\.)') }
         'Apple' { return ($Username.Length -ge 3 -and $Username.Length -le 64 -and $Username -match '^[A-Za-z0-9._-]+$' -and $Username -notmatch '(^[._-]|[._-]$|\.\.)') }
         'GitHub' { return ($Username.Length -ge 1 -and $Username.Length -le 39 -and $Username -match '^(?!-)(?!.*--)[A-Za-z0-9-]+(?<!-)$') }
-        'GitLab' { return ($Username.Length -ge 2 -and $Username.Length -le 255 -and $Username -match '^[A-Za-z0-9_][A-Za-z0-9_.-]*$') }
-        'Minecraft Java' { return ($Username.Length -ge 3 -and $Username.Length -le 16 -and $Username -match '^[A-Za-z0-9_]+$') }
-        'Reddit' { return ($Username.Length -ge 3 -and $Username.Length -le 20 -and $Username -match '^[A-Za-z0-9_-]+$') }
         'Discord' {
             $discordNameForFormat = $Username.ToLowerInvariant()
             return ($Username.Length -ge 2 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_.]+$' -and $Username -notmatch '(^\.|\.$|\.\.)' -and $discordNameForFormat -notin @('discord','clyde','nitro','here','everyone','system'))
         }
-        'SoundCloud' { return ($Username.Length -ge 3 -and $Username.Length -le 25 -and $Username -match '^[A-Za-z0-9_-]+$') }
-        'Pinterest' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9_]+$') }
-        'Snapchat' { return ($Username.Length -ge 3 -and $Username.Length -le 15 -and $Username -match '^[A-Za-z][A-Za-z0-9._-]*$') }
-        'Facebook' { return ($Username.Length -ge 5 -and $Username.Length -le 50 -and $Username -match '^[A-Za-z0-9.]+$' -and $Username -notmatch '(^\.|\.$|\.\.)') }
-        'X / Twitter' { return ($Username.Length -ge 4 -and $Username.Length -le 15 -and $Username -match '^[A-Za-z0-9_]+$') }
-        'Bluesky' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9.-]+$') }
-        'Kick' { return ($Username.Length -ge 3 -and $Username.Length -le 25 -and $Username -match '^[A-Za-z0-9_]+$') }
-        'Twitch' { return ($Username.Length -ge 4 -and $Username.Length -le 25 -and $Username -match '^[A-Za-z0-9_]+$') }
         'YouTube' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9._-]+$' -and $Username -notmatch '\.\.$') }
         'TikTok' { return ($Username.Length -ge 2 -and $Username.Length -le 24 -and $Username -match '^[A-Za-z0-9_.]+$' -and $Username -notmatch '(^\.|\.$|\.\.)') }
-        'Instagram' { return ($Username.Length -ge 1 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9._]+$' -and $Username -notmatch '(^\.|\.$|\.\.)') }
         'Telegram' { return ($Username.Length -ge 5 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z][A-Za-z0-9_]*$') }
-        'Steam' { return ($Username.Length -ge 2 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_-]+$') }
-        'Xbox' { return ($Username.Length -ge 3 -and $Username.Length -le 12 -and $Username -match '^[A-Za-z0-9]+$') }
-        'PlayStation' { return ($Username.Length -ge 3 -and $Username.Length -le 16 -and $Username -match '^[A-Za-z][A-Za-z0-9_-]*$' -and $Username -notmatch '[-_]$') }
-        'Spotify' { return ($Username.Length -ge 1 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9_.-]+$') }
-        'Epic Games' { return ($Username.Length -ge 3 -and $Username.Length -le 16 -and $Username -match '^[A-Za-z0-9_-]+$') }
         default { return ($Username.Length -ge 3 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_.-]+$') }
     }
 }
@@ -328,34 +295,16 @@ function Get-PlatformWebsiteUrl {
         'Outlook' { return 'https://signup.live.com/' }
         'Apple' { return 'https://account.apple.com/' }
         'GitHub' { if ($Username) { return ('https://github.com/' + $safeName) }; return 'https://github.com/signup' }
-        'GitLab' { if ($Username) { return ('https://gitlab.com/' + $safeName) }; return 'https://gitlab.com/users/sign_up' }
-        'SoundCloud' { if ($Username) { return ('https://soundcloud.com/' + $safeName) }; return 'https://soundcloud.com/' }
-        'Pinterest' { if ($Username) { return ('https://www.pinterest.com/' + $safeName + '/') }; return 'https://www.pinterest.com/' }
-        'Snapchat' { if ($Username) { return ('https://www.snapchat.com/add/' + $safeName) }; return 'https://www.snapchat.com/' }
-        'Facebook' { if ($Username) { return ('https://www.facebook.com/' + $safeName) }; return 'https://www.facebook.com/' }
-        'X / Twitter' { if ($Username) { return ('https://x.com/' + $safeName) }; return 'https://x.com/' }
-        'Bluesky' { if ($Username) { return ('https://bsky.app/profile/' + $safeName) }; return 'https://bsky.app/' }
-        'Kick' { if ($Username) { return ('https://kick.com/' + $safeName) }; return 'https://kick.com/' }
-        'Minecraft Java' { if ($Username) { return ('https://namemc.com/search?q=' + $safeName) }; return 'https://www.minecraft.net/' }
-        'Reddit' { if ($Username) { return ('https://www.reddit.com/user/' + $safeName + '/') }; return 'https://www.reddit.com/register/' }
         'Discord' { return 'https://discord.com/register' }
-        'Twitch' { if ($Username) { return ('https://www.twitch.tv/' + $safeName) }; return 'https://www.twitch.tv/signup' }
         'YouTube' { if ($Username) { return ('https://www.youtube.com/@' + $safeName) }; return 'https://www.youtube.com/' }
         'TikTok' { if ($Username) { return ('https://www.tiktok.com/@' + $safeName) }; return 'https://www.tiktok.com/signup' }
-        'Instagram' { if ($Username) { return ('https://www.instagram.com/' + $safeName + '/') }; return 'https://www.instagram.com/accounts/emailsignup/' }
         'Telegram' { if ($Username) { return ('https://t.me/' + $safeName) }; return 'https://telegram.org/' }
-        'Steam' { if ($Username) { return ('https://steamcommunity.com/id/' + $safeName + '/') }; return 'https://store.steampowered.com/join/' }
-        'Xbox' { return 'https://account.microsoft.com/' }
-        'PlayStation' { return 'https://www.playstation.com/' }
-        'Spotify' { if ($Username) { return ('https://open.spotify.com/user/' + $safeName) }; return 'https://www.spotify.com/signup/' }
-        'Epic Games' { return 'https://www.epicgames.com/id/register' }
         default { return 'https://www.google.com/search?q=' + [uri]::EscapeDataString($Platform + ' username ' + $Username) }
     }
 }
 
 function New-AdvancedCandidatePool {
     param(
-        [string[]]$SelectedAppCategories,
         [string[]]$SelectedWordCategories,
         [string]$CustomWords,
         [string]$CustomTheme,
@@ -374,19 +323,6 @@ function New-AdvancedCandidatePool {
         [string[]]$ExcludeTokens
     )
     $bases = New-Object System.Collections.ArrayList
-    foreach ($selection in $SelectedAppCategories) {
-        if ($selection -match '^(.+?)\s+·\s+(.+)$') {
-            $word = $matches[1].Trim()
-            $group = $matches[2].Trim()
-            $seed = Get-SeedForWord -Word $word -FallbackMeaning $group
-            [void]$bases.Add([pscustomobject]@{Word=[string]$seed.Word; Meaning=[string]$seed.Meaning; Category=$group})
-        } elseif ($script:AppGroups.ContainsKey($selection)) {
-            foreach ($word in $script:AppGroups[$selection]) {
-                $seed = Get-SeedForWord -Word $word -FallbackMeaning $selection
-                [void]$bases.Add([pscustomobject]@{Word=[string]$seed.Word; Meaning=[string]$seed.Meaning; Category=$selection})
-            }
-        }
-    }
     foreach ($group in $SelectedWordCategories) {
         if ($script:MeaningGroups.ContainsKey($group)) {
             foreach ($word in $script:MeaningGroups[$group]) {
@@ -475,7 +411,7 @@ function New-AdvancedCandidatePool {
 }
 
 $script:Form = New-Object System.Windows.Forms.Form
-$script:Form.Text = 'Universal Username Finder v2.5'
+$script:Form.Text = ('Universal Username Finder v{0}' -f $script:AppVersion)
 $script:Form.StartPosition = 'CenterScreen'
 $script:Form.Size = New-Object System.Drawing.Size(1480, 960)
 $script:Form.MinimumSize = New-Object System.Drawing.Size(1240, 910)
@@ -491,7 +427,7 @@ $header.BackColor = [System.Drawing.Color]::FromArgb(23, 30, 42)
 $script:Form.Controls.Add($header)
 
 $title = New-Object System.Windows.Forms.Label
-$title.Text = 'UNIVERSAL USERNAME FINDER  •  v2.5'
+$title.Text = ('UNIVERSAL USERNAME FINDER  •  v{0}' -f $script:AppVersion)
 $title.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 19, [System.Drawing.FontStyle]::Bold)
 $title.ForeColor = [System.Drawing.Color]::FromArgb(112, 164, 255)
 $title.AutoSize = $true
@@ -767,7 +703,7 @@ $script:PlatformBox.Size = New-Object System.Drawing.Size(220, 27)
 $script:PlatformBox.DropDownStyle = 'DropDownList'
 $script:PlatformBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
 $script:PlatformBox.ForeColor = [System.Drawing.Color]::White
-[void]$script:PlatformBox.Items.AddRange([object[]]@('Roblox','Google','Mail.ru','VK','Discord','TikTok','Microsoft','Outlook','Telegram','GitHub','YouTube','Apple'))
+[void]$script:PlatformBox.Items.AddRange([object[]]@($script:SupportedPlatforms))
 $script:PlatformBox.SelectedItem = 'Roblox'
 $right.Controls.Add($script:PlatformBox)
 $script:OpenPlatformButton = New-Object System.Windows.Forms.Button
@@ -896,7 +832,8 @@ $script:CurrentBatchDone = 0
 function Write-AppLog {
     param([string]$Message)
     try {
-        $logPath = Join-Path $PSScriptRoot 'UniversalUsernameFinder.log'
+        $logPath = $script:LogPath
+        if ([string]::IsNullOrWhiteSpace($logPath)) { $logPath = Join-Path $PSScriptRoot 'UniversalUsernameFinder.log' }
         $line = '[{0}] {1}{2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message, [Environment]::NewLine
         [System.IO.File]::AppendAllText($logPath, $line, (New-Object System.Text.UTF8Encoding -ArgumentList $true))
     } catch { }
@@ -1003,12 +940,6 @@ function Save-EncryptedAccountRecords {
     } finally {
         if ([System.IO.File]::Exists($tempPath)) { try { [System.IO.File]::Delete($tempPath) } catch { } }
     }
-}
-
-function Test-RobloxUsernameFormat {
-    param([string]$Username)
-    if ([string]::IsNullOrWhiteSpace($Username)) { return $false }
-    return ($Username.Length -ge 3 -and $Username.Length -le 20 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9_]*$' -and $Username -notmatch '__|_$' -and ([regex]::Matches($Username, '_').Count -le 1))
 }
 
 function Refresh-SavedAccountList {
@@ -1404,15 +1335,6 @@ function Open-AccountTools {
     [void]$script:AccountForm.ShowDialog($script:Form)
 }
 
-function Write-AppLog {
-    param([string]$Message)
-    try {
-        $logPath = Join-Path $PSScriptRoot 'UniversalUsernameFinder.log'
-        $line = '[{0}] {1}{2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message, [Environment]::NewLine
-        [System.IO.File]::AppendAllText($logPath, $line, (New-Object System.Text.UTF8Encoding -ArgumentList $true))
-    } catch { }
-}
-
 function Add-Diagnostic {
     param([string]$Message)
     $line = '[{0}] {1}' -f (Get-Date -Format 'HH:mm:ss'), $Message
@@ -1540,6 +1462,17 @@ function Open-FreeHistoryWindow {
         if (-not $selected) { [System.Windows.Forms.MessageBox]::Show('Сначала выбери ник в списке.','Повторная проверка','OK','Information') | Out-Null; return }
         $selectedName = [string]$selected.Name
         $selectedPlatform = [string]$selected.Platform
+        # Платформа из старой истории может больше не поддерживаться: иначе ComboBox обнулится
+        # и проверка уйдёт с пустой платформой.
+        if (-not (Test-SupportedPlatform -Platform $selectedPlatform)) {
+            [System.Windows.Forms.MessageBox]::Show(("Платформа «{0}» больше не поддерживается этой версией программы.`r`n`r`nПовторная проверка доступна для: {1}." -f $selectedPlatform, ($script:SupportedPlatforms -join ', ')),'Повторная проверка','OK','Information') | Out-Null
+            Add-Diagnostic ("Повторная проверка отменена: платформа $selectedPlatform не поддерживается.")
+            return
+        }
+        if ($script:AsyncHandle -and -not $script:AsyncHandle.IsCompleted) {
+            [System.Windows.Forms.MessageBox]::Show('Идёт проверка. Дождись завершения или останови её.','Повторная проверка','OK','Information') | Out-Null
+            return
+        }
         $script:HistoryForm.Close()
         $script:PlatformBox.SelectedItem = $selectedPlatform
         $candidate = $script:Candidates | Where-Object { [string]$_.Name -ieq $selectedName -and [string]$_.Platform -eq $selectedPlatform } | Select-Object -First 1
@@ -1769,50 +1702,121 @@ function Start-Checking {
     }
     if ($validCandidates.Count -eq 0) { Update-ResultGrid; return }
     Update-ResultGrid
-    $script:ErrorBox = $script:DiagnosticBox
     Add-Diagnostic ("Начата проверка: {0} ников; пауза {1} мс; тайм-аут {2} мс; потоков 1; платформа {3}." -f $validCandidates.Count,[int]$script:DelayBox.Value,[int]$script:TimeoutBox.Value,$selectedPlatform)
     $script:CurrentBatchTotal = $validCandidates.Count
     $script:CurrentBatchDone = 0
     $script:ProgressBar.Value = 0
     $script:ProgressCaption.Text = "Проверка 0 из $($script:CurrentBatchTotal)"
     $workerScript = @'
-param($Candidates, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform)
+param($Candidates, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform, $AppVersion)
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+[Net.ServicePointManager]::DefaultConnectionLimit = 10
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.5.1' }
 $total = @($Candidates).Count
 $done = 0
 $consecutiveErrors = 0
+$consecutiveProtocolErrors = 0
 $stopReason = $null
 $timeoutSec = [Math]::Max(1,[int][Math]::Ceiling(([double]$TimeoutMs)/1000.0))
 function Get-HttpResult {
-    param([string]$Url, [int]$Timeout, [hashtable]$Headers, [string]$Method='Get', [string]$Body=$null, [string]$ContentType='application/json; charset=utf-8', $WebSession=$null)
+    param(
+        [string]$Url,
+        [int]$Timeout,
+        [hashtable]$Headers,
+        [string]$Method = 'Get',
+        [string]$Body = $null,
+        [string]$ContentType = 'application/json; charset=utf-8',
+        $WebSession = $null,
+        [int]$MaxRedirects = 5
+    )
+    # Редиректы сопровождаются вручную (MaximumRedirection 0). Причина: в Windows PowerShell 5.1
+    # авто-редирект для POST с телом приводит HttpWebRequest к ProtocolViolationException
+    # "Cannot send a content-body with this verb type" — именно так падали все проверки Roblox.
+    $currentUrl = $Url
+    $currentMethod = $Method
+    $currentBody = $Body
+    $redirects = 0
     $code = 0
     $content = ''
     $responseHeaders = $null
-    try {
-        $requestArgs = @{ Uri=$Url; Method=$Method; TimeoutSec=$Timeout; UseBasicParsing=$true; Headers=$Headers }
-        if ($null -ne $Body) { $requestArgs.Body = $Body; $requestArgs.ContentType = $ContentType }
-        if ($null -ne $WebSession) { $requestArgs.WebSession = $WebSession }
-        $r = Invoke-WebRequest @requestArgs
-        $code = [int]$r.StatusCode
-        $content = [string]$r.Content
-        $responseHeaders = $r.Headers
-    } catch {
+    $transportError = $null
+    $transportKind = $null
+    while ($true) {
+        $code = 0
+        $content = ''
+        $responseHeaders = $null
+        $transportError = $null
+        $transportKind = $null
         $webResponse = $null
-        try { $webResponse = $_.Exception.Response } catch { }
-        if ($null -eq $webResponse) { throw }
-        try { $code = [int]$webResponse.StatusCode } catch { }
-        try { $responseHeaders = $webResponse.Headers } catch { }
+        $errorRecord = $null
         try {
-            $stream = $webResponse.GetResponseStream()
-            if ($stream) {
-                $reader = New-Object System.IO.StreamReader($stream)
-                $content = $reader.ReadToEnd()
-                $reader.Dispose()
+            $requestArgs = @{ Uri=$currentUrl; Method=$currentMethod; TimeoutSec=$Timeout; UseBasicParsing=$true; Headers=$Headers; MaximumRedirection=0 }
+            if ($null -ne $currentBody -and $currentMethod -ne 'Get' -and $currentMethod -ne 'Head') {
+                $requestArgs.Body = $currentBody
+                $requestArgs.ContentType = $ContentType
             }
-        } catch { }
+            if ($null -ne $WebSession) { $requestArgs.WebSession = $WebSession }
+            $r = Invoke-WebRequest @requestArgs
+            $code = [int]$r.StatusCode
+            $content = [string]$r.Content
+            $responseHeaders = $r.Headers
+        } catch {
+            $errorRecord = $_
+            try { $webResponse = $_.Exception.Response } catch { }
+            if ($null -eq $webResponse) {
+                # Ответа нет вообще: DNS, TLS, тайм-аут, сброс соединения или нарушение протокола.
+                $inner = $_.Exception
+                while ($null -ne $inner.InnerException) { $inner = $inner.InnerException }
+                $transportError = [string]$inner.Message
+                if ([string]::IsNullOrWhiteSpace($transportError)) { $transportError = [string]$_.Exception.Message }
+                $transportKind = 'transport'
+                if (($inner -is [System.Net.ProtocolViolationException]) -or ($transportError -match '(?i)content-body|тело содержимого|verb type|тип предиката')) {
+                    $transportKind = 'protocol'
+                }
+                break
+            }
+            try { $code = [int]$webResponse.StatusCode } catch { }
+            try { $responseHeaders = $webResponse.Headers } catch { }
+            try {
+                $stream = $webResponse.GetResponseStream()
+                if ($null -ne $stream) {
+                    $reader = New-Object System.IO.StreamReader($stream)
+                    $content = $reader.ReadToEnd()
+                    $reader.Dispose()
+                }
+            } catch { }
+            if ([string]::IsNullOrWhiteSpace($content)) {
+                try { if ($errorRecord.ErrorDetails -and $errorRecord.ErrorDetails.Message) { $content = [string]$errorRecord.ErrorDetails.Message } } catch { }
+            }
+        }
+        if ($code -ge 300 -and $code -lt 400 -and $redirects -lt $MaxRedirects) {
+            $location = $null
+            try { $location = [string]$responseHeaders['Location'] } catch { }
+            if ([string]::IsNullOrWhiteSpace($location)) {
+                try { $location = [string]$webResponse.Headers.Location } catch { }
+            }
+            if ([string]::IsNullOrWhiteSpace($location)) { break }
+            try { $currentUrl = ([uri]::new([uri]$currentUrl, $location)).AbsoluteUri } catch { break }
+            if (($code -eq 301 -or $code -eq 302 -or $code -eq 303) -and $currentMethod -ne 'Get' -and $currentMethod -ne 'Head') {
+                # По RFC тело при таком редиректе теряется, а метод становится GET.
+                $currentMethod = 'Get'
+                $currentBody = $null
+            }
+            $redirects++
+            continue
+        }
+        break
     }
-    return [pscustomobject]@{Code=$code; Content=$content; Headers=$responseHeaders}
+    return [pscustomobject]@{
+        Code=$code
+        Content=$content
+        Headers=$responseHeaders
+        TransportError=$transportError
+        TransportKind=$transportKind
+        Redirects=$redirects
+        FinalUrl=$currentUrl
+    }
 }
 $browserHeaders = @{
     'User-Agent'='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36'
@@ -1858,20 +1862,28 @@ try {
         $errorDetail = $null
         $httpStatus = 0
         $retryAfter = 0
-        $headers = @{'User-Agent'='UniversalUsernameFinder/2.5 (username availability checker)'; 'Accept'='application/json'}
+        $r = $null
         try {
             switch ($Platform) {
                 'Roblox' {
                     $payload = @{username=$name; birthday='2000-01-01T00:00:00.000Z'; context='Signup'} | ConvertTo-Json -Compress
                     $robloxHeaders = @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json'; 'Origin'='https://www.roblox.com'; 'Referer'='https://www.roblox.com/'}
-                    $r = Get-HttpResult -Url 'https://auth.roblox.com/v1/usernames/validate' -Timeout $timeoutSec -Headers $robloxHeaders -Method Post -Body $payload -ContentType 'application/json; charset=UTF-8'
-                    $httpStatus = [int]$r.Code
-                    if ($httpStatus -eq 403 -or $httpStatus -eq 404 -or $httpStatus -eq 405) {
-                        $escapedName = [uri]::EscapeDataString($name)
-                        $birthday = [uri]::EscapeDataString('2000-01-01T00:00:00.000Z')
-                        $url = "https://auth.roblox.com/v1/usernames/validate?request.username=$escapedName&request.birthday=$birthday&request.context=Signup"
-                        $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers $robloxHeaders
+                    # Roblox отвечает 403 "Token Validation Failed" и отдаёт токен в заголовке X-CSRF-Token.
+                    # Повторяем POST с этим токеном; GET-запрос к /v1/usernames/validate не поддерживается.
+                    $csrfAttempts = 0
+                    while ($true) {
+                        $r = Get-HttpResult -Url 'https://auth.roblox.com/v1/usernames/validate' -Timeout $timeoutSec -Headers $robloxHeaders -Method Post -Body $payload -ContentType 'application/json; charset=UTF-8'
                         $httpStatus = [int]$r.Code
+                        if ($httpStatus -eq 403 -and [string]$r.TransportKind -ne 'protocol' -and $csrfAttempts -lt 2) {
+                            $csrfToken = $null
+                            try { $csrfToken = [string]$r.Headers['X-CSRF-Token'] } catch { }
+                            if (-not [string]::IsNullOrWhiteSpace($csrfToken)) {
+                                $robloxHeaders['X-CSRF-Token'] = $csrfToken
+                                $csrfAttempts++
+                                continue
+                            }
+                        }
+                        break
                     }
                     if ($httpStatus -eq 200) {
                         $response = ConvertFrom-Json -InputObject $r.Content -ErrorAction Stop
@@ -1882,6 +1894,10 @@ try {
                         elseif ($code -eq 2) { $status = 'Недопустимый'; $reason = 'Roblox отклонил имя фильтром содержания'; $consecutiveErrors = 0 }
                         elseif ($code -eq 3 -or $code -eq 10) { $status = 'Недопустимый'; $reason = 'Roblox отклонил формат имени'; $consecutiveErrors = 0 }
                         else { $status = 'Не подтверждено'; $reason = 'Roblox вернул неизвестный код валидатора: ' + $code; $consecutiveErrors = 0 }
+                    } elseif ($httpStatus -eq 403) {
+                        $status = 'Не подтверждено'; $reason = 'Roblox отклонил запрос (403): антибот-защита или CSRF-токен не принят'; $consecutiveErrors = 0
+                    } elseif ($httpStatus -ge 400) {
+                        $status = 'Не подтверждено'; $reason = "Roblox ответил HTTP $httpStatus без распознаваемого результата валидации"; $consecutiveErrors = 0
                     }
                 }
                 'Google' {
@@ -2088,7 +2104,7 @@ try {
                         $consecutiveErrors=0
                     } else {
                         $url = 'https://api.github.com/users/' + [uri]::EscapeDataString($name)
-                        $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers @{'User-Agent'='UniversalUsernameFinder/2.5'; 'Accept'='application/vnd.github+json'; 'X-GitHub-Api-Version'='2026-03-10'}
+                        $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers @{'User-Agent'=('UniversalUsernameFinder/{0}' -f $AppVersion); 'Accept'='application/vnd.github+json'; 'X-GitHub-Api-Version'='2026-03-10'}
                         $httpStatus = [int]$r.Code
                         if ($httpStatus -eq 200) { $status='Занят'; $reason='Публичный профиль GitHub найден'; $consecutiveErrors=0 }
                         elseif ($httpStatus -eq 404) { $status='Вероятно свободен'; $reason='Профиль GitHub не найден; имя может быть зарезервировано регистрационной формой'; $consecutiveErrors=0 }
@@ -2156,8 +2172,19 @@ try {
                     $consecutiveErrors=0
                 }
             }
+            if ($null -ne $r -and [string]$r.TransportKind -eq 'protocol') {
+                # Нарушение протокола (например, редирект POST→GET с телом) — это не «сеть упала»,
+                # а системная проблема запроса: не считаем её сетевой ошибкой, но и не долбим сервис.
+                $status = 'Не подтверждено'
+                $reason = ('{0} отклонил запрос на уровне протокола: {1}' -f $Platform, [string]$r.TransportError)
+                $errorDetail = [string]$r.TransportError
+                $consecutiveProtocolErrors++
+                $consecutiveErrors = 0
+            } else {
+                $consecutiveProtocolErrors = 0
+            }
             if ($httpStatus -eq 429) {
-                try { if ($r.Headers['Retry-After']) { $retryAfter = [int]$r.Headers['Retry-After'] } } catch { }
+                try { if ($null -ne $r -and $r.Headers['Retry-After']) { $retryAfter = [int]$r.Headers['Retry-After'] } } catch { }
                 if ($retryAfter -lt 1) { $retryAfter = 15 }
                 if ($retryAfter -gt 120) { $retryAfter = 120 }
                 $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=("HTTP 429 для {0} ({1}). Пауза Retry-After: {2} сек." -f $name,$Platform,$retryAfter)})
@@ -2169,8 +2196,16 @@ try {
             } elseif ($httpStatus -ge 500) {
                 $status = 'Ошибка сети'; $reason = "HTTP $httpStatus от $Platform"; $consecutiveErrors++
             } elseif ($httpStatus -eq 0) {
-                if ($status -ne 'Не подтверждено') { $status = 'Ошибка сети'; $reason = 'Ответ без HTTP-статуса'; $consecutiveErrors++ }
-            } elseif ($httpStatus -ge 400 -and $status -eq 'Ошибка сети' -and $Platform -ne 'Reddit') {
+                if ($status -ne 'Не подтверждено') {
+                    $status = 'Ошибка сети'
+                    $transportDetail = ''
+                    if ($null -ne $r) { $transportDetail = [string]$r.TransportError }
+                    if ([string]::IsNullOrWhiteSpace($transportDetail)) { $transportDetail = 'Ответ без HTTP-статуса' }
+                    $reason = "Сетевая ошибка: $transportDetail"
+                    $errorDetail = $transportDetail
+                    $consecutiveErrors++
+                }
+            } elseif ($httpStatus -ge 400 -and $status -eq 'Ошибка сети') {
                 $status = 'Ошибка сети'; $reason = "HTTP $httpStatus от $Platform"; $consecutiveErrors++
             } elseif ($httpStatus -ge 400 -and $status -eq 'Не подтверждено') {
                 $reason = "Платформа ответила HTTP $httpStatus; доступность не подтверждена"
@@ -2186,6 +2221,9 @@ try {
         $now = (Get-Date).ToString('HH:mm:ss')
         $null = $Queue.Enqueue([pscustomobject]@{Type='Progress'; Item=[pscustomobject]@{Name=$name; Platform=$Platform; Category=[string]$item.Category; Meaning=[string]$item.Meaning; Status=$status; Reason=$reason; ErrorDetail=$errorDetail; Time=$now; Index=$done; Total=$total}})
         if ($errorDetail) { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=("{0} ({1}): {2}" -f $name,$Platform,$errorDetail)}) }
+        if (-not $stopReason -and $consecutiveProtocolErrors -ge 3) {
+            $stopReason = "Три запроса подряд к $Platform отклонены на уровне протокола/антибот-защиты; проверка остановлена. Endpoint мог измениться."
+        }
         if ($stopReason -or $consecutiveErrors -ge 3) {
             if (-not $stopReason) { $stopReason = 'Три сетевые ошибки подряд; проверка остановлена для защиты от повторных запросов' }
             break
@@ -2224,7 +2262,7 @@ try {
         $script:WorkerRunspace.Open()
         $script:WorkerPowerShell = [powershell]::Create()
         $script:WorkerPowerShell.Runspace = $script:WorkerRunspace
-        [void]$script:WorkerPowerShell.AddScript($workerScript).AddArgument(@($validCandidates.ToArray())).AddArgument($script:CheckQueue).AddArgument($script:Cancellation).AddArgument([int]$script:DelayBox.Value).AddArgument([int]$script:TimeoutBox.Value).AddArgument([string]$selectedPlatform)
+        [void]$script:WorkerPowerShell.AddScript($workerScript).AddArgument(@($validCandidates.ToArray())).AddArgument($script:CheckQueue).AddArgument($script:Cancellation).AddArgument([int]$script:DelayBox.Value).AddArgument([int]$script:TimeoutBox.Value).AddArgument([string]$selectedPlatform).AddArgument([string]$script:AppVersion)
         $script:CompletionEvent = $null
         $script:UnhandledWorkerError = $null
         $script:AsyncHandle = $script:WorkerPowerShell.BeginInvoke()
@@ -2332,7 +2370,7 @@ $script:GenerateButton.Add_Click({
     if ($customWords -eq 'Pixel, Void, Storm') { $customWords = '' }
     $customTheme = $script:ThemeBox.Text
     $excludeTokens = @($script:ExcludeBox.Text -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    $candidates = @(New-AdvancedCandidatePool -SelectedAppCategories @() -SelectedWordCategories $categories -CustomWords $customWords -CustomTheme $customTheme -Style ([string]$script:StyleBox.SelectedItem) -Platform $platform -Prefix $script:PrefixBox.Text -Suffix $script:SuffixBox.Text -MinLength ([int]$script:MinLengthBox.Value) -MaxLength ([int]$script:MaxLengthBox.Value) -Count ([int]$script:CountBox.Value) -UseNumbers ([bool]$script:NumbersCheck.Checked) -UseUnderscore ([bool]$script:UnderscoreCheck.Checked) -OneWord ([bool]$script:OneWordCheck.Checked) -TwoWords ([bool]$script:TwoWordsCheck.Checked) -OnlyShort ([bool]$script:ShortOnlyCheck.Checked) -ExcludeTokens $excludeTokens)
+    $candidates = @(New-AdvancedCandidatePool -SelectedWordCategories $categories -CustomWords $customWords -CustomTheme $customTheme -Style ([string]$script:StyleBox.SelectedItem) -Platform $platform -Prefix $script:PrefixBox.Text -Suffix $script:SuffixBox.Text -MinLength ([int]$script:MinLengthBox.Value) -MaxLength ([int]$script:MaxLengthBox.Value) -Count ([int]$script:CountBox.Value) -UseNumbers ([bool]$script:NumbersCheck.Checked) -UseUnderscore ([bool]$script:UnderscoreCheck.Checked) -OneWord ([bool]$script:OneWordCheck.Checked) -TwoWords ([bool]$script:TwoWordsCheck.Checked) -OnlyShort ([bool]$script:ShortOnlyCheck.Checked) -ExcludeTokens $excludeTokens)
     if ($candidates.Count -eq 0 -and [string]::IsNullOrWhiteSpace($script:ManualNickBox.Text)) {
         [System.Windows.Forms.MessageBox]::Show('Не удалось создать ники. Выбери хотя бы одну категорию или введи свои слова. Проверь длину и фильтры исключения.','Нет вариантов','OK','Warning') | Out-Null
         return
@@ -2454,7 +2492,7 @@ $script:HistoryButton.Add_Click({ Open-FreeHistoryWindow })
 $script:HistoryButton.Text = "Свободные ники ($($script:FreeHistory.Count))"
 $script:AccountButton.Add_Click({ Open-AccountTools })
 
-Add-Diagnostic 'Universal Username Finder v2.5 запущен. Генерация автоматически запускает последовательную проверку выбранной платформы.'
+Add-Diagnostic ('Universal Username Finder v{0} запущен. Генерация автоматически запускает последовательную проверку выбранной платформы.' -f $script:AppVersion)
 
 $script:Form.Add_FormClosing({
     try { if ($script:Cancellation -and -not $script:Cancellation.IsCancellationRequested) { $script:Cancellation.Cancel() } } catch { }
@@ -2464,4 +2502,11 @@ $script:Form.Add_FormClosing({
     try { if ($script:PasswordRng) { $script:PasswordRng.Dispose() } } catch { }
 })
 
-[void]$script:Form.ShowDialog()
+try {
+    [void]$script:Form.ShowDialog()
+} catch {
+    # Без этого любое исключение на уровне формы закрывало приложение без сообщения.
+    Write-StartupLog ('Фатальная ошибка главного окна: ' + $_.Exception.ToString())
+    Show-FatalError 'Фатальная ошибка' ("Приложение не может продолжить работу:`r`n`r`n{0}`r`n`r`nПодробности: UniversalUsernameFinder.log" -f $_.Exception.Message)
+    exit 1
+}
