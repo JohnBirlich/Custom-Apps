@@ -13,7 +13,7 @@ jobs:
     name: Syntax (Windows PowerShell 5.1 and PowerShell 7)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Parse with Windows PowerShell 5.1 (target runtime)
         shell: powershell
@@ -92,7 +92,7 @@ jobs:
     runs-on: windows-latest
     needs: syntax
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: PSScriptAnalyzer
         shell: pwsh
