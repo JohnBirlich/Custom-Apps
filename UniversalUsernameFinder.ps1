@@ -1,6 +1,42 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:AppVersion = '2.5.1'
-$script:LogPath = Join-Path $PSScriptRoot 'UniversalUsernameFinder.log'
+
+# Журнал: предпочитаем папку скрипта, но если она недоступна для записи
+# (например, программа распакована в Program Files), уходим в профиль пользователя.
+# Раньше запись молча глоталась catch-блоком, и диагностика пропадала.
+function Resolve-LogPath {
+    $primary = Join-Path $PSScriptRoot 'UniversalUsernameFinder.log'
+    try {
+        $directory = Split-Path -Parent $primary
+        $probe = Join-Path $directory ('.uuf-write-probe-' + [guid]::NewGuid().ToString('N'))
+        [System.IO.File]::WriteAllText($probe, 'probe')
+        [System.IO.File]::Delete($probe)
+        return $primary
+    } catch { }
+    try {
+        $fallbackDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
+        $null = [System.IO.Directory]::CreateDirectory($fallbackDirectory)
+        return (Join-Path $fallbackDirectory 'UniversalUsernameFinder.log')
+    } catch {
+        return $primary
+    }
+}
+
+function Rotate-AppLog {
+    param([long]$MaxBytes = 2097152)
+    try {
+        $info = New-Object System.IO.FileInfo($script:LogPath)
+        if ($info.Exists -and $info.Length -gt $MaxBytes) {
+            $old = [System.IO.Path]::ChangeExtension($script:LogPath, '.old.log')
+            if ([System.IO.File]::Exists($old)) { [System.IO.File]::Delete($old) }
+            [System.IO.File]::Move($script:LogPath, $old)
+        }
+    } catch { }
+}
+
+$script:LogPath = Resolve-LogPath
+Rotate-AppLog
+
 Add-Type -AssemblyName System.Security
 $script:VaultDirectory = Join-Path $env:LOCALAPPDATA 'RobloxNickFinder'
 $script:VaultPath = Join-Path $script:VaultDirectory 'accounts.dat'
@@ -11,6 +47,25 @@ Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
+
+# Два запущенных экземпляра одновременно пишут историю ников и хранилище аккаунтов,
+# поэтому второй экземпляр не запускаем. Ссылку на Mutex держим в переменной скрипта,
+# иначе сборщик мусора освободит её и защита перестанет работать.
+$script:SingleInstanceMutex = $null
+try {
+    $createdNew = $false
+    $script:SingleInstanceMutex = New-Object System.Threading.Mutex($true, 'Local\UniversalUsernameFinder.SingleInstance', [ref]$createdNew)
+    if (-not $createdNew) {
+        [System.Windows.Forms.MessageBox]::Show('Universal Username Finder уже запущен. Второе окно не открыто, чтобы не повредить историю ников и зашифрованное хранилище.','Приложение уже запущено','OK','Information') | Out-Null
+        exit 0
+    }
+} catch {
+    # Если Mutex создать не удалось, не блокируем запуск: пишем причину в журнал.
+    try {
+        $line = '[{0}] {1}{2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ('Не удалось создать Mutex единственного экземпляра: ' + $_.Exception.Message), [Environment]::NewLine
+        [System.IO.File]::AppendAllText($script:LogPath, $line, (New-Object System.Text.UTF8Encoding -ArgumentList $true))
+    } catch { }
+}
 
 function Write-StartupLog {
     param([string]$Message)
@@ -192,10 +247,17 @@ $script:StyleWords = @{
 }
 $script:CheckedNames = @{}
 $script:Candidates = New-Object 'System.Collections.Generic.List[object]'
+# Индекс «платформа|ник» → кандидат: без него каждый результат проверки искался
+# линейным перебором всего списка (O(n²) на прогон) и подтормаживал интерфейс.
+$script:CandidateIndex = @{}
 $script:HistoryDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
 $script:HistoryPath = Join-Path $script:HistoryDirectory 'username_history.json'
 $script:FreeHistory = @()
 $script:RetiredNames = @{}
+$script:HistoryDirty = $false
+$script:HistoryDirtySince = $null
+$script:LastGridRefresh = [DateTime]::MinValue
+$script:GridRefreshPending = $false
 try {
     if (Test-Path -LiteralPath $script:HistoryPath) {
         $historyData = Get-Content -LiteralPath $script:HistoryPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
@@ -303,6 +365,20 @@ function Get-PlatformWebsiteUrl {
     }
 }
 
+# Fisher–Yates вместо Sort-Object { Get-Random }: последний пересчитывает ключ сортировки
+# и даёт смещённую, нестабильную выборку, к тому же O(n log n) вместо O(n).
+function Get-ShuffledArray {
+    param([object[]]$Items)
+    $array = @($Items)
+    for ($i = $array.Length - 1; $i -gt 0; $i--) {
+        $j = Get-Random -Minimum 0 -Maximum ($i + 1)
+        $temp = $array[$i]
+        $array[$i] = $array[$j]
+        $array[$j] = $temp
+    }
+    return $array
+}
+
 function New-AdvancedCandidatePool {
     param(
         [string[]]$SelectedWordCategories,
@@ -372,7 +448,7 @@ function New-AdvancedCandidatePool {
     $suffixClean = [regex]::Replace([string]$Suffix, '[^A-Za-z0-9_.-]', '')
     $filtered = New-Object System.Collections.ArrayList
     $seen = @{}
-    $rawArray = @($rawCandidates.ToArray() | Sort-Object { Get-Random })
+    $rawArray = @(Get-ShuffledArray -Items $rawCandidates.ToArray())
     foreach ($entry in $rawArray) {
         $name = [string]$entry.Name
         if ($prefixClean) { $name = $prefixClean + $name }
@@ -405,7 +481,7 @@ function New-AdvancedCandidatePool {
         if ($filtered.Count -ge ($Count * 4)) { break }
     }
     if ($filtered.Count -eq 0) { return @() }
-    $shuffled = @($filtered.ToArray() | Sort-Object { Get-Random })
+    $shuffled = @(Get-ShuffledArray -Items $filtered.ToArray())
     $take = [Math]::Min($Count, $shuffled.Count)
     return @($shuffled | Select-Object -First $take)
 }
@@ -760,6 +836,12 @@ $script:Grid.Columns['Meaning'].FillWeight = 20
 $script:Grid.Columns['Time'].FillWeight = 10
 $script:Grid.Columns['Reason'].FillWeight = 24
 $script:Grid.RowTemplate.Height = 27
+# Двойная буферизация убирает мерцание при частой перерисовке таблицы.
+# Свойство защищённое, поэтому включаем его через отражение; сбой не критичен.
+try {
+    $doubleBuffered = $script:Grid.GetType().GetProperty('DoubleBuffered', [System.Reflection.BindingFlags]'Instance,NonPublic')
+    if ($doubleBuffered) { $doubleBuffered.SetValue($script:Grid, $true, $null) }
+} catch { }
 $script:Grid.add_CellDoubleClick({
     param($sender,$e)
     if ($e.RowIndex -ge 0) {
@@ -1351,6 +1433,24 @@ function Get-HistoryKey {
     return (($Platform + '|' + $Name).ToLowerInvariant())
 }
 
+function Register-Candidate {
+    param($Candidate)
+    if (-not $Candidate) { return }
+    $key = Get-HistoryKey -Name ([string]$Candidate.Name) -Platform ([string]$Candidate.Platform)
+    $script:CandidateIndex[$key] = $Candidate
+}
+
+function Find-Candidate {
+    param([string]$Name, [string]$Platform)
+    $key = Get-HistoryKey -Name $Name -Platform $Platform
+    if ($script:CandidateIndex.ContainsKey($key)) { return $script:CandidateIndex[$key] }
+    return $null
+}
+
+function Clear-CandidateIndex {
+    $script:CandidateIndex = @{}
+}
+
 function Save-UsernameHistory {
     try {
         if (-not (Test-Path -LiteralPath $script:HistoryDirectory)) { [void](New-Item -ItemType Directory -Path $script:HistoryDirectory -Force) }
@@ -1358,8 +1458,43 @@ function Save-UsernameHistory {
             FreeHistory = @($script:FreeHistory | Select-Object -First 30)
             RetiredNames = @($script:RetiredNames.Keys | Select-Object -First 20000)
         }
-        ConvertTo-Json -InputObject $data -Depth 6 | Set-Content -LiteralPath $script:HistoryPath -Encoding UTF8
+        $json = ConvertTo-Json -InputObject $data -Depth 6
+        if ([string]::IsNullOrWhiteSpace($json)) { $json = '{}' }
+        # Атомарная запись: раньше Set-Content писал прямо в целевой файл, и падение
+        # программы посреди записи оставляло побитый username_history.json.
+        $historyFull = [System.IO.Path]::GetFullPath($script:HistoryPath)
+        $directoryFull = [System.IO.Path]::GetFullPath($script:HistoryDirectory)
+        $tempPath = [System.IO.Path]::Combine($directoryFull, 'username_history.' + [guid]::NewGuid().ToString('N') + '.tmp')
+        $bytes = (New-Object System.Text.UTF8Encoding -ArgumentList $true).GetBytes($json)
+        [System.IO.File]::WriteAllBytes($tempPath, $bytes)
+        try {
+            if ([System.IO.File]::Exists($historyFull)) {
+                [System.IO.File]::Replace($tempPath, $historyFull, $null)
+            } else {
+                [System.IO.File]::Move($tempPath, $historyFull)
+            }
+        } catch {
+            # Файл мог быть заблокирован: пробуем простое перемещение поверх.
+            try { [System.IO.File]::Move($tempPath, $historyFull) } catch { throw }
+        }
+        $script:HistoryDirty = $false
+        $script:HistoryDirtySince = $null
     } catch { Write-AppLog ('Не удалось сохранить историю ников: ' + $_.Exception.Message) }
+}
+
+# История меняется на каждый проверенный ник; писать файл на каждое событие дорого.
+# Помечаем данные «грязными» и сбрасываем на диск не чаще раза в несколько секунд,
+# а также по завершении прогона и при закрытии окна.
+function Mark-HistoryDirty {
+    $script:HistoryDirty = $true
+    if (-not $script:HistoryDirtySince) { $script:HistoryDirtySince = [DateTime]::UtcNow }
+}
+
+function Flush-HistoryIfDue {
+    param([int]$IntervalSeconds = 5)
+    if (-not $script:HistoryDirty) { return }
+    if (-not $script:HistoryDirtySince) { $script:HistoryDirtySince = [DateTime]::UtcNow; return }
+    if (([DateTime]::UtcNow - $script:HistoryDirtySince).TotalSeconds -ge $IntervalSeconds) { Save-UsernameHistory }
 }
 
 function Update-FreeHistoryFromCandidate {
@@ -1380,7 +1515,7 @@ function Update-FreeHistoryFromCandidate {
         $script:RetiredNames[$key] = $true
     } else { return }
     if ($script:HistoryButton) { $script:HistoryButton.Text = "Свободные ники ($($script:FreeHistory.Count))" }
-    Save-UsernameHistory
+    Mark-HistoryDirty
 }
 
 function Refresh-FreeHistoryList {
@@ -1475,10 +1610,11 @@ function Open-FreeHistoryWindow {
         }
         $script:HistoryForm.Close()
         $script:PlatformBox.SelectedItem = $selectedPlatform
-        $candidate = $script:Candidates | Where-Object { [string]$_.Name -ieq $selectedName -and [string]$_.Platform -eq $selectedPlatform } | Select-Object -First 1
+        $candidate = Find-Candidate -Name $selectedName -Platform $selectedPlatform
         if (-not $candidate) {
             $candidate = [pscustomobject]@{Name=$selectedName; Platform=$selectedPlatform; Meaning='Повторная проверка из истории'; Category='История свободных'; Status='Ожидает'; Time=''; Reason='Запрошена повторная проверка'; Checked=$false}
             [void]$script:Candidates.Add($candidate)
+            Register-Candidate $candidate
         }
         $candidate.Status = 'Ожидает'
         $candidate.Time = ''
@@ -1615,11 +1751,18 @@ function Update-AvailableNames {
 
 function Update-Stats {
     $total = $script:Candidates.Count
-    $checked = @($script:Candidates | Where-Object { $_.Checked }).Count
-    $free = @($script:Candidates | Where-Object { $_.Status -eq 'Свободен' -or $_.Status -eq 'Вероятно свободен' }).Count
-    $taken = @($script:Candidates | Where-Object { $_.Status -eq 'Занят' }).Count
-    $invalid = @($script:Candidates | Where-Object { $_.Status -eq 'Недопустимый' }).Count
-    $errors = @($script:Candidates | Where-Object { $_.Status -eq 'Ошибка сети' }).Count
+    $checked = 0; $free = 0; $taken = 0; $invalid = 0; $errors = 0
+    # Один проход вместо пяти: статистика пересчитывается на каждую перерисовку таблицы.
+    foreach ($candidate in $script:Candidates) {
+        if ($candidate.Checked) { $checked++ }
+        switch ([string]$candidate.Status) {
+            'Свободен' { $free++ }
+            'Вероятно свободен' { $free++ }
+            'Занят' { $taken++ }
+            'Недопустимый' { $invalid++ }
+            'Ошибка сети' { $errors++ }
+        }
+    }
     $script:StatTotal.Text = "Всего: $total"
     $script:StatChecked.Text = "Проверено: $checked"
     $script:StatFree.Text = "Свободно/возможно: $free"
@@ -1826,6 +1969,10 @@ $googleSession = $null
 $googleSetupToken = ''
 $msSession = $null
 $msContext = $null
+$githubSession = $null
+$githubSignupUrl = 'https://github.com/signup?source=form-home-signup'
+$appleSession = $null
+$appleApiKey = ''
 if ($Platform -eq 'Google') {
     try {
         $googleSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
@@ -1843,6 +1990,23 @@ if ($Platform -eq 'Google') {
         }
         if (-not $googleSetupToken) { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message='Google: не удалось извлечь контекст регистрации; результаты будут помечены как неподтверждённые.'}) }
     } catch { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=('Google: инициализация проверки не удалась: ' + $_.Exception.Message)}) }
+}
+if ($Platform -eq 'GitHub') {
+    # Сессия и cookie создаются один раз на прогон: раньше на каждый ник выполнялись
+    # два лишних запроса (новая сессия + загрузка страницы регистрации).
+    try {
+        $githubSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+        $null = Get-HttpResult -Url $githubSignupUrl -Timeout $timeoutSec -Headers @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='text/html,application/xhtml+xml'} -WebSession $githubSession
+    } catch { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=('GitHub: инициализация сессии не удалась: ' + $_.Exception.Message)}) }
+}
+if ($Platform -eq 'Apple') {
+    try {
+        $appleSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+        $appleInit = Get-HttpResult -Url 'https://appleid.apple.com/account' -Timeout $timeoutSec -Headers $browserHeaders -WebSession $appleSession
+        $apiKeyMatch = [regex]::Match([string]$appleInit.Content, '(?i)(?:X-Apple-Api-Key|apiKey)\s*["''\s:=]+([A-Za-z0-9_-]{20,})')
+        if ($apiKeyMatch.Success) { $appleApiKey = $apiKeyMatch.Groups[1].Value }
+        if (-not $appleApiKey) { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message='Apple: не удалось извлечь API-ключ из страницы регистрации; результаты могут остаться неподтверждёнными.'}) }
+    } catch { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=('Apple: инициализация проверки не удалась: ' + $_.Exception.Message)}) }
 }
 if ($Platform -eq 'Microsoft' -or $Platform -eq 'Outlook') {
     try {
@@ -2089,11 +2253,12 @@ try {
                     }
                 }
                 'GitHub' {
-                    $githubSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-                    $signupUrl = 'https://github.com/signup?source=form-home-signup'
-                    $null = Get-HttpResult -Url $signupUrl -Timeout $timeoutSec -Headers @{'User-Agent'='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/129.0.0.0 Safari/537.36'; 'Accept'='text/html,application/xhtml+xml'} -WebSession $githubSession
+                    if ($null -eq $githubSession) {
+                        $githubSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+                        $null = Get-HttpResult -Url $githubSignupUrl -Timeout $timeoutSec -Headers @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='text/html,application/xhtml+xml'} -WebSession $githubSession
+                    }
                     $checkUrl = 'https://github.com/signup_check/username?value=' + [uri]::EscapeDataString($name)
-                    $r = Get-HttpResult -Url $checkUrl -Timeout $timeoutSec -Headers @{'User-Agent'='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/129.0.0.0 Safari/537.36'; 'Accept'='*/*'; 'X-Requested-With'='XMLHttpRequest'; 'Referer'=$signupUrl} -WebSession $githubSession
+                    $r = Get-HttpResult -Url $checkUrl -Timeout $timeoutSec -Headers @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='*/*'; 'X-Requested-With'='XMLHttpRequest'; 'Referer'=$githubSignupUrl} -WebSession $githubSession
                     $httpStatus = [int]$r.Code
                     $githubBody = ([string]$r.Content).Trim()
                     if ($httpStatus -eq 200 -and ($githubBody -eq '' -or $githubBody -match '(?i)^(available|true|username is available)\.?$')) {
@@ -2106,9 +2271,21 @@ try {
                         $url = 'https://api.github.com/users/' + [uri]::EscapeDataString($name)
                         $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers @{'User-Agent'=('UniversalUsernameFinder/{0}' -f $AppVersion); 'Accept'='application/vnd.github+json'; 'X-GitHub-Api-Version'='2026-03-10'}
                         $httpStatus = [int]$r.Code
+                        # Анонимный лимит API GitHub — 60 запросов в час. Останавливаемся, когда
+                        # запас исчерпан, а не после первого 403, чтобы не долбить сервис.
+                        $rateRemaining = -1
+                        try {
+                            if ($null -ne $r.Headers) {
+                                $rawRemaining = [string]$r.Headers['X-RateLimit-Remaining']
+                                if (-not [string]::IsNullOrWhiteSpace($rawRemaining)) { $rateRemaining = [int]$rawRemaining }
+                            }
+                        } catch { }
                         if ($httpStatus -eq 200) { $status='Занят'; $reason='Публичный профиль GitHub найден'; $consecutiveErrors=0 }
                         elseif ($httpStatus -eq 404) { $status='Вероятно свободен'; $reason='Профиль GitHub не найден; имя может быть зарезервировано регистрационной формой'; $consecutiveErrors=0 }
                         elseif ($httpStatus -eq 403) { $status='Ошибка сети'; $reason='GitHub ограничил анонимный API (403/возможный лимит)'; $stopReason='GitHub ограничил запросы; проверка остановлена' }
+                        if ($rateRemaining -eq 0 -and -not $stopReason) {
+                            $stopReason = 'Исчерпан часовой лимит анонимного API GitHub (60 запросов); проверка остановлена. Повтори позже или используй только регистрационный endpoint.'
+                        }
                     }
                 }
                 'YouTube' {
@@ -2138,12 +2315,15 @@ try {
                     else { $status='Не подтверждено'; $reason='Публичная страница не дала однозначного результата; account.checkUsername требует авторизованной пользовательской сессии'; $consecutiveErrors=0 }
                 }
                 'Apple' {
-                    $appleSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-                    $appleInit = Get-HttpResult -Url 'https://appleid.apple.com/account' -Timeout $timeoutSec -Headers $browserHeaders -WebSession $appleSession
+                    if ($null -eq $appleSession) {
+                        $appleSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+                        $appleInit = Get-HttpResult -Url 'https://appleid.apple.com/account' -Timeout $timeoutSec -Headers $browserHeaders -WebSession $appleSession
+                        $apiKeyMatch = [regex]::Match([string]$appleInit.Content, '(?i)(?:X-Apple-Api-Key|apiKey)\s*["''\s:=]+([A-Za-z0-9_-]{20,})')
+                        if ($apiKeyMatch.Success) { $appleApiKey = $apiKeyMatch.Groups[1].Value }
+                    }
                     $appleEmail = $name + '@icloud.com'
                     $appleHeaders = @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json, text/javascript, */*; q=0.01'; 'Content-Type'='application/json'; 'Origin'='https://appleid.apple.com'; 'Referer'='https://appleid.apple.com/account'; 'X-Requested-With'='XMLHttpRequest'; 'X-Apple-Request-Context'='create'}
-                    $apiKeyMatch = [regex]::Match([string]$appleInit.Content, '(?i)(?:X-Apple-Api-Key|apiKey)\s*["''\s:=]+([A-Za-z0-9_-]{20,})')
-                    if ($apiKeyMatch.Success) { $appleHeaders['X-Apple-Api-Key'] = $apiKeyMatch.Groups[1].Value }
+                    if ($appleApiKey) { $appleHeaders['X-Apple-Api-Key'] = $appleApiKey }
                     try {
                         $appleCookies = $appleSession.Cookies.GetCookies([uri]'https://appleid.apple.com')
                         foreach ($cookie in $appleCookies) { if ($cookie.Name -eq 'scnt') { $appleHeaders['scnt'] = $cookie.Value }; if ($cookie.Name -eq 'aidsp') { $appleHeaders['X-Apple-ID-Session-Id'] = $cookie.Value } }
@@ -2284,7 +2464,7 @@ $script:PollTimer.Add_Tick({
             if ($null -eq $entry) { continue }
             if ($entry.Type -eq 'Progress') {
                 $item = $entry.Item
-                $candidate = $script:Candidates | Where-Object { [string]$_.Name -ieq [string]$item.Name -and [string]$_.Platform -eq [string]$item.Platform } | Select-Object -First 1
+                $candidate = Find-Candidate -Name ([string]$item.Name) -Platform ([string]$item.Platform)
                 if ($candidate) {
                     $script:CheckedNames[((([string]$candidate.Platform) + '|' + [string]$candidate.Name).ToLowerInvariant())] = $true
                     $candidate.Status = [string]$item.Status
@@ -2296,7 +2476,7 @@ $script:PollTimer.Add_Tick({
                 $script:CurrentBatchDone = [int]$item.Index
                 $script:ProgressBar.Value = [Math]::Min(100,[int](100 * $script:CurrentBatchDone / [Math]::Max(1,$script:CurrentBatchTotal)))
                 $script:ProgressCaption.Text = "Прогресс: $($script:CurrentBatchDone)/$($script:CurrentBatchTotal) · $($item.Name)"
-                Update-ResultGrid
+                $script:GridRefreshPending = $true
             } elseif ($entry.Type -eq 'Log') {
                 Add-Diagnostic ([string]$entry.Message)
             } elseif ($entry.Type -eq 'Complete') {
@@ -2305,6 +2485,14 @@ $script:PollTimer.Add_Tick({
             $entry = $null
         }
     }
+    # Таблица перерисовывается не на каждый результат, а не чаще ~4 раз в секунду:
+    # полная перестройка строк на каждую проверку заметно тормозила интерфейс.
+    if ($script:GridRefreshPending -and (([DateTime]::UtcNow - $script:LastGridRefresh).TotalMilliseconds -ge 250)) {
+        $script:GridRefreshPending = $false
+        $script:LastGridRefresh = [DateTime]::UtcNow
+        Update-ResultGrid
+    }
+    Flush-HistoryIfDue -IntervalSeconds 5
     if ($script:AsyncHandle -and $script:AsyncHandle.IsCompleted) {
         $script:PollTimer.Stop()
         try { $null = $script:WorkerPowerShell.EndInvoke($script:AsyncHandle) } catch { $script:UnhandledWorkerError = $_.Exception.ToString() }
@@ -2313,7 +2501,7 @@ $script:PollTimer.Add_Tick({
             while ($script:CheckQueue.TryDequeue([ref]$entry)) {
                 if ($entry.Type -eq 'Progress') {
                     $item = $entry.Item
-                    $candidate = $script:Candidates | Where-Object { [string]$_.Name -ieq [string]$item.Name -and [string]$_.Platform -eq [string]$item.Platform } | Select-Object -First 1
+                    $candidate = Find-Candidate -Name ([string]$item.Name) -Platform ([string]$item.Platform)
                     if ($candidate) { $script:CheckedNames[((([string]$candidate.Platform) + '|' + [string]$candidate.Name).ToLowerInvariant())] = $true; $candidate.Status=[string]$item.Status; $candidate.Time=[string]$item.Time; $candidate.Reason=[string]$item.Reason; $candidate.Checked=$true; Update-FreeHistoryFromCandidate $candidate }
                     $script:CurrentBatchDone = [int]$item.Index
                 } elseif ($entry.Type -eq 'Log') { Add-Diagnostic ([string]$entry.Message) }
@@ -2332,6 +2520,10 @@ $script:PollTimer.Add_Tick({
                 if ($candidate.Status -eq 'Проверяется') { $candidate.Status='Ожидает'; $candidate.Reason='Проверка не завершена; можно запустить повторно' }
             }
         }
+        # Таймер после завершения останавливается, поэтому сбрасываем историю на диск здесь.
+        $script:GridRefreshPending = $false
+        $script:LastGridRefresh = [DateTime]::UtcNow
+        if ($script:HistoryDirty) { Save-UsernameHistory }
         Update-ResultGrid
         $script:ProgressBar.Value = [Math]::Min(100,[int](100 * $script:CurrentBatchDone / [Math]::Max(1,$script:CurrentBatchTotal)))
         if ($completed -and $completed.Error) {
@@ -2382,7 +2574,7 @@ $script:GenerateButton.Add_Click({
         $key = (($platform + '|' + [string]$candidate.Name).ToLowerInvariant())
         if ($script:RetiredNames.ContainsKey($key)) { continue }
         if ($script:ExcludeCheckedCheck.Checked -and $script:CheckedNames.ContainsKey($key)) { continue }
-        if (-not $seen.ContainsKey($key)) { [void]$script:Candidates.Add($candidate); $seen[$key]=$true; $added++ }
+        if (-not $seen.ContainsKey($key)) { [void]$script:Candidates.Add($candidate); Register-Candidate $candidate; $seen[$key]=$true; $added++ }
     }
     foreach ($nickRaw in ($script:ManualNickBox.Text -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
         $nick = $nickRaw.Trim()
@@ -2392,7 +2584,9 @@ $script:GenerateButton.Add_Click({
         if (-not (Test-UsernameFormat -Username $nick -Platform $platform)) { $status = 'Недопустимый'; $reason = "Неверный формат имени для платформы $platform" }
         $manualTime = ''
         if ($status -eq 'Недопустимый') { $manualTime = (Get-Date).ToString('HH:mm:ss') }
-        [void]$script:Candidates.Add([pscustomobject]@{Name=$nick; Platform=$platform; Meaning='Введён вручную'; Category='Ручной ввод'; Status=$status; Time=$manualTime; Reason=$reason; Checked=($status -eq 'Недопустимый')})
+        $manualCandidate = [pscustomobject]@{Name=$nick; Platform=$platform; Meaning='Введён вручную'; Category='Ручной ввод'; Status=$status; Time=$manualTime; Reason=$reason; Checked=($status -eq 'Недопустимый')}
+        [void]$script:Candidates.Add($manualCandidate)
+        Register-Candidate $manualCandidate
         $seen[$key]=$true; $added++
     }
     if ($script:Candidates.Count -gt 2000) { [System.Windows.Forms.MessageBox]::Show('В списке слишком много записей. Экспортируй результаты или очисти список перед новой генерацией.','Лимит списка','OK','Information') | Out-Null }
@@ -2445,6 +2639,7 @@ $script:CopyButton.Add_Click({
 $script:ClearButton.Add_Click({
     if ($script:AsyncHandle -and -not $script:AsyncHandle.IsCompleted) { return }
     $script:Candidates.Clear()
+    Clear-CandidateIndex
     $script:AvailableNames.Clear()
     $script:CheckedNames.Clear()
     $script:ProgressBar.Value = 0
@@ -2500,6 +2695,15 @@ $script:Form.Add_FormClosing({
     try { if ($script:WorkerPowerShell) { $script:WorkerPowerShell.Stop() } } catch { }
     try { if ($script:WorkerRunspace) { $script:WorkerRunspace.Close() } } catch { }
     try { if ($script:PasswordRng) { $script:PasswordRng.Dispose() } } catch { }
+    # История пишется с задержкой (дебаунс), поэтому при закрытии сохраняем принудительно.
+    try { if ($script:HistoryDirty) { Save-UsernameHistory } } catch { }
+    try {
+        if ($script:SingleInstanceMutex) {
+            try { [void]$script:SingleInstanceMutex.ReleaseMutex() } catch { }
+            $script:SingleInstanceMutex.Dispose()
+            $script:SingleInstanceMutex = $null
+        }
+    } catch { }
 })
 
 try {
