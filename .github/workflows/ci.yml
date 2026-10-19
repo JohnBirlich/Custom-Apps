@@ -1,0 +1,221 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Сообщения шагов намеренно ASCII: inline-скрипт шага Windows PowerShell 5.1 может
+# читаться как ANSI, и кириллица в нём превращается в нечитаемые символы.
+# Ошибки дублируются командами ::error:: — их видно в аннотациях прогона через API.
+#
+# Модули PSGallery устанавливаются с повторными попытками: репозиторий периодически
+# отвечает «No match was found for the specified search criteria», что не связано
+# с проверяемым кодом.
+jobs:
+  syntax:
+    name: Syntax (Windows PowerShell 5.1 and PowerShell 7)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Целевая среда приложения — Windows PowerShell 5.1, поэтому она проверяется
+      # отдельно: синтаксис, допустимый в PowerShell 7, не всегда разбирается в 5.1.
+      - name: Parse with Windows PowerShell 5.1 (target runtime)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            Write-Host ('PSVersion: ' + $PSVersionTable.PSVersion.ToString())
+            $path = Join-Path $PWD 'UniversalUsernameFinder.ps1'
+            Write-Host ('Path: ' + $path)
+            Write-Host ('Exists: ' + (Test-Path -LiteralPath $path))
+            $tokens = $null
+            $parseErrors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$parseErrors)
+            $parseErrors = @($parseErrors)
+            Write-Host ('Parse errors: ' + $parseErrors.Count)
+            foreach ($parseError in $parseErrors) {
+              $message = 'line ' + $parseError.Extent.StartLineNumber + ': ' + $parseError.Message + ' [' + $parseError.ErrorId + ']'
+              Write-Host $message
+              Write-Host ('::error::' + $message)
+            }
+            if ($parseErrors.Count -gt 0) { exit 1 }
+            Write-Host 'Syntax OK.'
+          } catch {
+            Write-Host ('::error::STEP EXCEPTION: ' + $_.Exception.ToString())
+            exit 1
+          }
+
+      - name: Parse with PowerShell 7
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            Write-Host ('PSVersion: ' + $PSVersionTable.PSVersion.ToString())
+            $path = Join-Path $PWD 'UniversalUsernameFinder.ps1'
+            $tokens = $null
+            $parseErrors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$parseErrors)
+            $parseErrors = @($parseErrors)
+            Write-Host ('Parse errors: ' + $parseErrors.Count)
+            foreach ($parseError in $parseErrors) {
+              $message = 'line ' + $parseError.Extent.StartLineNumber + ': ' + $parseError.Message + ' [' + $parseError.ErrorId + ']'
+              Write-Host $message
+              Write-Host ('::error::' + $message)
+            }
+            if ($parseErrors.Count -gt 0) { exit 1 }
+            Write-Host 'Syntax OK.'
+          } catch {
+            Write-Host ('::error::STEP EXCEPTION: ' + $_.Exception.ToString())
+            exit 1
+          }
+
+      - name: Encoding check (UTF-8 BOM)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            $failed = $false
+            foreach ($file in @('UniversalUsernameFinder.ps1', 'tests/UniversalUsernameFinder.Tests.ps1')) {
+              $bytes = [System.IO.File]::ReadAllBytes((Join-Path $PWD $file))
+              $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+              Write-Host ($file + ' BOM: ' + $hasBom)
+              if (-not $hasBom) {
+                Write-Host ('::error::' + $file + ' has no UTF-8 BOM: Windows PowerShell 5.1 would read Cyrillic as ANSI')
+                $failed = $true
+              }
+            }
+            if ($failed) { exit 1 }
+            Write-Host 'Encoding OK.'
+          } catch {
+            Write-Host ('::error::STEP EXCEPTION: ' + $_.Exception.ToString())
+            exit 1
+          }
+
+  quality:
+    name: PSScriptAnalyzer and Pester
+    runs-on: windows-latest
+    needs: syntax
+    steps:
+      - uses: actions/checkout@v5
+
+      # Линтер — вспомогательная проверка: если PSGallery недоступен после всех
+      # попыток, шаг предупреждает, но не роняет сборку (это не дефект кода).
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            try { Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue } catch { }
+            $available = Get-Module -ListAvailable -Name PSScriptAnalyzer | Select-Object -First 1
+            if (-not $available) {
+              foreach ($attempt in 1..4) {
+                try {
+                  Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -Repository PSGallery -AllowClobber -ErrorAction Stop
+                  break
+                } catch {
+                  Write-Host ('Install attempt ' + $attempt + ' failed: ' + $_.Exception.Message)
+                  Start-Sleep -Seconds (15 * $attempt)
+                }
+              }
+              $available = Get-Module -ListAvailable -Name PSScriptAnalyzer | Select-Object -First 1
+            }
+            if (-not $available) {
+              Write-Host '::warning::PSScriptAnalyzer is unavailable (PSGallery did not respond); analysis skipped.'
+              exit 0
+            }
+            Import-Module PSScriptAnalyzer
+            Write-Host ('PSScriptAnalyzer version: ' + (Get-Module PSScriptAnalyzer).Version.ToString())
+            $settings = Join-Path $PWD 'ScriptAnalyzerSettings.psd1'
+            $target = Join-Path $PWD 'UniversalUsernameFinder.ps1'
+            $results = @(Invoke-ScriptAnalyzer -Path $target -Settings $settings)
+            foreach ($result in $results) {
+              Write-Host ($result.Severity.ToString() + ' ' + $result.RuleName + ' line ' + $result.Line + ': ' + $result.Message)
+            }
+            $analyzerErrors = @($results | Where-Object { $_.Severity -eq 'Error' })
+            Write-Host ('Total findings: ' + $results.Count + '; errors: ' + $analyzerErrors.Count)
+            foreach ($analyzerError in $analyzerErrors) {
+              Write-Host ('::error::' + $analyzerError.RuleName + ' line ' + $analyzerError.Line + ': ' + $analyzerError.Message)
+            }
+            if ($analyzerErrors.Count -gt 0) { exit 1 }
+            Write-Host 'Analyzer OK.'
+          } catch {
+            Write-Host ('::error::STEP EXCEPTION: ' + $_.Exception.ToString())
+            exit 1
+          }
+
+      - name: Pester (PowerShell 7)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            try { Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue } catch { }
+            $available = Get-Module -ListAvailable -Name Pester | Where-Object { $_.Version -ge [version]'5.0.0' } | Select-Object -First 1
+            if (-not $available) {
+              foreach ($attempt in 1..4) {
+                try {
+                  Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser -Repository PSGallery -AllowClobber -ErrorAction Stop
+                  break
+                } catch {
+                  Write-Host ('Install attempt ' + $attempt + ' failed: ' + $_.Exception.Message)
+                  Start-Sleep -Seconds (15 * $attempt)
+                }
+              }
+            }
+            Import-Module Pester -MinimumVersion 5.0.0
+            Write-Host ('Pester version: ' + (Get-Module Pester).Version.ToString())
+            $config = New-PesterConfiguration
+            $config.Run.Path = './tests'
+            $config.Output.Verbosity = 'Detailed'
+            $config.Run.PassThru = $true
+            $result = Invoke-Pester -Configuration $config
+            Write-Host ('Passed: ' + $result.PassedCount + '; Failed: ' + $result.FailedCount)
+            foreach ($failedTest in @($result.Failed)) {
+              Write-Host ('::error::TEST FAILED: ' + $failedTest.ExpandedPath + ' -> ' + $failedTest.ErrorRecord.DisplayErrorMessage)
+            }
+            if ($result.FailedCount -gt 0) { exit 1 }
+          } catch {
+            Write-Host ('::error::STEP EXCEPTION: ' + $_.Exception.ToString())
+            exit 1
+          }
+
+      - name: Pester (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            # Windows PowerShell 5.1 does not enable TLS 1.2 by default, and PSGallery
+            # requires it; without this line module installation fails in 5.1.
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            try { Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue } catch { }
+            $available = Get-Module -ListAvailable -Name Pester | Where-Object { $_.Version -ge [version]'5.0.0' } | Select-Object -First 1
+            if (-not $available) {
+              foreach ($attempt in 1..4) {
+                try {
+                  Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser -Repository PSGallery -AllowClobber -ErrorAction Stop
+                  break
+                } catch {
+                  Write-Host ('Install attempt ' + $attempt + ' failed: ' + $_.Exception.Message)
+                  Start-Sleep -Seconds (15 * $attempt)
+                }
+              }
+            }
+            Import-Module Pester -MinimumVersion 5.0.0
+            Write-Host ('Pester version: ' + (Get-Module Pester).Version.ToString())
+            $config = New-PesterConfiguration
+            $config.Run.Path = './tests'
+            $config.Output.Verbosity = 'Detailed'
+            $config.Run.PassThru = $true
+            $result = Invoke-Pester -Configuration $config
+            Write-Host ('Passed: ' + $result.PassedCount + '; Failed: ' + $result.FailedCount)
+            foreach ($failedTest in @($result.Failed)) {
+              Write-Host ('::error::TEST FAILED: ' + $failedTest.ExpandedPath + ' -> ' + $failedTest.ErrorRecord.DisplayErrorMessage)
+            }
+            if ($result.FailedCount -gt 0) { exit 1 }
+          } catch {
+            Write-Host ('::error::STEP EXCEPTION: ' + $_.Exception.ToString())
+            exit 1
+          }

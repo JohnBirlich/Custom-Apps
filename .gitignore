@@ -1,0 +1,16 @@
+# Логи приложения: содержат стектрейсы и данные о проверенных никах пользователя
+*.log
+
+# Локальные данные и артефакты
+accounts.dat
+username_history.json
+settings.json
+dist/
+*.zip
+
+# Редакторы и ОС
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store
