@@ -56,7 +56,9 @@ BeforeAll {
         'Get-CryptoRandomIndex',
         'New-SecurePassword',
         'Convert-ToNickToken',
-        'Get-ShuffledArray'
+        'Get-ShuffledArray',
+        'Export-AppSettings',
+        'Import-AppSettings'
     )
 
     foreach ($functionName in $functionNames) {
@@ -283,6 +285,96 @@ Describe 'New-SecurePassword' {
     It 'отклоняет длину вне диапазона 16-32' {
         { New-SecurePassword -Length 15 } | Should -Throw
         { New-SecurePassword -Length 33 } | Should -Throw
+    }
+}
+
+Describe 'Export-AppSettings и Import-AppSettings' {
+    BeforeAll {
+        $script:SettingsDirectory = Join-Path $TestDrive ('settings-' + [guid]::NewGuid().ToString('N'))
+        $null = [System.IO.Directory]::CreateDirectory($script:SettingsDirectory)
+        $script:SettingsFile = Join-Path $script:SettingsDirectory 'settings.json'
+        $script:SampleSettings = @{
+            AppVersion = '2.5.2'
+            Platform = 'Roblox'
+            Style = 'Английские'
+            Count = 150
+            MinLength = 3
+            MaxLength = 20
+            DelayMs = 2500
+            TimeoutMs = 15000
+            UseNumbers = $true
+            OnlyFree = $false
+            Categories = @('Киберпанк', 'Фэнтези')
+            WindowState = 'Normal'
+            WindowBounds = @{ X = 100; Y = 80; Width = 1240; Height = 900 }
+        }
+    }
+
+    It 'сохраняет настройки и читает их обратно без потерь' {
+        Export-AppSettings -Settings $script:SampleSettings -Path $script:SettingsFile
+        Test-Path -LiteralPath $script:SettingsFile | Should -BeTrue
+        $loaded = Import-AppSettings -Path $script:SettingsFile
+        $loaded['Platform'] | Should -Be 'Roblox'
+        $loaded['Style'] | Should -Be 'Английские'
+        [int]$loaded['Count'] | Should -Be 150
+        [int]$loaded['DelayMs'] | Should -Be 2500
+        [bool]$loaded['UseNumbers'] | Should -BeTrue
+        [bool]$loaded['OnlyFree'] | Should -BeFalse
+        @($loaded['Categories']).Count | Should -Be 2
+        @($loaded['Categories']) -contains 'Фэнтези' | Should -BeTrue
+        [int]$loaded['WindowBounds'].X | Should -Be 100
+        [int]$loaded['WindowBounds'].Width | Should -Be 1240
+    }
+
+    It 'пишет файл в UTF-8 с BOM, чтобы кириллица не ломалась в Windows PowerShell 5.1' {
+        $bytes = [System.IO.File]::ReadAllBytes($script:SettingsFile)
+        $bytes[0] | Should -Be 0xEF
+        $bytes[1] | Should -Be 0xBB
+        $bytes[2] | Should -Be 0xBF
+    }
+
+    It 'не оставляет временных файлов после записи' {
+        @(Get-ChildItem -LiteralPath $script:SettingsDirectory -Filter '*.tmp').Count | Should -Be 0
+    }
+
+    It 'перезапись существующего файла сохраняет валидный JSON' {
+        $changed = @{ Platform = 'GitHub'; Count = 40 }
+        Export-AppSettings -Settings $changed -Path $script:SettingsFile
+        $loaded = Import-AppSettings -Path $script:SettingsFile
+        $loaded['Platform'] | Should -Be 'GitHub'
+        [int]$loaded['Count'] | Should -Be 40
+        # Старые ключи не должны «протекать» из предыдущей версии файла.
+        $loaded.ContainsKey('DelayMs') | Should -BeFalse
+    }
+
+    It 'возвращает пустой набор для отсутствующего файла' {
+        $missing = Join-Path $script:SettingsDirectory 'no-such-settings.json'
+        $loaded = Import-AppSettings -Path $missing
+        $loaded.Count | Should -Be 0
+    }
+
+    It 'не падает на повреждённом файле настроек' {
+        $corrupt = Join-Path $script:SettingsDirectory 'corrupt.json'
+        [System.IO.File]::WriteAllText($corrupt, '{ "Platform": "Roblox", "Count": ')
+        $loaded = Import-AppSettings -Path $corrupt
+        $loaded.Count | Should -Be 0
+    }
+
+    It 'не падает на пустом файле настроек' {
+        $empty = Join-Path $script:SettingsDirectory 'empty.json'
+        [System.IO.File]::WriteAllText($empty, '   ')
+        (Import-AppSettings -Path $empty).Count | Should -Be 0
+    }
+
+    It 'корректно сохраняет набор с одной категорией' {
+        # ConvertTo-Json разворачивает массив из одного элемента в скаляр —
+        # Import-AppSettings не должен из-за этого ломаться.
+        $single = @{ Categories = @('Фэнтези') }
+        $file = Join-Path $script:SettingsDirectory 'single.json'
+        Export-AppSettings -Settings $single -Path $file
+        $loaded = Import-AppSettings -Path $file
+        @($loaded['Categories']).Count | Should -Be 1
+        @($loaded['Categories'])[0] | Should -Be 'Фэнтези'
     }
 }
 

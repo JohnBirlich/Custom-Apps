@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.5.1'
+$script:AppVersion = '2.5.2'
 
 # Журнал: предпочитаем папку скрипта, но если она недоступна для записи
 # (например, программа распакована в Program Files), уходим в профиль пользователя.
@@ -252,6 +252,7 @@ $script:Candidates = New-Object 'System.Collections.Generic.List[object]'
 $script:CandidateIndex = @{}
 $script:HistoryDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
 $script:HistoryPath = Join-Path $script:HistoryDirectory 'username_history.json'
+$script:SettingsPath = Join-Path $script:HistoryDirectory 'settings.json'
 $script:FreeHistory = @()
 $script:RetiredNames = @{}
 $script:HistoryDirty = $false
@@ -491,8 +492,28 @@ function New-AdvancedCandidatePool {
 $script:Form = New-Object System.Windows.Forms.Form
 $script:Form.Text = ('Universal Username Finder v{0}' -f $script:AppVersion)
 $script:Form.StartPosition = 'CenterScreen'
-$script:Form.Size = New-Object System.Drawing.Size(1480, 960)
-$script:Form.MinimumSize = New-Object System.Drawing.Size(1240, 910)
+# Размер окна и его минимум подгоняются под рабочую область экрана.
+# Фиксированный минимум 1240x910 на ноутбуках с экраном 1366x768 не помещался по высоте:
+# нижняя часть интерфейса оказывалась за пределами экрана, а уменьшить окно было нельзя.
+# На больших экранах значения остаются прежними — меняется только поведение на тесных.
+$designWindowSize = New-Object System.Drawing.Size(1480, 960)
+$designMinimumSize = New-Object System.Drawing.Size(1240, 910)
+try {
+    $workingArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $minimumWidth = [Math]::Min($designMinimumSize.Width, [Math]::Max(760, $workingArea.Width - 32))
+    $minimumHeight = [Math]::Min($designMinimumSize.Height, [Math]::Max(520, $workingArea.Height - 32))
+    $windowWidth = [Math]::Max($minimumWidth, [Math]::Min($designWindowSize.Width, $workingArea.Width))
+    $windowHeight = [Math]::Max($minimumHeight, [Math]::Min($designWindowSize.Height, $workingArea.Height))
+} catch {
+    # Если экран определить не удалось, остаются проектные значения.
+    $minimumWidth = $designMinimumSize.Width
+    $minimumHeight = $designMinimumSize.Height
+    $windowWidth = $designWindowSize.Width
+    $windowHeight = $designWindowSize.Height
+}
+# MinimumSize задаётся до Size: иначе WinForms поднимет размер окна обратно до минимума.
+$script:Form.MinimumSize = New-Object System.Drawing.Size($minimumWidth, $minimumHeight)
+$script:Form.Size = New-Object System.Drawing.Size($windowWidth, $windowHeight)
 $script:Form.BackColor = [System.Drawing.Color]::FromArgb(15, 19, 27)
 $script:Form.ForeColor = [System.Drawing.Color]::FromArgb(235, 240, 248)
 $script:Form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
@@ -684,9 +705,12 @@ $script:OnlyFreeCheck = New-CheckBox 'Показывать только своб
 Add-UiLabel 'Исключить слова/части ника (пример: xxx, test, 123)' 14 897 350 20 | Out-Null
 $script:ExcludeBox = New-TextBox 14 918 350 27 ''
 Add-UiLabel 'Пауза (мс)   •   Тайм-аут (мс)' 14 950 350 20 | Out-Null
-$script:DelayBox = New-NumberBox 14 971 145 900 15000 1000
+# Минимальная пауза ограничена снизу (1200 мс): слишком частые последовательные запросы
+# к одной платформе приводят к HTTP 429, временным блокировкам по IP и нарушают правила
+# использования сервисов. Предел задан в самом контроле, поэтому он виден пользователю.
+$script:DelayBox = New-NumberBox 14 971 145 1200 15000 1500
 $script:TimeoutBox = New-NumberBox 194 971 145 1000 30000 8000
-$script:ThreadsLabel = Add-UiLabel 'Потоки: 1 (рекомендуется для защиты от HTTP 429)' 14 1002 350 30
+$script:ThreadsLabel = Add-UiLabel 'Потоки: 1 • пауза не менее 1200 мс (защита от HTTP 429 и блокировок)' 14 1002 350 30
 
 $script:GenerateButton = Add-UiButton '✨ Сгенерировать и проверить' 14 1040 350 $true 37
 $script:StartButton = Add-UiButton '▶ Найти свободные' 14 1083 350 $true 37
@@ -1499,6 +1523,203 @@ function Flush-HistoryIfDue {
     if (([DateTime]::UtcNow - $script:HistoryDirtySince).TotalSeconds -ge $IntervalSeconds) { Save-UsernameHistory }
 }
 
+# --- Настройки приложения -------------------------------------------------------
+# Export-/Import- функции намеренно чистые (без обращений к контролам и к области
+# видимости скрипта): их можно тестировать без создания окон.
+
+function Export-AppSettings {
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Settings,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $directory = [System.IO.Path]::GetDirectoryName($fullPath)
+    if (-not [string]::IsNullOrWhiteSpace($directory)) { $null = [System.IO.Directory]::CreateDirectory($directory) }
+    $json = ConvertTo-Json -InputObject $Settings -Depth 5
+    if ([string]::IsNullOrWhiteSpace($json)) { $json = '{}' }
+    $fileName = [System.IO.Path]::GetFileName($fullPath)
+    $tempPath = [System.IO.Path]::Combine($directory, ($fileName + '.' + [guid]::NewGuid().ToString('N') + '.tmp'))
+    $bytes = (New-Object System.Text.UTF8Encoding -ArgumentList $true).GetBytes($json)
+    [System.IO.File]::WriteAllBytes($tempPath, $bytes)
+    try {
+        if ([System.IO.File]::Exists($fullPath)) {
+            [System.IO.File]::Replace($tempPath, $fullPath, $null)
+        } else {
+            [System.IO.File]::Move($tempPath, $fullPath)
+        }
+    } catch {
+        # Целевой файл мог быть заблокирован: пробуем простое перемещение поверх.
+        try { [System.IO.File]::Move($tempPath, $fullPath) } catch { throw }
+    } finally {
+        if ([System.IO.File]::Exists($tempPath)) { try { [System.IO.File]::Delete($tempPath) } catch { } }
+    }
+}
+
+function Import-AppSettings {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $result = @{}
+    if (-not (Test-Path -LiteralPath $Path)) { return $result }
+    try {
+        $json = [System.IO.File]::ReadAllText($Path)
+        if ([string]::IsNullOrWhiteSpace($json)) { return $result }
+        $data = $json | ConvertFrom-Json -ErrorAction Stop
+        if ($null -eq $data) { return $result }
+        foreach ($property in $data.PSObject.Properties) { $result[$property.Name] = $property.Value }
+    } catch {
+        # Повреждённые настройки не должны мешать запуску: возвращаем пустой набор.
+        return @{}
+    }
+    return $result
+}
+
+# --- Безопасное применение значений к контролам ---------------------------------
+# Каждое значение проверяется: выход за границы NumericUpDown и отсутствующий пункт
+# ComboBox раньше приводили к исключениям или к обнулению выбора.
+
+function Add-SettingValue {
+    param([hashtable]$Target, [string]$Key, [scriptblock]$Getter)
+    try { $Target[$Key] = & $Getter } catch { }
+}
+
+function Set-NumericFromSettings {
+    param($Control, $Value, [int]$Default)
+    if ($null -eq $Control) { return }
+    $number = $Default
+    try { if ($null -ne $Value) { $number = [int]$Value } } catch { $number = $Default }
+    $minimum = [int]$Control.Minimum
+    $maximum = [int]$Control.Maximum
+    if ($number -lt $minimum) { $number = $minimum }
+    if ($number -gt $maximum) { $number = $maximum }
+    $Control.Value = $number
+}
+
+function Set-ComboFromSettings {
+    param($Control, $Value)
+    if ($null -eq $Control -or $null -eq $Value) { return }
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) { return }
+    if ($Control.Items.Contains($text)) { $Control.SelectedItem = $text }
+}
+
+function Set-CheckFromSettings {
+    param($Control, $Value)
+    if ($null -eq $Control -or $null -eq $Value) { return }
+    try { $Control.Checked = [bool]$Value } catch { }
+}
+
+function Set-CheckedListFromSettings {
+    param($Control, $Values)
+    if ($null -eq $Control -or $null -eq $Values) { return }
+    $names = @($Values | ForEach-Object { [string]$_ } | Where-Object { $_ })
+    if ($names.Count -eq 0) { return }
+    for ($index = 0; $index -lt $Control.Items.Count; $index++) {
+        $item = [string]$Control.Items[$index]
+        $Control.SetItemChecked($index, ($names -contains $item))
+    }
+}
+
+function Get-AppSettingsFromUi {
+    $settings = @{}
+    Add-SettingValue $settings 'AppVersion' { $script:AppVersion }
+    Add-SettingValue $settings 'WindowState' { [string]$script:Form.WindowState }
+    Add-SettingValue $settings 'WindowBounds' {
+        $bounds = if ($script:Form.WindowState -eq 'Normal') { $script:Form.Bounds } else { $script:Form.RestoreBounds }
+        @{ X = [int]$bounds.X; Y = [int]$bounds.Y; Width = [int]$bounds.Width; Height = [int]$bounds.Height }
+    }
+    Add-SettingValue $settings 'Platform' { [string]$script:PlatformBox.SelectedItem }
+    Add-SettingValue $settings 'StatusFilter' { [string]$script:StatusFilterBox.SelectedItem }
+    Add-SettingValue $settings 'SortMode' { [string]$script:SortBox.SelectedItem }
+    Add-SettingValue $settings 'Style' { [string]$script:StyleBox.SelectedItem }
+    Add-SettingValue $settings 'Categories' { @($script:CategoryList.CheckedItems | ForEach-Object { [string]$_ }) }
+    Add-SettingValue $settings 'Count' { [int]$script:CountBox.Value }
+    Add-SettingValue $settings 'MinLength' { [int]$script:MinLengthBox.Value }
+    Add-SettingValue $settings 'MaxLength' { [int]$script:MaxLengthBox.Value }
+    Add-SettingValue $settings 'DelayMs' { [int]$script:DelayBox.Value }
+    Add-SettingValue $settings 'TimeoutMs' { [int]$script:TimeoutBox.Value }
+    Add-SettingValue $settings 'UseNumbers' { [bool]$script:NumbersCheck.Checked }
+    Add-SettingValue $settings 'UseUnderscore' { [bool]$script:UnderscoreCheck.Checked }
+    Add-SettingValue $settings 'OneWord' { [bool]$script:OneWordCheck.Checked }
+    Add-SettingValue $settings 'TwoWords' { [bool]$script:TwoWordsCheck.Checked }
+    Add-SettingValue $settings 'OnlyShort' { [bool]$script:ShortOnlyCheck.Checked }
+    Add-SettingValue $settings 'ExcludeChecked' { [bool]$script:ExcludeCheckedCheck.Checked }
+    Add-SettingValue $settings 'OnlyFree' { [bool]$script:OnlyFreeCheck.Checked }
+    return $settings
+}
+
+function Restore-AppSettingsToUi {
+    param([hashtable]$Settings)
+    if ($null -eq $Settings -or $Settings.Count -eq 0) { return }
+
+    # Геометрия окна: сохраняем только если окно попадает в границы текущего экрана,
+    # иначе после отключения второго монитора окно оказалось бы за пределами видимости.
+    if ($Settings.ContainsKey('WindowBounds')) {
+        try {
+            $raw = $Settings['WindowBounds']
+            $rect = New-Object System.Drawing.Rectangle([int]$raw.X, [int]$raw.Y, [int]$raw.Width, [int]$raw.Height)
+            if ($rect.Width -ge 400 -and $rect.Height -ge 300) {
+                $visible = $false
+                foreach ($screen in [System.Windows.Forms.Screen]::AllScreens) {
+                    if ($screen.WorkingArea.IntersectsWith($rect)) { $visible = $true; break }
+                }
+                if ($visible) {
+                    $script:Form.StartPosition = 'Manual'
+                    $script:Form.Bounds = $rect
+                }
+            }
+        } catch { }
+    }
+    if ($Settings.ContainsKey('WindowState')) {
+        try { $script:Form.WindowState = [System.Windows.Forms.FormWindowState]([string]$Settings['WindowState']) } catch { }
+    }
+
+    Set-ComboFromSettings $script:PlatformBox $Settings['Platform']
+    Set-ComboFromSettings $script:StatusFilterBox $Settings['StatusFilter']
+    Set-ComboFromSettings $script:SortBox $Settings['SortMode']
+    Set-ComboFromSettings $script:StyleBox $Settings['Style']
+    Set-CheckedListFromSettings $script:CategoryList $Settings['Categories']
+
+    Set-NumericFromSettings $script:CountBox $Settings['Count'] ([int]$script:CountBox.Value)
+    Set-NumericFromSettings $script:MinLengthBox $Settings['MinLength'] ([int]$script:MinLengthBox.Value)
+    Set-NumericFromSettings $script:MaxLengthBox $Settings['MaxLength'] ([int]$script:MaxLengthBox.Value)
+    Set-NumericFromSettings $script:DelayBox $Settings['DelayMs'] ([int]$script:DelayBox.Value)
+    Set-NumericFromSettings $script:TimeoutBox $Settings['TimeoutMs'] ([int]$script:TimeoutBox.Value)
+
+    Set-CheckFromSettings $script:NumbersCheck $Settings['UseNumbers']
+    Set-CheckFromSettings $script:UnderscoreCheck $Settings['UseUnderscore']
+    Set-CheckFromSettings $script:OneWordCheck $Settings['OneWord']
+    Set-CheckFromSettings $script:TwoWordsCheck $Settings['TwoWords']
+    Set-CheckFromSettings $script:ShortOnlyCheck $Settings['OnlyShort']
+    Set-CheckFromSettings $script:ExcludeCheckedCheck $Settings['ExcludeChecked']
+    Set-CheckFromSettings $script:OnlyFreeCheck $Settings['OnlyFree']
+
+    # Минимальная длина не должна превышать максимальную после восстановления.
+    try {
+        if ([int]$script:MinLengthBox.Value -gt [int]$script:MaxLengthBox.Value) {
+            $script:MinLengthBox.Value = $script:MaxLengthBox.Value
+        }
+    } catch { }
+}
+
+function Save-AppSettings {
+    try {
+        Export-AppSettings -Settings (Get-AppSettingsFromUi) -Path $script:SettingsPath
+    } catch { Write-AppLog ('Не удалось сохранить настройки: ' + $_.Exception.Message) }
+}
+
+function Restore-AppSettings {
+    try {
+        $settings = Import-AppSettings -Path $script:SettingsPath
+        if ($settings.Count -eq 0) {
+            if (Test-Path -LiteralPath $script:SettingsPath) {
+                Write-AppLog 'Файл настроек повреждён или пуст; применены значения по умолчанию.'
+            }
+            return
+        }
+        Restore-AppSettingsToUi -Settings $settings
+        Add-Diagnostic ('Восстановлены настройки предыдущего сеанса (платформа: {0}).' -f [string]$script:PlatformBox.SelectedItem)
+    } catch { Write-AppLog ('Не удалось восстановить настройки: ' + $_.Exception.Message) }
+}
+
 function Update-FreeHistoryFromCandidate {
     param($Candidate)
     if (-not $Candidate) { return }
@@ -1857,7 +2078,11 @@ param($Candidates, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform, $AppV
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.5.1' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.5.2' }
+# Пределы задаются и в воркере, а не только в интерфейсе: значения приходят аргументами,
+# поэтому защита от слишком частых запросов не должна зависеть от состояния контролов.
+$DelayMs = [Math]::Max(1200,[int]$DelayMs)
+$TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $total = @($Candidates).Count
 $done = 0
 $consecutiveErrors = 0
@@ -2689,6 +2914,11 @@ $script:HistoryButton.Add_Click({ Open-FreeHistoryWindow })
 $script:HistoryButton.Text = "Свободные ники ($($script:FreeHistory.Count))"
 $script:AccountButton.Add_Click({ Open-AccountTools })
 
+# Настройки предыдущего сеанса восстанавливаются после создания всех контролов
+# и до показа окна, чтобы пользователь не видел «прыжка» значений.
+Restore-AppSettings
+try { if ($script:OnlyFreeCheck.Checked) { Refresh-FreeHistoryList } } catch { }
+Update-ResultGrid
 Add-Diagnostic ('Universal Username Finder v{0} запущен. Генерация автоматически запускает последовательную проверку выбранной платформы.' -f $script:AppVersion)
 
 $script:Form.Add_FormClosing({
@@ -2699,6 +2929,7 @@ $script:Form.Add_FormClosing({
     try { if ($script:PasswordRng) { $script:PasswordRng.Dispose() } } catch { }
     # История пишется с задержкой (дебаунс), поэтому при закрытии сохраняем принудительно.
     try { if ($script:HistoryDirty) { Save-UsernameHistory } } catch { }
+    try { Save-AppSettings } catch { }
     try {
         if ($script:SingleInstanceMutex) {
             try { [void]$script:SingleInstanceMutex.ReleaseMutex() } catch { }
