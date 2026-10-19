@@ -187,8 +187,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           try {
-            # Windows PowerShell 5.1 по умолчанию не использует TLS 1.2, а PSGallery
-            # требует именно его; без этой строки установка модуля не работает.
+            # Windows PowerShell 5.1 does not enable TLS 1.2 by default, and PSGallery
+            # requires it; without this line module installation fails in 5.1.
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             try { Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue } catch { }
             $available = Get-Module -ListAvailable -Name Pester | Where-Object { $_.Version -ge [version]'5.0.0' } | Select-Object -First 1
