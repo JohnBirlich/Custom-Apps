@@ -8,6 +8,10 @@ on:
 # Сообщения шагов намеренно ASCII: inline-скрипт шага Windows PowerShell 5.1 может
 # читаться как ANSI, и кириллица в нём превращается в нечитаемые символы.
 # Ошибки дублируются командами ::error:: — их видно в аннотациях прогона через API.
+#
+# Модули PSGallery устанавливаются с повторными попытками: репозиторий периодически
+# отвечает «No match was found for the specified search criteria», что не связано
+# с проверяемым кодом.
 jobs:
   syntax:
     name: Syntax (Windows PowerShell 5.1 and PowerShell 7)
@@ -15,6 +19,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Целевая среда приложения — Windows PowerShell 5.1, поэтому она проверяется
+      # отдельно: синтаксис, допустимый в PowerShell 7, не всегда разбирается в 5.1.
       - name: Parse with Windows PowerShell 5.1 (target runtime)
         shell: powershell
         run: |
@@ -94,13 +100,34 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Линтер — вспомогательная проверка: если PSGallery недоступен после всех
+      # попыток, шаг предупреждает, но не роняет сборку (это не дефект кода).
       - name: PSScriptAnalyzer
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           try {
-            Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -ErrorAction Stop
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            try { Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue } catch { }
+            $available = Get-Module -ListAvailable -Name PSScriptAnalyzer | Select-Object -First 1
+            if (-not $available) {
+              foreach ($attempt in 1..4) {
+                try {
+                  Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -Repository PSGallery -AllowClobber -ErrorAction Stop
+                  break
+                } catch {
+                  Write-Host ('Install attempt ' + $attempt + ' failed: ' + $_.Exception.Message)
+                  Start-Sleep -Seconds (15 * $attempt)
+                }
+              }
+              $available = Get-Module -ListAvailable -Name PSScriptAnalyzer | Select-Object -First 1
+            }
+            if (-not $available) {
+              Write-Host '::warning::PSScriptAnalyzer is unavailable (PSGallery did not respond); analysis skipped.'
+              exit 0
+            }
             Import-Module PSScriptAnalyzer
+            Write-Host ('PSScriptAnalyzer version: ' + (Get-Module PSScriptAnalyzer).Version.ToString())
             $settings = Join-Path $PWD 'ScriptAnalyzerSettings.psd1'
             $target = Join-Path $PWD 'UniversalUsernameFinder.ps1'
             $results = @(Invoke-ScriptAnalyzer -Path $target -Settings $settings)
@@ -124,8 +151,22 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           try {
-            Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser -ErrorAction Stop
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            try { Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue } catch { }
+            $available = Get-Module -ListAvailable -Name Pester | Where-Object { $_.Version -ge [version]'5.0.0' } | Select-Object -First 1
+            if (-not $available) {
+              foreach ($attempt in 1..4) {
+                try {
+                  Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser -Repository PSGallery -AllowClobber -ErrorAction Stop
+                  break
+                } catch {
+                  Write-Host ('Install attempt ' + $attempt + ' failed: ' + $_.Exception.Message)
+                  Start-Sleep -Seconds (15 * $attempt)
+                }
+              }
+            }
             Import-Module Pester -MinimumVersion 5.0.0
+            Write-Host ('Pester version: ' + (Get-Module Pester).Version.ToString())
             $config = New-PesterConfiguration
             $config.Run.Path = './tests'
             $config.Output.Verbosity = 'Detailed'
@@ -146,9 +187,24 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           try {
+            # Windows PowerShell 5.1 по умолчанию не использует TLS 1.2, а PSGallery
+            # требует именно его; без этой строки установка модуля не работает.
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser -ErrorAction Stop
+            try { Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue } catch { }
+            $available = Get-Module -ListAvailable -Name Pester | Where-Object { $_.Version -ge [version]'5.0.0' } | Select-Object -First 1
+            if (-not $available) {
+              foreach ($attempt in 1..4) {
+                try {
+                  Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser -Repository PSGallery -AllowClobber -ErrorAction Stop
+                  break
+                } catch {
+                  Write-Host ('Install attempt ' + $attempt + ' failed: ' + $_.Exception.Message)
+                  Start-Sleep -Seconds (15 * $attempt)
+                }
+              }
+            }
             Import-Module Pester -MinimumVersion 5.0.0
+            Write-Host ('Pester version: ' + (Get-Module Pester).Version.ToString())
             $config = New-PesterConfiguration
             $config.Run.Path = './tests'
             $config.Output.Verbosity = 'Detailed'
