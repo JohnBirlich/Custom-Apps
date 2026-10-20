@@ -222,7 +222,7 @@ Describe 'Структура скрипта' {
     }
 
     It 'лимит количества ников за генерацию поднят до 2000' {
-        $global:UufMainText.Contains('$script:CountBox = New-NumberBox 14 714 90 5 2000 40') | Should -BeTrue
+        $global:UufMainText.Contains('$script:CountBox = New-NumberBox 14 624 90 5 2000 40') | Should -BeTrue
     }
 
     It 'колонка «СТРУКТУРА» убрана из таблицы, но свойство Structure сохранено' {
@@ -880,7 +880,7 @@ Describe 'Интерфейс и поведение версии 2.5.5' {
     }
 
     It 'число потоков задаётся в интерфейсе и ограничено восемью' {
-        $global:UufMainText.Contains('$script:ThreadsBox = New-NumberBox 254 1000 110 1 8 2') | Should -BeTrue
+        $global:UufMainText.Contains('$script:ThreadsBox = New-NumberBox 254 910 110 1 8 2') | Should -BeTrue
         $global:UufMainText.Contains('Рекомендуется 2–4 потока') | Should -BeTrue
         $global:UufMainText.Contains('if ($threadCount -gt 8) { $threadCount = 8 }') | Should -BeTrue
     }
@@ -958,10 +958,10 @@ Describe 'Платформы, домены и интерфейс версии 2.
     }
     It 'стандартный набор выставлен при запуске' {
         $global:UufMainText.Contains('$script:StyleBox.SelectedItem = ' + [char]39 + '— без стиля —' + [char]39) | Should -BeTrue
-        $global:UufMainText.Contains('$script:MaxLengthBox = New-NumberBox 216 714 80 1 64 25') | Should -BeTrue
+        $global:UufMainText.Contains('$script:MaxLengthBox = New-NumberBox 216 624 80 1 64 25') | Should -BeTrue
         $global:UufMainText.Contains('$script:RandomCharsCheck = New-CheckBox ' + [char]39 + 'Случайные символы' + [char]39 + ' 14 803 180 $true') | Should -BeTrue
         $global:UufMainText.Contains('$script:TwoWordsCheck = New-CheckBox ' + [char]39 + 'Два осмысленных слова' + [char]39 + ' 194 683 170 $false') | Should -BeTrue
-        $global:UufMainText.Contains('$script:DelayBox = New-NumberBox 14 1000 110 500 15000 700') | Should -BeTrue
+        $global:UufMainText.Contains('$script:DelayBox = New-NumberBox 14 910 110 500 15000 700') | Should -BeTrue
     }
     It 'интерфейс тёмный v2.5.5, стандартная рамка, без анимаций и кастомного заголовка' {
         $global:UufMainText.Contains('$script:Form.FormBorderStyle') | Should -BeFalse
@@ -993,5 +993,37 @@ Describe 'Платформы, домены и интерфейс версии 2.
     It 'в коде не осталось пояснительных комментариев, только маркеры блоков' {
         $longComments = @($global:UufFullText -split "`n" | Where-Object { $_ -match '^\s*#' -and $_ -notmatch '^\s*#\s*---' })
         $longComments.Count | Should -Be 0
+    }
+}
+
+Describe 'Изменения версии 2.8.0' {
+    It 'логотип и иконка встроены в скрипт и подхватываются без папки assets' {
+        $global:UufMainText.Contains('$script:AppLogoB64 = ') | Should -BeTrue
+        $global:UufMainText.Contains('$script:AppIconB64 = ') | Should -BeTrue
+        $global:UufMainText.Contains('[System.Convert]::FromBase64String($script:AppIconB64)') | Should -BeTrue
+        $global:UufMainText.Contains('function Set-WindowChrome') | Should -BeTrue
+    }
+    It 'история свободных ников фильтруется по выбранным платформам' {
+        $global:UufMainText.Contains('$script:HistoryPlatformList = New-Object System.Windows.Forms.CheckedListBox') | Should -BeTrue
+        $global:UufMainText.Contains('$platformFilter -contains [string]$_.Platform') | Should -BeTrue
+        $global:UufMainText.Contains('По дате генерации') | Should -BeTrue
+    }
+    It 'правила формата почты соответствуют официальным требованиям' {
+        Test-UsernameFormat -Username '2move_x' -Platform 'Mail.ru' | Should -BeTrue
+        Test-UsernameFormat -Username 'ivan.petrov-1' -Platform 'Mail.ru' | Should -BeTrue
+        Test-UsernameFormat -Username 'bad..name' -Platform 'Mail.ru' | Should -BeFalse
+        Test-UsernameFormat -Username '_lead' -Platform 'Mail.ru' | Should -BeFalse
+        Test-UsernameFormat -Username 'ab.cd' -Platform 'Google' | Should -BeFalse
+        Test-UsernameFormat -Username 'ab.cd.12' -Platform 'Google' | Should -BeTrue
+        (Get-PlatformLengthRule -Platform 'Mail.ru').Min | Should -Be 5
+    }
+    It 'подсказка формата платформы показывается пользователю' {
+        $global:UufMainText.Contains('function Get-PlatformFormatHint') | Should -BeTrue
+        $global:UufMainText.Contains('$script:PlatformFormatHints = @{') | Should -BeTrue
+    }
+    It 'интерфейс собирается в легальной геометрии без наложений' {
+        $global:UufMainText.Contains('$script:CountBox = New-NumberBox 14 624 90 5 2000 40') | Should -BeTrue
+        $global:UufMainText.Contains('$designWindowSize = New-Object System.Drawing.Size(1480, 1040)') | Should -BeTrue
+        $global:UufMainText.Contains('$script:CategoryList.Size = New-Object System.Drawing.Size(350, 306)') | Should -BeTrue
     }
 }

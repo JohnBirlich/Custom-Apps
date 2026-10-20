@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.7.0'
+$script:AppVersion = '2.8.0'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -484,7 +484,7 @@ function Test-SupportedPlatform {
 $script:PlatformLengthRules = @{
     'Roblox'    = @{ Min = 3; Max = 20 }
     'Google'    = @{ Min = 6; Max = 30 }
-    'Mail.ru'   = @{ Min = 4; Max = 31 }
+    'Mail.ru'   = @{ Min = 5; Max = 31 }
     'VK'        = @{ Min = 5; Max = 32 }
     'Discord'   = @{ Min = 2; Max = 32 }
     'Outlook'   = @{ Min = 3; Max = 64 }
@@ -504,10 +504,29 @@ function Get-PlatformLengthRule {
     return [pscustomobject]@{ Min = 3; Max = 32 }
 }
 
+$script:PlatformFormatHints = @{
+    'Roblox'   = '3–20 символов: латиница, цифры и «_», без «_» в начале и конце'
+    'Google'   = '6–30 символов: латиница, цифры и точки; точка не в начале, не в конце и не подряд — Gmail игнорирует точки, «a.b» и «ab» это один адрес'
+    'Mail.ru'  = '5–31 символ: латиница, цифры и «. _ -»; спецсимволы не в начале, не в конце и не идут подряд'
+    'VK'       = '5–32 символа: латиница, цифры, точка и «_», без повторов подряд'
+    'Discord'  = '2–32 символа: латиница, цифры, точка и «_»; зарезервированные имена запрещены'
+    'Outlook'  = '3–64 символа: латиница, цифры, «. _ -»; начинается с буквы или цифры, спецсимволы не подряд и не в конце'
+    'Telegram' = '5–32 символа: начинается с буквы, далее латиница, цифры и «_»'
+    'Steam'    = '3–30 символов: начинается с буквы или цифры, далее латиница, цифры, «_» и «-»'
+    'GitHub'   = '1–39 символов: латиница, цифры и «-», без «--» и без «-» по краям'
+    'YouTube'  = '3–30 символов: латиница, цифры, точка, «_» и «-»'
+}
+
 $script:PlatformDomains = @{
     'Google'  = 'gmail.com'
     'Mail.ru' = 'mail.ru'
     'Outlook' = 'outlook.com'
+}
+
+function Get-PlatformFormatHint {
+    param([string]$Platform)
+    if ($script:PlatformFormatHints.ContainsKey($Platform)) { return [string]$script:PlatformFormatHints[$Platform] }
+    return 'уточните правила на странице регистрации платформы'
 }
 
 function Get-PlatformDomain {
@@ -529,9 +548,9 @@ function Test-UsernameFormat {
     switch ($Platform) {
         'Roblox' { return (Test-RobloxUsernameFormat $Username) }
         'Google' { return ($Username.Length -ge 6 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9.]+$' -and $Username -notmatch '(^\.|\.$|\.\.)') }
-        'Mail.ru' { return ($Username.Length -ge 4 -and $Username.Length -le 31 -and $Username -match '^[A-Za-z][A-Za-z0-9._-]*$' -and $Username -notmatch '([._-]$|\.\.)') }
+        'Mail.ru' { return ($Username.Length -ge 5 -and $Username.Length -le 31 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]$' -and $Username -notmatch '[._-]{2}') }
         'VK' { return ($Username.Length -ge 5 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9._]+$' -and $Username -notmatch '(^[._]|[._]$|\.\.)' -and $Username -notmatch '^\d+$') }
-        'Outlook' { return ($Username.Length -ge 3 -and $Username.Length -le 64 -and $Username -match '^[A-Za-z][A-Za-z0-9._-]*$' -and $Username -notmatch '([._-]$|\.\.)') }
+        'Outlook' { return ($Username.Length -ge 3 -and $Username.Length -le 64 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]?$' -and $Username -notmatch '([._-]$|[._-]{2})') }
         'GitHub' { return ($Username.Length -ge 1 -and $Username.Length -le 39 -and $Username -match '^(?!-)(?!.*--)[A-Za-z0-9-]+(?<!-)$') }
 # --- Discord Api
         'Discord' {
@@ -1130,7 +1149,7 @@ function New-AdvancedCandidatePool {
 $script:Form = New-Object System.Windows.Forms.Form
 $script:Form.Text = ('Universal Username Finder v{0}' -f $script:AppVersion)
 $script:Form.StartPosition = 'CenterScreen'
-$designWindowSize = New-Object System.Drawing.Size(1480, 1010)
+$designWindowSize = New-Object System.Drawing.Size(1480, 1040)
 $designMinimumSize = New-Object System.Drawing.Size(1240, 960)
 $minimumWidth = 1240
 $minimumHeight = 960
@@ -1156,6 +1175,8 @@ $script:Form.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $script:Form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $script:AppLogoImage = $null
 $script:AppIconCached = $null
+$script:AppLogoB64 = 'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAMAAADVRocKAAABgFBMVEWbnaNX2vckNFgatOWmtsai2uMDLsM/RVQhXugo4flFXoBCX8hAl9YHBw8OERsRFiIMR8sJZ80Id84JVc8KhtIFOckLR5EIRrUKOYoIWK0QJ1EFNrMJKW0PN3ECK7YPZLbq/P4RVZUTlNjV9/0Kh+grZ9YtmeQqZa0odtIrh9UGKIorV5APWOYoWK0qVtGt1fK05PkaJTQRRXgOZ+0OdugOl+wxdeNuqewCHFEsR21GSVJOeNJPtOrF6fpWXGhQpOtueIklKDArmdovotxMaY5GatBqa3JutOt0x/GRyvLHxcjO2+YaNlEmNUgqR4g5VHZTdq9Nled0dHpmidpsmNAOcrokS8wqZuYzhuU3qOVPhLOSq8iX2ParxusDG2cKSu8LpN0ydrZEe+ZQg9VPiuN6lLO2tbgKqeUZyvc4OD0mSKUyZJJTZXxW5v9ui6+KipGVreuBuO2pq7DW1dfr6OgADSMBPuQZ0/YvxPNRUllBaqBYcY5Mq9x+g45to81o2Ph0Y3ojAAAAgHRSTlP//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////xUHpOoAAAZbSURBVHja7Zj3U9tKFIVFyuvWalf2aiVLkeRecAODMcb03nsnLwRI773nX393ZZOYyWAL8TLvh+c7ZsAz6Hw65+6uViv4fnIJbUAb0Ab8zwBiY/3rgDOSF4AIbu8cfqE+TdN1XdOQ2GDnsoC6ioh0pijZytra2lFl4oEODHd5Ce7kNVCXpGz2z4nK2vqzg4NnE0xz1xHBTVMRkyUpAHXDqeDmxNqz400DuSEILvS1TLQykQ2c1i8cEtjczCpuTAit9Y1MZf2opv/mb6g3dSsBKeiCILSMx4gel27zgKSt25XK8vJypbcTvgV5VkBALQhCqzlFEyul3k4J5NeWl67ofJiWPxxtBSTHRWuC0FQfiQZx9KWtyniZBWEkQSnMiN/u7JQcAmpBEJrraxj0sST1ZhYfZLObUq2yGUY5IQg5pUSELgr4ro/U7aljrASjdHEiC8qyLDvDVZJYKtrtEHhIzTwIzforGompIYKDGZaZcG5dlmqEYFAKpqKdnbzXPCR0EUCDPjKHppNEiS5morVsQN6ZcQACwm/dMmdp3gFGcjrmVxPpB1EpGu2VA1zd0ce9CaykWHe3BCmxphkJ5+sjpA4N+Im6yyD+rTqAVwBHMU5Iyk0ZCGCh0MzCuQC4RiNjoyE1sahAMNwBT4d/JIyDSkJRGFiAqJq3uRmgyz866lcPU9Jp4ePS89I2gJRapXCxW1aCBnfrAYDs0NgoNheDdXm5VA1X81Wruu3MNkWRU0qxKMtBilADoQXgTAvGxkbVQ70efeeM9TwBwyeZs2KS40JWUpEilikteADABQVzZ8wvx1MBZ3TKM9a2VP8rjGHGYSLLqWKEYACIngCaOTYKl6f4/JWlIWtF6s2Fq6XcCg5PcQB8GIlEALAgnm9BODchAPyVxBzACd35nFysWjM5yyrJM3ksY3CAGe6JEErnPQLUJADYDafB29aQNAU/MnRAngoTTDCWCY33RDDz4oD/v0YToMJg3QELK1YE53n2M1ZELgEA9LEDMJl9FiC6dsBME5M6YChcJOEcxJ4H8Zk8B0AxAKjMLiBvAJ2aakIJOk0esiLFMETvD+8TUp0mnGBiFu2J0EsADFUtZoISjyNmxfC+NR3LW/meaStGCPET02SJHj+jNkLnT7UmgIKuU4XEHQAm1X0M6tb+tBW2YAn0wwebNBkhjHaJ7h00dhnpfYziBDyHYUziAWsAEz6sYgMxUA+FgGDGk9ACdV70FBEAbuqMJlXeY7Awbe2DcqwjRJzbh+pR15OEMrUguo/o7DjlBIJhV8oBZCAf5jXg5A/6d/3xA4K/tUB0F1HjWoGMm9AGWPg5gcvGBgZ2Qo44/Ny9p+49J6rRPKGmyzVY0JkeN2Hd5G2uVy0e/617oXgVEvphDInuH5mwqwYASyqNBK4fAv2375SDKT8YMETPAD6ZdarbEJKqOmMVsqnd/923j9UnuQjpsn8wILrdVTiXGQalumo6AH77cO/+UCh09ffHZnwu5re7zPnmBppuW3hIi0baNuyMopqngFDo1r2Or2p6bqdno8vuaqHfAsBDMjKwE02DBacD/tCtd4+vf6Ifcjt+Qm2K0IUBDVt3fqFOaTpNafzQUR+72tHx9ZNKT3I7ZMMGfbF5B1oDYHun2EAw0rujsVCoB6aBGT+B8bNhUttc8rUy0HR3fUpQqWEYumY83F1f/7K+t3fty5Fpgyl7+Ynv7KPGE4A/2qihaVpfX59mlMvlLihbNQ8fFsbHF5DoAXDmUMIZSzpjDDxwRp9uUBOeNw8fId+v6eVx5OEF5Oyph3OHSGMqX1NNmA5FglUDjUyuXklvpIW91yLy/o72vRGcYVAVCuJyvvY/2iC7Lz+/OPFd7i2zkVE/FKmtU4921aVVYe799WEfujTgW8O/lYg+fhzu943Mzg7OLdUJ3l7EzykglIXBEbH/pbA6N++7+Jt+SwQQhmeBMDm7KuSQz8NZhQvC59l+ET29M3hnzxOgFQIIwuyC7/7w0/7ZYZ8nQMtOaNfujPjuTw73z5V9ohdAK4Jv4eULaPTq5OQc8nwo2JxQfvUUof7h/hfnheTu1PF8im/81SoaeT+49MflD2ZP53H9DLV+tPn6yatJVLg/rv2ko2XRh07uTA4Oln/i2TVaGh+cF9un721AG9AGtAFtQBvQBrQB/zHgH3+DfXu0Vi7vAAAAAElFTkSuQmCC'
+$script:AppIconB64 = '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CP8SCQf/EggH/xEIB/8QBwb/EAcG/w8GBv8OBQX/DQUF/wsEBf8LBAT/CQME/wkDBP8LBAX/DAUF/w0FBf8PBgb/EAcH/xAIB/8RCAf/EgkI/xMJCP8TCgj/FAoJ/xQKCf8VCgn/FQoJ/xQKCf8UCwn/FQsJ/xQKCf8UCgn/FAoJ/xMKCP8TCQj/EgkI/xEIB/8RCAf/EAcH/w8HBv8OBgX/DAUF/wsEBf8KBAT/CgQE/wsFBf8MBQX/DgYG/w8HBv8QCAf/EQkI/xIJCP8TCgj/EwoI/xQLCf8VCwn/FQsJ/xULCf8WDAr/FgwJ/xYMCv8VCwr/FQsK/xULCv8UCwr/FQwK/xYNC/8VCwr/EwoI/xIJCP8RCAf/DwcG/w4HBv8NBgb/DAUF/woEBP8LBAX/CwUF/w0GBv8OBwb/EAgH/xEIB/8SCQj/EwoJ/xQLCf8UCwn/FQwK/xYMCv8XDQr/Fw0K/xgNCv8XDQv/Fw0K/xcNCv8VDAr/FQwK/xQMCv8QCQj/CQAA/w4GBv8SCgn/EwoI/xEJCP8QCAf/DwcG/w0GBv8MBQX/CwQF/wsEBf8MBQb/DgYG/w8HB/8QCAf/EQkI/xIKCP8UCwn/FQwK/xYNCv8XDQr/GA4L/xgOC/8ZDgz/GQ8M/xkODP8ZDwv/GQ4L/xgOC/8YDgv/FAsJ/xYLB/9dTED/Oykd/xQJBv8VDAr/EwoJ/xEJCP8QBwf/DgcG/w0FBv8LBQX/DAUF/w0GBv8OBwb/EAgH/xEJCP8TCgn/EwsJ/xUMCv8XDQv/GA4M/xkPDP8aEAz/GhAN/xoQDf8bEA3/GxAN/xsQDf8bEA3/GxAN/xwSD/8TBgL/gHFn/15ZWv9tXlT/Oyog/w8HBv8WDAr/EgoJ/xEJCP8PBwf/DQYG/wwFBf8MBQX/DQYG/w4HB/8QCAj/EgoI/xMLCf8VDAr/Fw0L/xgODP8ZDwz/GhAN/xsRDv8cEQ7/HBEO/x4SDv8eEg7/HhIO/x4SDv8eExD/EgYC/2pbUv9jXl3/WlNT/41+dP8fFBD/FQwK/xUMCv8TCwr/EQkI/xAIB/8OBwb/DAUG/wwFBv8NBwb/DwgH/xEJCP8TCwn/FAwK/xYNC/8YDwz/GRAN/xsRDv8cEQ7/HhIP/x8TD/8bEg//FhAP/xQOEP8VDxD/GxMR/xsOCf9SQTj/YF1e/2Ng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'
 $script:UufDwmAvailable = $false
 try {
     $null = Add-Type -TypeDefinition @'
@@ -1207,6 +1228,20 @@ try {
     $uufIcoPath = [System.IO.Path]::Combine($assetsDirectory, 'uuf.ico')
     if ([System.IO.File]::Exists($uufIcoPath)) { $script:AppIconCached = New-Object System.Drawing.Icon($uufIcoPath) }
 } catch { }
+if ((-not $script:AppLogoImage) -and $script:AppLogoB64) {
+    try {
+        $logoMemoryStream = New-Object System.IO.MemoryStream -ArgumentList @(,[System.Convert]::FromBase64String($script:AppLogoB64))
+        $script:AppLogoStream = $logoMemoryStream
+        $script:AppLogoImage = [System.Drawing.Image]::FromStream($logoMemoryStream)
+    } catch { }
+}
+if ((-not $script:AppIconCached) -and $script:AppIconB64) {
+    try {
+        $iconMemoryStream = New-Object System.IO.MemoryStream -ArgumentList @(,[System.Convert]::FromBase64String($script:AppIconB64))
+        $script:AppIconStream = $iconMemoryStream
+        $script:AppIconCached = New-Object System.Drawing.Icon -ArgumentList $iconMemoryStream
+    } catch { }
+}
 Set-WindowChrome -Window $script:Form
 
 $header = New-Object System.Windows.Forms.Panel
@@ -1221,7 +1256,7 @@ $title.Text = ('UNIVERSAL USERNAME FINDER  •  v{0}' -f $script:AppVersion)
 $title.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 19, [System.Drawing.FontStyle]::Bold)
 $title.ForeColor = [System.Drawing.Color]::FromArgb(112,164,255)
 $title.AutoSize = $true
-$title.Location = New-Object System.Drawing.Point(22, 12)
+$title.Location = New-Object System.Drawing.Point(78, 12)
 $header.Controls.Add($title)
 
 $subtitle = New-Object System.Windows.Forms.Label
@@ -1229,7 +1264,7 @@ $subtitle.Text = 'Автоматическая генерация и прове�
 $subtitle.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $subtitle.ForeColor = [System.Drawing.Color]::FromArgb(177,188,207)
 $subtitle.AutoSize = $true
-$subtitle.Location = New-Object System.Drawing.Point(25, 48)
+$subtitle.Location = New-Object System.Drawing.Point(78, 48)
 $header.Controls.Add($subtitle)
 
 $script:ApiDocsButton = New-Object System.Windows.Forms.Button
@@ -1244,7 +1279,7 @@ $script:ApiDocsButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $header.Controls.Add($script:ApiDocsButton)
 if ($script:AppLogoImage) {
     $headerLogo = New-Object System.Windows.Forms.PictureBox
-    $headerLogo.Location = New-Object System.Drawing.Point(1414, 14)
+    $headerLogo.Location = New-Object System.Drawing.Point(16, 14)
     $headerLogo.Size = New-Object System.Drawing.Size(48, 48)
     $headerLogo.SizeMode = 'Zoom'
     $headerLogo.BackColor = [System.Drawing.Color]::Transparent
@@ -1379,7 +1414,7 @@ function New-NumberBox {
 Add-UiLabel 'ЕДИНЫЙ ВЫБОР КАТЕГОРИЙ НИКНЕЙМОВ' 14 12 355 22 | Out-Null
 $script:CategoryList = New-Object System.Windows.Forms.CheckedListBox
 $script:CategoryList.Location = New-Object System.Drawing.Point(14, 36)
-$script:CategoryList.Size = New-Object System.Drawing.Size(350, 390)
+$script:CategoryList.Size = New-Object System.Drawing.Size(350, 306)
 $script:CategoryList.CheckOnClick = $true
 $script:CategoryList.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
 $script:CategoryList.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
@@ -1408,7 +1443,7 @@ $script:UncheckAllCategoriesButton.Add_Click({
 
 Add-UiLabel 'Игровой стиль' 14 372 150 22 | Out-Null
 $script:StyleBox = New-Object System.Windows.Forms.ComboBox
-$script:StyleBox.Location = New-Object System.Drawing.Point(14,486)
+$script:StyleBox.Location = New-Object System.Drawing.Point(14,396)
 $script:StyleBox.Size = New-Object System.Drawing.Size(350,27)
 $script:StyleBox.DropDownStyle = 'DropDownList'
 $script:StyleBox.BackColor = [System.Drawing.Color]::FromArgb(32,41,56)
@@ -1418,19 +1453,19 @@ $script:StyleBox.SelectedItem = '— без стиля —'
 $left.Controls.Add($script:StyleBox)
 
 Add-UiLabel 'Свои слова через запятую' 14 431 350 22 | Out-Null
-$script:CustomBox = New-TextBox 14 544 350 27 'Pixel, Void, Storm'
+$script:CustomBox = New-TextBox 14 454 350 27 'Pixel, Void, Storm'
 Add-UiLabel 'Ручные ники для проверки (каждый с новой строки или через запятую)' 14 489 350 35 | Out-Null
-$script:ManualNickBox = New-TextBox 14 602 350 60 ''
+$script:ManualNickBox = New-TextBox 14 512 350 60 ''
 $script:ManualNickBox.Multiline = $true
 $script:ManualNickBox.ScrollBars = 'Vertical'
 
 Add-UiLabel 'НАСТРОЙКИ ГЕНЕРАЦИИ' 14 581 350 22 | Out-Null
 Add-UiLabel 'Количество' 14 605 90 18 | Out-Null
-$script:CountBox = New-NumberBox 14 714 90 5 2000 40
+$script:CountBox = New-NumberBox 14 624 90 5 2000 40
 Add-UiLabel 'Мин. длина' 120 605 90 18 | Out-Null
-$script:MinLengthBox = New-NumberBox 120 714 80 1 64 3
+$script:MinLengthBox = New-NumberBox 120 624 80 1 64 3
 Add-UiLabel 'Макс. длина' 216 605 100 18 | Out-Null
-$script:MaxLengthBox = New-NumberBox 216 714 80 1 64 25
+$script:MaxLengthBox = New-NumberBox 216 624 80 1 64 25
 
 $script:NumbersCheck = New-CheckBox 'Использовать цифры' 14 659 170 $false
 $script:UnderscoreCheck = New-CheckBox 'Разделитель _' 194 659 170 $false
@@ -1447,13 +1482,13 @@ $script:OrderedCheck = New-CheckBox 'Генерация по порядку' 194
 $script:RandomCharsCheck = New-CheckBox 'Случайные символы' 14 803 180 $true
 
 Add-UiLabel 'Исключить слова/части ника (пример: xxx, test, 123)' 14 835 350 20 | Out-Null
-$script:ExcludeBox = New-TextBox 14 946 350 27 ''
+$script:ExcludeBox = New-TextBox 14 856 350 27 ''
 Add-UiLabel 'Пауза (мс)' 14 891 110 18 | Out-Null
 Add-UiLabel 'Тайм-аут (мс)' 134 891 110 18 | Out-Null
 Add-UiLabel 'Потоки' 254 891 110 18 | Out-Null
-$script:DelayBox = New-NumberBox 14 1000 110 500 15000 700
-$script:TimeoutBox = New-NumberBox 134 1000 110 1000 30000 8000
-$script:ThreadsBox = New-NumberBox 254 1000 110 1 8 2
+$script:DelayBox = New-NumberBox 14 910 110 500 15000 700
+$script:TimeoutBox = New-NumberBox 134 910 110 1000 30000 8000
+$script:ThreadsBox = New-NumberBox 254 910 110 1 8 2
 $script:ThreadsLabel = Add-UiLabel 'Рекомендуется 2–4 потока. Пауза адаптивная: растёт при HTTP 429 и снижается после успехов.' 14 943 350 40
 
 $script:GenerateButton = Add-UiButton 'Сгенерировать и проверить' 14 991 350 $true 37
@@ -2132,7 +2167,7 @@ function Open-AccountTools {
         $registerNick = $script:AccountUsernameBox.Text.Trim()
         $registerPlatform = [string]$script:AccountPlatform
         if (-not (Test-UsernameFormat -Username $registerNick -Platform $registerPlatform)) {
-            [System.Windows.Forms.MessageBox]::Show(('Ник не подходит для платформы ' + $registerPlatform + '. Проверь длину и допустимые символы: у каждой платформы свои правила.'), 'Проверь ник', 'OK', 'Warning') | Out-Null
+            [System.Windows.Forms.MessageBox]::Show(('Ник не подходит для платформы ' + $registerPlatform + '.' + [Environment]::NewLine + [Environment]::NewLine + 'Правила: ' + (Get-PlatformFormatHint -Platform $registerPlatform) + '.'), 'Проверь ник', 'OK', 'Warning') | Out-Null
             return
         }
         if ([string]::IsNullOrWhiteSpace($script:AccountPasswordBox.Text)) {
@@ -2151,7 +2186,7 @@ function Open-AccountTools {
         $nick = $script:AccountUsernameBox.Text.Trim()
         $password = $script:AccountPasswordBox.Text
         if (-not (Test-UsernameFormat -Username $nick -Platform ([string]$script:AccountPlatform))) {
-            [System.Windows.Forms.MessageBox]::Show(('Проверь ник: платформа ' + [string]$script:AccountPlatform + ' не примет такой формат или длину.'), 'Неверный ник', 'OK', 'Warning') | Out-Null
+            [System.Windows.Forms.MessageBox]::Show(('Проверь ник: ' + (Get-PlatformFormatHint -Platform ([string]$script:AccountPlatform)) + '.'), 'Неверный ник', 'OK', 'Warning') | Out-Null
             return
         }
         if ([string]::IsNullOrWhiteSpace($password) -or $password.Length -lt 16) {
@@ -2522,15 +2557,20 @@ function Update-FreeHistoryFromCandidate {
 }
 
 function Refresh-FreeHistoryList {
+    if ($script:HistoryListBox -and $script:HistoryListBox.IsDisposed) { return }
     if (-not $script:HistoryListBox) { return }
     $script:HistoryListBox.BeginUpdate()
     $script:HistoryListBox.Items.Clear()
     $historyItems = @($script:FreeHistory)
-    $historySort = 'По времени'
+    if ($script:HistoryPlatformList) {
+        $platformFilter = @($script:HistoryPlatformList.CheckedItems | ForEach-Object { [string]$_ })
+        if ($platformFilter.Count -gt 0) { $historyItems = @($historyItems | Where-Object { $platformFilter -contains [string]$_.Platform }) }
+    }
+    $historySort = 'По платформе и дате'
     if ($script:HistorySortBox -and $script:HistorySortBox.SelectedItem) { $historySort = [string]$script:HistorySortBox.SelectedItem }
     switch ($historySort) {
         'По нику' { $historyItems = @($historyItems | Sort-Object Name, Platform) }
-        'По времени' { $historyItems = @($historyItems | Sort-Object Time -Descending) }
+        'По дате генерации' { $historyItems = @($historyItems | Sort-Object Time -Descending) }
         default {
             $platformOrder = @{}
             $orderIndex = 0
@@ -2731,28 +2771,51 @@ function Open-FreeHistoryWindow {
     $script:HistoryForm = New-Object System.Windows.Forms.Form
     $script:HistoryForm.Text = 'Последние свободные ники'
     $script:HistoryForm.StartPosition = 'CenterParent'
-    $script:HistoryForm.Size = New-Object System.Drawing.Size(520,560)
-    $script:HistoryForm.MinimumSize = New-Object System.Drawing.Size(480,480)
+    $script:HistoryForm.Size = New-Object System.Drawing.Size(700,580)
+    $script:HistoryForm.MinimumSize = New-Object System.Drawing.Size(560,480)
     $script:HistoryForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
     $script:HistoryForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $script:HistoryForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
     Set-WindowChrome -Window $script:HistoryForm
     $script:HistoryDescription = New-Object System.Windows.Forms.Label
-    $script:HistoryDescription.Location = New-Object System.Drawing.Point(16,14)
-    $script:HistoryDescription.Size = New-Object System.Drawing.Size(470,50)
+    $script:HistoryDescription.Location = New-Object System.Drawing.Point(16,12)
+    $script:HistoryDescription.Size = New-Object System.Drawing.Size(650,40)
     $script:HistoryDescription.ForeColor = [System.Drawing.Color]::FromArgb(190,202,221)
     $script:HistoryForm.Controls.Add($script:HistoryDescription)
+    $historySortLabel = New-Object System.Windows.Forms.Label
+    $historySortLabel.Text = 'Сортировка:'
+    $historySortLabel.Location = New-Object System.Drawing.Point(356,70)
+    $historySortLabel.Size = New-Object System.Drawing.Size(126,20)
+    $historySortLabel.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
+    $script:HistoryForm.Controls.Add($historySortLabel)
+    $historyPlatformLabel = New-Object System.Windows.Forms.Label
+    $historyPlatformLabel.Text = 'Платформы (пусто = все)'
+    $historyPlatformLabel.Location = New-Object System.Drawing.Point(16,66)
+    $historyPlatformLabel.Size = New-Object System.Drawing.Size(180,20)
+    $historyPlatformLabel.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
+    $script:HistoryForm.Controls.Add($historyPlatformLabel)
+    $script:HistoryPlatformList = New-Object System.Windows.Forms.CheckedListBox
+    $script:HistoryPlatformList.Location = New-Object System.Drawing.Point(16,90)
+    $script:HistoryPlatformList.Size = New-Object System.Drawing.Size(160,360)
+    $script:HistoryPlatformList.Anchor = 'Top, Bottom, Left'
+    $script:HistoryPlatformList.CheckOnClick = $true
+    $script:HistoryPlatformList.IntegralHeight = $false
+    $script:HistoryPlatformList.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:HistoryPlatformList.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
+    $script:HistoryPlatformList.BorderStyle = 'FixedSingle'
+    $script:HistoryPlatformList.Add_ItemCheck({ if ($script:HistoryFilterReady -and $script:HistoryForm -and -not $script:HistoryForm.IsDisposed -and $script:HistoryForm.IsHandleCreated) { $script:HistoryForm.BeginInvoke({ Refresh-FreeHistoryList }) } })
+    $script:HistoryForm.Controls.Add($script:HistoryPlatformList)
     $script:HistorySortBox = New-Object System.Windows.Forms.ComboBox
-    $script:HistorySortBox.Location = New-Object System.Drawing.Point(330,66)
-    $script:HistorySortBox.Size = New-Object System.Drawing.Size(156,27)
+    $script:HistorySortBox.Location = New-Object System.Drawing.Point(490,66)
+    $script:HistorySortBox.Size = New-Object System.Drawing.Size(180,27)
     $script:HistorySortBox.DropDownStyle = 'DropDownList'
-    [void]$script:HistorySortBox.Items.AddRange([object[]]@('По платформе и дате','По времени','По нику'))
+    [void]$script:HistorySortBox.Items.AddRange([object[]]@('По платформе и дате','По дате генерации','По нику'))
     $script:HistorySortBox.SelectedItem = 'По платформе и дате'
     $script:HistorySortBox.Add_SelectedIndexChanged({ Refresh-FreeHistoryList })
     $script:HistoryForm.Controls.Add($script:HistorySortBox)
     $script:HistoryListBox = New-Object System.Windows.Forms.ListBox
-    $script:HistoryListBox.Location = New-Object System.Drawing.Point(16,100)
-    $script:HistoryListBox.Size = New-Object System.Drawing.Size(470,340)
+    $script:HistoryListBox.Location = New-Object System.Drawing.Point(188,90)
+    $script:HistoryListBox.Size = New-Object System.Drawing.Size(480,360)
     $script:HistoryListBox.Anchor = 'Top, Bottom, Left, Right'
     $script:HistoryListBox.DisplayMember = 'Display'
     $script:HistoryListBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
@@ -2760,8 +2823,8 @@ function Open-FreeHistoryWindow {
     $script:HistoryForm.Controls.Add($script:HistoryListBox)
     $recheck = New-Object System.Windows.Forms.Button
     $recheck.Text = '↻ Повторная проверка'
-    $recheck.Location = New-Object System.Drawing.Point(16,452)
-    $recheck.Size = New-Object System.Drawing.Size(190,34)
+    $recheck.Location = New-Object System.Drawing.Point(188,466)
+    $recheck.Size = New-Object System.Drawing.Size(150,34)
     $recheck.Anchor = 'Bottom, Left'
     $recheck.FlatStyle = 'Flat'
     $recheck.BackColor = [System.Drawing.Color]::FromArgb(93,73,222)
@@ -2770,8 +2833,8 @@ function Open-FreeHistoryWindow {
     $script:HistoryForm.Controls.Add($recheck)
     $copy = New-Object System.Windows.Forms.Button
     $copy.Text = 'Копировать ник'
-    $copy.Location = New-Object System.Drawing.Point(214,452)
-    $copy.Size = New-Object System.Drawing.Size(130,34)
+    $copy.Location = New-Object System.Drawing.Point(346,466)
+    $copy.Size = New-Object System.Drawing.Size(150,34)
     $copy.Anchor = 'Bottom, Left'
     $copy.FlatStyle = 'Flat'
     $copy.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
@@ -2779,8 +2842,8 @@ function Open-FreeHistoryWindow {
     $script:HistoryForm.Controls.Add($copy)
     $open = New-Object System.Windows.Forms.Button
     $open.Text = 'Открыть сайт'
-    $open.Location = New-Object System.Drawing.Point(352,452)
-    $open.Size = New-Object System.Drawing.Size(134,34)
+    $open.Location = New-Object System.Drawing.Point(504,466)
+    $open.Size = New-Object System.Drawing.Size(164,34)
     $open.Anchor = 'Bottom, Right'
     $open.FlatStyle = 'Flat'
     $open.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
@@ -2828,6 +2891,19 @@ function Open-FreeHistoryWindow {
         Start-Checking -RetryErrorsOnly $false
     })
     Set-ButtonEdgeStyle -Root $script:HistoryForm
+    $historyPlatforms = @($script:FreeHistory | ForEach-Object { [string]$_.Platform } | Sort-Object -Unique)
+    $historyOrderedPlatforms = @()
+    foreach ($supportedPlatform in $script:SupportedPlatforms) { if ($historyPlatforms -contains $supportedPlatform) { $historyOrderedPlatforms += $supportedPlatform } }
+    foreach ($orphanPlatform in $historyPlatforms) { if ($historyOrderedPlatforms -notcontains $orphanPlatform) { $historyOrderedPlatforms += $orphanPlatform } }
+    $script:HistoryFilterReady = $false
+    $script:HistoryPlatformList.Items.Clear()
+    if ($historyOrderedPlatforms.Count -gt 0) {
+        [void]$script:HistoryPlatformList.Items.AddRange([object[]]@($historyOrderedPlatforms))
+        for ($historyPlatformIndex = 0; $historyPlatformIndex -lt $script:HistoryPlatformList.Items.Count; $historyPlatformIndex++) {
+            $script:HistoryPlatformList.SetItemChecked($historyPlatformIndex, $true)
+        }
+    }
+    $script:HistoryFilterReady = $true
     Refresh-FreeHistoryList
     $script:HistoryForm.Add_Shown({ $script:HistoryForm.Activate() })
     [void]$script:HistoryForm.ShowDialog($script:Form)
@@ -2928,7 +3004,8 @@ function Show-UsernameFinderHelp {
         $rule = Get-PlatformLengthRule -Platform $platformName
         $domain = Get-PlatformDomain -Platform $platformName
         $domainText = if ($domain) { ('домен @{0}' -f $domain) } else { 'без домена' }
-        [void]$platformsBuilder.AppendLine(('• {0}: длина {1}–{2}, {3}, регистрация {4}, проверка: {5}' -f $platformName, $rule.Min, $rule.Max, $domainText, (Get-RegistrationUrl -Platform $platformName), $checkNotes[[string]$platformName]))
+        [void]$platformsBuilder.AppendLine(('• {0}: {1}' -f $platformName, (Get-PlatformFormatHint -Platform $platformName)))
+        [void]$platformsBuilder.AppendLine(('  длина {0}–{1}, {2}, регистрация {3}, проверка: {4}' -f $rule.Min, $rule.Max, $domainText, (Get-RegistrationUrl -Platform $platformName), $checkNotes[[string]$platformName]))
     }
     $platformsText = $platformsBuilder.ToString()
 
@@ -2936,7 +3013,8 @@ function Show-UsernameFinderHelp {
     $helpTabs.Dock = 'Fill'
     $helpTabs.Font = New-Object System.Drawing.Font('Segoe UI',9.5)
     $helpBodyFont = New-Object System.Drawing.Font('Segoe UI', 10)
-    $helpHeadingFont = New-Object System.Drawing.Font('Segoe UI Semibold', 12, [System.Drawing.FontStyle]::Bold)
+    $helpLeadFont = New-Object System.Drawing.Font('Segoe UI Semibold', 10.5, [System.Drawing.FontStyle]::Bold)
+    $helpHeadingFont = New-Object System.Drawing.Font('Segoe UI Semibold', 12.5, [System.Drawing.FontStyle]::Bold)
     foreach ($page in @(@('Инструкция', $guideText), @('Как работает', $howText), @('Стили и категории', $stylesText), @('Платформы и домены', $platformsText))) {
         $tabPage = New-Object System.Windows.Forms.TabPage
         $tabPage.Text = [string]$page[0]
@@ -2946,21 +3024,56 @@ function Show-UsernameFinderHelp {
         $pageBox.BorderStyle = 'None'
         $pageBox.DetectUrls = $false
         $pageBox.Dock = 'Fill'
-        $pageBox.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
-        $pageBox.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
+        $pageBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+        $pageBox.ForeColor = [System.Drawing.Color]::FromArgb(208,216,230)
         $pageBox.Font = $helpBodyFont
+        $pageBox.RightMargin = 860
         foreach ($helpLine in (([string]$page[1]) -split "`n")) {
             $helpLine = $helpLine.TrimEnd([char]13)
             $pageBox.SelectionStart = $pageBox.TextLength
             $pageBox.SelectionLength = 0
-            if ($helpLine -match '^[A-ZА-ЯЁ0-9][A-ZА-ЯЁ0-9 ,.:;«»()—…\-]+$' -or $helpLine -match '^\d+\. ') {
-                $pageBox.SelectionFont = $helpHeadingFont
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(112,164,255)
-            } else {
+            if ($helpLine.Trim() -eq '') {
                 $pageBox.SelectionFont = $helpBodyFont
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(225,232,242)
+                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(208,216,230)
+                $pageBox.SelectionIndent = 0
+                $pageBox.AppendText("`n")
+            } elseif ($helpLine -match '^[A-ZА-ЯЁ0-9][A-ZА-ЯЁ0-9 ,.:;«»()—…\-]+$') {
+                $pageBox.SelectionIndent = 0
+                $pageBox.SelectionFont = $helpHeadingFont
+                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(147,189,255)
+                $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(32,41,56)
+                $pageBox.AppendText('  ' + $helpLine.Trim() + '  ')
+                $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+                $pageBox.AppendText("`n")
+            } elseif ($helpLine -match '^([А-ЯЁA-Z][\w\-]{2,20}\.)\s') {
+                $leadWord = [string]$matches[1]
+                $pageBox.SelectionIndent = 14
+                $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+                $pageBox.SelectionFont = $helpLeadFont
+                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(235,240,248)
+                $pageBox.AppendText($leadWord)
+                $pageBox.SelectionFont = $helpBodyFont
+                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(208,216,230)
+                $pageBox.AppendText($helpLine.Substring($leadWord.Length) + "`n")
+            } elseif ($helpLine -match '^\d+\. ') {
+                $pageBox.SelectionIndent = 22
+                $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+                $pageBox.SelectionFont = $helpBodyFont
+                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(222,228,238)
+                $pageBox.AppendText($helpLine + "`n")
+            } elseif ($helpLine.StartsWith('• ')) {
+                $pageBox.SelectionIndent = 34
+                $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+                $pageBox.SelectionFont = $helpBodyFont
+                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(186,194,207)
+                $pageBox.AppendText($helpLine + "`n")
+            } else {
+                $pageBox.SelectionIndent = 14
+                $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+                $pageBox.SelectionFont = $helpBodyFont
+                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(208,216,230)
+                $pageBox.AppendText($helpLine + "`n")
             }
-            $pageBox.AppendText($helpLine + "`n")
         }
         $pageBox.Select(0, 0)
         $tabPage.Controls.Add($pageBox)
@@ -3198,7 +3311,7 @@ param($InputQueue, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform, $AppV
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.7.0' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.0' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
