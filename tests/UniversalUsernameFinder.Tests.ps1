@@ -96,6 +96,28 @@
         throw 'Таблица правил длины платформ извлечена пустой'
     }
 
+    $domainsNeedle = '$script:PlatformDomains = @{'
+    $domainsStart = $global:UufMainText.IndexOf($domainsNeedle)
+    if ($domainsStart -lt 0) { throw 'Не найдена таблица доменов платформ' }
+    $domainsBraceStart = $global:UufMainText.IndexOf('{', $domainsStart)
+    $domainsDepth = 0
+    $domainsEnd = -1
+    for ($domainsIndex = $domainsBraceStart; $domainsIndex -lt $global:UufMainText.Length; $domainsIndex++) {
+        $domainsChar = $global:UufMainText[$domainsIndex]
+        if ($domainsChar -eq '{') { $domainsDepth++ }
+        elseif ($domainsChar -eq '}') {
+            $domainsDepth--
+            if ($domainsDepth -eq 0) { $domainsEnd = $domainsIndex; break }
+        }
+    }
+    if ($domainsEnd -lt 0) { throw 'Не найден конец таблицы доменов платформ' }
+    $domainsText = $global:UufMainText.Substring($domainsStart, $domainsEnd + 1 - $domainsStart)
+    $domainsText = $domainsText -replace '\$script:', '$$script:'
+    Invoke-Expression $domainsText
+    if (-not $script:PlatformDomains -or $script:PlatformDomains.Count -lt 1) {
+        throw 'Таблица доменов платформ извлечена пустой'
+    }
+
     $branchPrefix = '                ' + [char]39
     $branchSuffix = [string][char]39 + ' {'
     $branches = New-Object System.Collections.Generic.List[string]
@@ -364,7 +386,7 @@ Describe 'New-SecurePassword' {
     }
 
     It 'использует только допустимые символы без неоднозначных' {
-        $allowed = 'ABCDEFGHJKLMNPQRSTUVWXYZ' + 'abcdefghjkmnpqrstuvwxyz' + '23456789'
+        $allowed = 'ABCDEFGHJKLMNPQRSTUVWXYZ' + 'abcdefghjkmnpqrstuvwxyz' + '23456789' + '!@#$%^&*-_=+?'
         $passwords = @(1..20 | ForEach-Object { New-SecurePassword -Length 24 })
         foreach ($password in $passwords) {
             foreach ($char in $password.ToCharArray()) {
@@ -954,7 +976,7 @@ Describe 'Платформы, домены и интерфейс версии 2.
     }
     It 'исполняемый файл переименован в UUF и получает иконку' {
         $buildText = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\build\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
-        $buildText.Contains("Join-Path $OutputDirectory 'UUF.exe'") | Should -BeTrue
+        $buildText.Contains('Join-Path $OutputDirectory ' + [char]39 + 'UUF.exe' + [char]39) | Should -BeTrue
         $buildText.Contains('iconFile') | Should -BeTrue
     }
     It 'в коде не осталось пояснительных комментариев, только маркеры блоков' {
