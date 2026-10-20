@@ -1100,7 +1100,7 @@ Describe 'Изменения версии 2.8.3' {
     }
     It 'панели и нижняя полоса выровнены под уменьшенную шапку' {
         $global:UufMainText.Contains('$left.Location = New-Object System.Drawing.Point(14, 104)') | Should -BeTrue
-        $global:UufMainText.Contains('$left.Size = New-Object System.Drawing.Size(390, 926)') | Should -BeTrue
+        $global:UufMainText.Contains('$left.Size = New-Object System.Drawing.Size(390, [Math]::Max(320,[int]$script:Form.ClientSize.Height - 114))') | Should -BeTrue
         $global:UufMainText.Contains('$right.Location = New-Object System.Drawing.Point(418, 104)') | Should -BeTrue
         $global:UufMainText.Contains('$right.Size = New-Object System.Drawing.Size(1040, 926)') | Should -BeTrue
         $global:UufMainText.Contains('$diagnosticHeader.Location = New-Object System.Drawing.Point(14,720)') | Should -BeTrue
@@ -1147,18 +1147,18 @@ Describe 'Изменения версии 2.8.3' {
         $global:UufWorkerText.Contains('f.req=[['' + ($googleCells -join '','') + '']]') | Should -BeTrue
         $global:UufWorkerText.Contains('\[\[\s*null\s*,\s*\[\s*([12])\s*(?:,|\])') | Should -BeTrue
     }
-    It 'Outlook: честный парсинг IfExistsResult (0 — существует, 1 — не найден)' {
+    It 'Outlook: IfExistsResult=0 подтверждает занявость, =1 больше не выдаётся за свободу' {
         $global:UufWorkerText.Contains('https://login.microsoftonline.com/common/GetCredentialType') | Should -BeTrue
         $global:UufWorkerText.Contains('$existsMatch = [regex]::Match($gctText, ''(?i)"IfExistsResult"\s*:\s*(-?[0-9]+)'')') | Should -BeTrue
         $global:UufWorkerText.Contains('IfExistsResult=0 — Microsoft сообщает, что пользователь с таким адресом существует') | Should -BeTrue
-        $global:UufWorkerText.Contains('IfExistsResult=1 — адрес не найден') | Should -BeTrue
+        $global:UufWorkerText.Contains('Outlook: аккаунта для входа нет (IfExistsResult=1)') | Should -BeTrue
     }
     It 'YouTube: cookie согласия и дополнительные маркеры канала' {
         $global:UufWorkerText.Contains('''Cookie''=''CONSENT=YES+cb; SOCS=CAI; GPS=1''') | Should -BeTrue
         $global:UufWorkerText.Contains('property="og:url"[^>]+content="https?://www\.youtube\.com/@') | Should -BeTrue
     }
-    It 'Telegram: og:title-контакт и зарезервированные имена' {
-        $global:UufWorkerText.Contains('$ogContactMatch -or') | Should -BeTrue
+    It 'Telegram: детерминированный ответ t.me (404 — свободен, профиль — занят)' {
+        $global:UufWorkerText.Contains('$profileOwner = ($content -match') | Should -BeTrue
         $global:UufWorkerText.Contains('elseif ($httpStatus -eq 200 -and $reservedPage)') | Should -BeTrue
     }
     It 'региональные блокировки подсказывают прокси, воркер умеет прокси' {
@@ -1193,5 +1193,68 @@ Describe 'Исправление версии 2.8.5' {
     It 'поле прокси честно обещает только HTTP-прокси' {
         $global:UufMainText.Contains('socks5://127.0.0.1:1080') | Should -BeFalse
         $global:UufMainText.Contains('Необязательный HTTP-прокси для всех проверок') | Should -BeTrue
+    }
+}
+
+Describe 'Изменения версии 2.8.6' {
+    It 'версия 2.8.6 в скрипте' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.8\.6'''
+    }
+    It 'статуса «Вероятно свободен» в проверках больше нет' {
+        $global:UufWorkerText.Contains('Вероятно свободен') | Should -BeFalse
+        $global:UufMainText.Contains(',''Вероятно свободен'',''Занят'',''Недопустимый''') | Should -BeFalse
+    }
+    It 'фильтр статусов без «Вероятно свободен»' {
+        $global:UufMainText.Contains("@('Все статусы','Свободен','Занят','Недопустимый'") | Should -BeTrue
+    }
+    It 'шапка и панели подгоняются под реальный размер окна' {
+        $global:UufMainText.Contains('$header.Width = [Math]::Max(880,[int]$script:Form.ClientSize.Width)') | Should -BeTrue
+        $global:UufMainText.Contains('$uufClientFit = $script:Form.ClientSize') | Should -BeTrue
+        $global:UufMainText.Contains('[Math]::Max(320,[int]$uufClientFit.Height - 114)') | Should -BeTrue
+    }
+    It 'кнопки экспорта переименованы под свободные ники' {
+        $global:UufMainText.Contains("'↓  TXT свободные'") | Should -BeTrue
+        $global:UufMainText.Contains("'⧉  Копировать свободные'") | Should -BeTrue
+        $global:UufMainText.Contains('TXT доступные/возможные') | Should -BeFalse
+    }
+    It 'Outlook: только ответ формы регистрации даёт «Свободен»' {
+        $global:UufWorkerText.Contains("`$credentialCode -eq 1) { `$status='Не подтверждено'") | Should -BeTrue
+        $global:UufWorkerText.Contains("`$status -notin @('Занят','Свободен')") | Should -BeTrue
+        $global:UufWorkerText.Contains('signup.live.com/CreateAccount?lic=1') | Should -BeTrue
+    }
+    It 'Google: signin-lookup идёт первым, валидаторы прогреваются сессией' {
+        $idxLookup = $global:UufWorkerText.IndexOf('signin/sl/lookup?hl=en')
+        $idxPlain = $global:UufWorkerText.IndexOf('signup/webusernameavailability')
+        $idxLookup | Should -BeGreaterOrEqual 0
+        $idxPlain | Should -BeGreaterThan $idxLookup
+        $global:UufWorkerText.Contains("'application/x-www-form-urlencoded; charset=UTF-8' -WebSession `$googleSession") | Should -BeTrue
+    }
+    It 'Telegram: 404 — свободен, блокировка подсказывает прокси' {
+        $global:UufWorkerText.Contains('Telegram: t.me вернул 404') | Should -BeTrue
+        $global:UufWorkerText.Contains('$blockedPage') | Should -BeTrue
+    }
+    It 'инструкция аккаунта строится под выбранную платформу' {
+        $global:UufMainText.Contains('function Get-AccountSafetyText') | Should -BeTrue
+        $global:UufMainText.Contains('$script:SafetyInfoLabel.Text = Get-AccountSafetyText -Platform $platform') | Should -BeTrue
+        $global:UufMainText.Contains('открой Roblox') | Should -BeFalse
+    }
+    It 'журнал предпочитает LOCALAPPDATA, а не папку программы' {
+        $global:UufMainText.Contains("`$preferredDirectory = Join-Path `$env:LOCALAPPDATA 'UniversalUsernameFinder'") | Should -BeTrue
+    }
+    It 'скрипт установки на рабочий стол лежит в build и умеет удалять' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $installPath = [System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1')
+        [System.IO.File]::Exists($installPath) | Should -BeTrue
+        $installText = [System.IO.File]::ReadAllText($installPath, [System.Text.Encoding]::UTF8)
+        $installText.Contains('Programs\UniversalUsernameFinder') | Should -BeTrue
+        $installText.Contains('WScript.Shell') | Should -BeTrue
+        $installText.Contains('[switch]$Uninstall') | Should -BeTrue
+        $installBytes = [System.IO.File]::ReadAllBytes($installPath)
+        $installBytes[0] | Should -Be 0xEF
+        $installBytes[1] | Should -Be 0xBB
+        $installBytes[2] | Should -Be 0xBF
+    }
+    It 'футер честно описывает смысл статусов' {
+        $global:UufMainText.Contains('финальное подтверждение — форма регистрации') | Should -BeTrue
     }
 }
