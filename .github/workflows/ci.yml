@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -356,6 +356,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: UniversalUsernameFinder-windows
-          path: dist/UUF.exe
+          path: |
+            dist/UUF.exe
+            build/Install-UUF.ps1
           if-no-files-found: error
           retention-days: 90

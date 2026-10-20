@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.8.5'
+$script:AppVersion = '2.8.6'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -31,18 +31,22 @@ function Get-AppDirectory {
 }
 
 function Resolve-LogPath {
+    # --- Журнал пишется в %LOCALAPPDATA%\UniversalUsernameFinder, где его не затирает сборка; папка программы — portable-резерв
     $primary = Join-Path (Get-AppDirectory) 'UniversalUsernameFinder.log'
+    try {
+        $preferredDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
+        $null = [System.IO.Directory]::CreateDirectory($preferredDirectory)
+        $probe = Join-Path $preferredDirectory ('.uuf-write-probe-' + [guid]::NewGuid().ToString('N'))
+        [System.IO.File]::WriteAllText($probe, 'probe')
+        [System.IO.File]::Delete($probe)
+        return (Join-Path $preferredDirectory 'UniversalUsernameFinder.log')
+    } catch { }
     try {
         $directory = Split-Path -Parent $primary
         $probe = Join-Path $directory ('.uuf-write-probe-' + [guid]::NewGuid().ToString('N'))
         [System.IO.File]::WriteAllText($probe, 'probe')
         [System.IO.File]::Delete($probe)
         return $primary
-    } catch { }
-    try {
-        $fallbackDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
-        $null = [System.IO.Directory]::CreateDirectory($fallbackDirectory)
-        return (Join-Path $fallbackDirectory 'UniversalUsernameFinder.log')
     } catch {
         return $primary
     }
@@ -377,7 +381,7 @@ $script:LastGridRefresh = [DateTime]::MinValue
 $script:GridRefreshPending = $false
 $script:StatusColors = @{
     'Свободен'            = [System.Drawing.Color]::FromArgb(99,222,151)
-    'Вероятно свободен'   = [System.Drawing.Color]::FromArgb(120,205,250)
+    'Вероятно свободен'   = [System.Drawing.Color]::FromArgb(120,205,250) # legacy: старые записи истории
     'Занят'               = [System.Drawing.Color]::FromArgb(245,120,120)
     'Недопустимый'        = [System.Drawing.Color]::FromArgb(180,188,203)
     'Не подтверждено'      = [System.Drawing.Color]::FromArgb(207,185,255)
@@ -1425,11 +1429,13 @@ $header.Add_MouseDown($uufCaptionMouseDown)
 $title.Add_MouseDown($uufCaptionMouseDown)
 $subtitle.Add_MouseDown($uufCaptionMouseDown)
 if ($headerLogo) { $headerLogo.Add_MouseDown($uufCaptionMouseDown) }
+# --- Полка шапки: подгоняем под фактическую ширину окна, чтобы кнопки не вылезали за край
+try { $header.Width = [Math]::Max(880,[int]$script:Form.ClientSize.Width) } catch { }
 
 # --- Интерфейс: левая панель
 $left = New-Object System.Windows.Forms.Panel
 $left.Location = New-Object System.Drawing.Point(14, 104)
-$left.Size = New-Object System.Drawing.Size(390, 926)
+$left.Size = New-Object System.Drawing.Size(390, [Math]::Max(320,[int]$script:Form.ClientSize.Height - 114))
 $left.Anchor = 'Top, Bottom, Left'
 $left.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
 $left.AutoScroll = $true
@@ -1614,14 +1620,14 @@ $script:StopButton = Add-UiButton '■  Остановить проверку' 1
 $script:StopButton.Enabled = $false
 $script:RetryButton = Add-UiButton '↻  Повторить ошибки' 14 1077 170 $false 33
 $script:ClearButton = Add-UiButton '✕  Очистить результаты' 194 1077 170 $false 33
-$script:SaveButton = Add-UiButton '↓  TXT доступные/возможные' 14 1117 170 $false 33
+$script:SaveButton = Add-UiButton '↓  TXT свободные' 14 1117 170 $false 33
 $script:CsvButton = Add-UiButton '↓  CSV все результаты' 194 1117 170 $false 33
-$script:CopyButton = Add-UiButton '⧉  Копировать доступные/возможные' 14 1157 350 $false 33
+$script:CopyButton = Add-UiButton '⧉  Копировать свободные' 14 1157 350 $false 33
 $script:CheckedNamesButton = Add-UiButton '≡  Проверенные ники (0)' 14 1197 350 $false 33
 
 $right = New-Object System.Windows.Forms.Panel
 $right.Location = New-Object System.Drawing.Point(418, 104)
-$right.Size = New-Object System.Drawing.Size(1040, 926)
+$right.Size = New-Object System.Drawing.Size(1040, 926)  # design size; below, after all children are added, snapped to the client
 $right.Anchor = 'Top, Bottom, Left, Right'
 $right.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
 $script:Form.Controls.Add($right)
@@ -1666,7 +1672,7 @@ $script:StatusFilterBox.Size = New-Object System.Drawing.Size(160,27)
 $script:StatusFilterBox.DropDownStyle = 'DropDownList'
 $script:StatusFilterBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
 $script:StatusFilterBox.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-[void]$script:StatusFilterBox.Items.AddRange([object[]]@('Все статусы','Свободен','Вероятно свободен','Занят','Недопустимый','Не подтверждено','Ошибка сети','Ожидает','Проверяется'))
+[void]$script:StatusFilterBox.Items.AddRange([object[]]@('Все статусы','Свободен','Занят','Недопустимый','Не подтверждено','Ошибка сети','Ожидает','Проверяется'))
 $script:StatusFilterBox.SelectedIndex = 0
 $right.Controls.Add($script:StatusFilterBox)
 $script:SortBox = New-Object System.Windows.Forms.ComboBox
@@ -1786,7 +1792,7 @@ $script:Grid.add_CellDoubleClick({
     if ($e.RowIndex -ge 0) {
         $n = [string]$script:Grid.Rows[$e.RowIndex].Cells['Nick'].Value
         $st = [string]$script:Grid.Rows[$e.RowIndex].Cells['Status'].Value
-        if (($st -eq 'Свободен' -or $st -eq 'Вероятно свободен') -and $n) {
+        if ($st -eq 'Свободен' -and $n) {
             [System.Windows.Forms.Clipboard]::SetText($n)
             Add-Diagnostic "Скопирован ник: $n (статус: $st)"
         }
@@ -1865,7 +1871,7 @@ $script:SummaryLabel.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
 $script:SummaryLabel.TextAlign = 'MiddleRight'
 $right.Controls.Add($script:SummaryLabel)
 $footer = New-Object System.Windows.Forms.Label
-$footer.Text = '!  Доступность имени зависит от платформы. «Вероятно свободен» означает, что профиль не найден, но регистрация должна подтвердить доступность.'
+$footer.Text = '!  «Свободен» означает, что платформа не нашла занятым это имя публичным способом; финальное подтверждение — форма регистрации. Неясные ответы остаются в «Не подтверждено».'
 $footer.Location = New-Object System.Drawing.Point(14,878)
 $footer.Size = New-Object System.Drawing.Size(1008,34)
 $footer.Anchor = 'Bottom, Left, Right'
@@ -1875,6 +1881,11 @@ $footer.Font = New-Object System.Drawing.Font('Segoe UI',9.5,[System.Drawing.Fon
 $footer.TextAlign = 'MiddleLeft'
 $footer.Padding = New-Object System.Windows.Forms.Padding(8,0,4,0)
 $right.Controls.Add($footer)
+# --- Правая панель: подгонка под клиентское окно после добавления детей — якоря Bottom поднимают журнал и футер вверх
+try {
+    $uufClientFit = $script:Form.ClientSize
+    $right.Size = New-Object System.Drawing.Size([Math]::Max(520,[int]$uufClientFit.Width - 440),[Math]::Max(320,[int]$uufClientFit.Height - 114))
+} catch { }
 
 $script:AvailableNames = New-Object System.Collections.Generic.List[string]
 $script:PlatformAvailableNames = New-Object System.Collections.Generic.List[string]
@@ -2066,6 +2077,20 @@ function Open-UrlInIncognito {
     return $false
 }
 
+function Get-AccountSafetyText {
+    param([string]$Platform)
+    $platformName = 'платформу'
+    if ($Platform) { $platformName = [string]$Platform }
+    $passPart = ' и пароль'
+    if ($platformName -eq 'Mail.ru') { $passPart = '' }
+    $lines = @(
+        ('1) Скопируй ник{0} → открой {1} → заполни форму и пройди проверки.' -f $passPart,$platformName),
+        '2) Вернись сюда: отметь галочку подтверждения и нажми «Сохранить».',
+        'Пароль хранится в DPAPI-шифровании Windows для текущего пользователя. Автоматический ввод или обход проверок не выполняется.')
+    if ($platformName -eq 'Mail.ru') { $lines = @($lines[0],'Для Mail.ru ник — это имя почтового ящика: регистрация идёт как ник@' + (Get-PlatformDomain -Platform 'Mail.ru') + ', пароль по желанию (нужен только для хранения).') + @($lines[1..2]) }
+    return ($lines -join "`r`n")
+}
+
 function Update-AccountPlatformUi {
     $platform = [string]$script:PlatformBox.SelectedItem
     if ([string]::IsNullOrWhiteSpace($platform)) { return }
@@ -2076,6 +2101,7 @@ function Update-AccountPlatformUi {
     if ($script:AccountForm) { $script:AccountForm.Text = 'UUF — регистрация: ' + $platform }
     if ($script:AccountUsernameLabel) { $script:AccountUsernameLabel.Text = 'Никнейм ' + $platform + $suffix }
     if ($script:OpenRegisterButton) { $script:OpenRegisterButton.Text = 'Открыть ' + $platform + ' для регистрации' }
+    if ($script:SafetyInfoLabel) { $script:SafetyInfoLabel.Text = Get-AccountSafetyText -Platform $platform }
 }
 
 function Open-AccountTools {
@@ -2227,12 +2253,13 @@ function Open-AccountTools {
     $prepareTab.Controls.Add($saveAccountButton)
 
     $safetyInfo = New-Object System.Windows.Forms.Label
-    $safetyInfo.Text = "Порядок действий: скопируй ник и пароль → открой Roblox → заполни форму и пройди проверку → отметь галочку и сохрани данные.`r`nПароль хранится в DPAPI-шифровании Windows для текущего пользователя. Автоматический ввод или обход проверок не выполняется."
-    $safetyInfo.Location = New-Object System.Drawing.Point(18, 390)
-    $safetyInfo.Size = New-Object System.Drawing.Size(677, 70)
+    $safetyInfo.Text = Get-AccountSafetyText -Platform ([string]$script:AccountPlatform)
+    $safetyInfo.Location = New-Object System.Drawing.Point(18, 384)
+    $safetyInfo.Size = New-Object System.Drawing.Size(713, 92)
     $safetyInfo.ForeColor = [System.Drawing.Color]::FromArgb(177,188,207)
     $safetyInfo.BackColor = [System.Drawing.Color]::FromArgb(32,41,56)
-    $safetyInfo.Padding = New-Object System.Windows.Forms.Padding(8, 7, 8, 5)
+    $safetyInfo.Padding = New-Object System.Windows.Forms.Padding(8, 6, 8, 4)
+    $script:SafetyInfoLabel = $safetyInfo
     $prepareTab.Controls.Add($safetyInfo)
 
     $script:AccountListBox = New-Object System.Windows.Forms.ListBox
@@ -2728,7 +2755,7 @@ function Update-FreeHistoryFromCandidate {
     if (-not $name -or -not $platform) { return }
     $key = Get-HistoryKey -Name $name -Platform $platform
     $status = [string]$Candidate.Status
-    if ($status -eq 'Свободен' -or $status -eq 'Вероятно свободен') {
+    if ($status -eq 'Свободен') {
         if ($script:RetiredNames.ContainsKey($key)) { return }
         $entry = [pscustomobject]@{ Name=$name; Platform=$platform; Status=$status; Time=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss') }
         $remaining = @($script:FreeHistory | Where-Object { (Get-HistoryKey -Name ([string]$_.Name) -Platform ([string]$_.Platform)) -ne $key })
@@ -2757,7 +2784,7 @@ function Refresh-FreeHistoryList {
     }
     $script:HistoryListBox.EndUpdate()
     if ($script:HistoryListBox.Items.Count -eq 0) {
-        $script:HistoryDescription.Text = 'Пока нет имён, которые проверка признала свободными или вероятно свободными.'
+        $script:HistoryDescription.Text = 'Пока нет имён, которые проверка признала свободными.'
     } else {
         $script:HistoryDescription.Text = 'Выбери ник и нажми «Повторная проверка». Если он уже занят, он исчезнет из истории и больше не будет генерироваться.'
     }
@@ -3097,7 +3124,7 @@ function Show-UsernameFinderHelp {
 
 5. Генерация и проверка. Нажми «Сгенерировать и проверить»: таблица очистится, появится запрошенное количество ников и проверка начнётся сама. Кнопка «Найти свободные» проверяет уже имеющуюся таблицу повторно. «Остановить проверку» прерывает прогон без потери результатов.
 
-6. Результаты. Статусы: «Свободен» — платформа подтвердила доступность; «Вероятно свободен» — публичный профиль не найден, но регистрация может отказать; «Занят», «Недопустимый», «Не подтверждено», «Ошибка сети». При наведении на ячейки «Статус» и «Причина» появляется подсказка, почему у имени такой статус и что с этим делать. Фильтр статуса, поиск и сортировка работают во время проверки; прокрутка таблицы не сбрасывается.
+6. Результаты. Статусы: «Свободен» — публичная проверка не нашла имя занятым; «Занят», «Недопустимый», «Не подтверждено» (ответ платформы не удалось прочитать однозначно), «Ошибка сети». При наведении на ячейки «Статус» и «Причина» появляется подсказка, почему у имени такой статус и что с этим делать. Фильтр статуса, поиск и сортировка работают во время проверки; прокрутка таблицы не сбрасывается.
 
 7. История и проверенные. «Последние свободные ники» хранит найденные свободные адреса с сортировкой по нику, платформе или времени и повторной проверкой. «Проверенные ники» — постоянный список всего, что уже проверялось: он исключает повторы при включённой галочке «Исключать проверенные» и переживает перезапуск программы.
 
@@ -3117,7 +3144,7 @@ function Show-UsernameFinderHelp {
 
 Платформы. Для каждой платформы используется свой регистрационный или публичный интерфейс: Roblox — валидатор регистрации, Google — валидатор доступности Gmail (резервно форма входа), Mail.ru — API существования адреса, Discord — endpoint уникального имени, Outlook — счётчик существования аккаунта Microsoft (IfExistsResult=0 — существует, 1 — не найден) с резервной проверкой формы регистрации, VK и YouTube — публичные страницы, Telegram — страница t.me, Steam — публичные профили steamcommunity.com/id, GitHub — сессия регистрации. Если сайт платформы недоступен из региона (t.me и YouTube в РФ блокируются), заполните поле «Прокси» над таблицей — все проверки пойдут через ваш HTTP-прокси.
 
-Хранилище. username_history.json держит список проверенных ников и историю свободных; accounts.dat — сохранённые пары ник/пароль, зашифрованные Windows DPAPI для текущего пользователя; settings.json — только положение окна, фильтр статусов и сортировку. Журнал UniversalUsernameFinder.log пишется рядом с программой или в %LOCALAPPDATA%\UniversalUsernameFinder.
+Хранилище. username_history.json держит список проверенных ников и историю свободных; accounts.dat — сохранённые пары ник/пароль, зашифрованные Windows DPAPI для текущего пользователя; settings.json — только положение окна, фильтр статусов и сортировку. Журнал UniversalUsernameFinder.log пишется в ту же папку %LOCALAPPDATA%\UniversalUsernameFinder, поэтому сборка или перенос программы его не затирают; в portable-режиме возможен журнал рядом с exe.
 
 Оболочка. UUF.exe собирается из этого скрипта модулем ps2exe: скрипт встроен в exe в открытом виде, поэтому .ps1 остаётся единственным источником правды, а exe — удобная оболочка запуска, а не защита кода.
 '@
@@ -3354,8 +3381,8 @@ function Update-AvailableNames {
     foreach ($candidate in $script:Candidates) {
         $status = [string]$candidate.Status
         $platform = [string]$candidate.Platform
-        if ($status -eq 'Свободен') { $script:PlatformAvailableNames.Add((Get-DisplayNick -Platform $platform -Name ([string]$candidate.Name))) }
-        if ($status -eq 'Свободен' -or $status -eq 'Вероятно свободен') {
+        if ($status -eq 'Свободен') {
+            $script:PlatformAvailableNames.Add((Get-DisplayNick -Platform $platform -Name ([string]$candidate.Name)))
             $script:AvailableNames.Add(('{0}: {1} [{2}]' -f $platform,(Get-DisplayNick -Platform $platform -Name ([string]$candidate.Name)),$status))
         }
     }
@@ -3368,7 +3395,6 @@ function Update-Stats {
         if ($candidate.Checked) { $checked++ }
         switch ([string]$candidate.Status) {
             'Свободен' { $free++ }
-            'Вероятно свободен' { $free++ }
             'Занят' { $taken++ }
             'Недопустимый' { $invalid++ }
             'Ошибка сети' { $errors++ }
@@ -3403,11 +3429,11 @@ function Update-ResultGrid {
         'Статус' { $items = @($items | Sort-Object Status, Platform, Name) }
         'Категория' { $items = @($items | Sort-Object Category, Platform, Name) }
         'Короткие сначала' { $items = @($items | Sort-Object @{Expression={$_.Name.Length}}, Platform, Name) }
-        'Свободные первыми' { $items = @($items | Sort-Object @{Expression={ switch ([string]$_.Status) { 'Свободен' {0}; 'Вероятно свободен' {1}; 'Не подтверждено' {2}; 'Ожидает' {3}; 'Проверяется' {4}; 'Ошибка сети' {5}; 'Занят' {6}; default {7} } }}, Platform, Name) }
+        'Свободные первыми' { $items = @($items | Sort-Object @{Expression={ switch ([string]$_.Status) { 'Свободен' {0}; 'Не подтверждено' {1}; 'Ожидает' {2}; 'Проверяется' {3}; 'Ошибка сети' {4}; 'Занят' {5}; default {6} } }}, Platform, Name) }
         default { }
     }
     foreach ($item in $items) {
-        if ($script:OnlyFreeCheck.Checked -and ([string]$item.Status -ne 'Свободен' -and [string]$item.Status -ne 'Вероятно свободен')) { continue }
+        if ($script:OnlyFreeCheck.Checked -and [string]$item.Status -ne 'Свободен') { continue }
         if ($filterStatus -and $filterStatus -ne 'Все статусы' -and [string]$item.Status -ne $filterStatus) { continue }
         $searchText = ([string]$item.Name + ' ' + [string]$item.Platform + ' ' + [string]$item.Category + ' ' + [string]$item.Meaning + ' ' + [string]$item.Reason)
         if ($query -and $searchText.IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
@@ -3497,7 +3523,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.5' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.6' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -3652,15 +3678,18 @@ if ($Platform -eq 'GitHub') {
 if ($Platform -eq 'Outlook') {
     try {
         $msSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-        $msPage = Get-HttpResult -Url 'https://signup.live.com/?lic=1' -Timeout $timeoutSec -Headers $browserHeaders -WebSession $msSession
-        $msPageText = [string]$msPage.Content
+        foreach ($msInitUrl in @('https://signup.live.com/?lic=1','https://signup.live.com/CreateAccount?lic=1&signup=1')) {
+            $msPage = Get-HttpResult -Url $msInitUrl -Timeout $timeoutSec -Headers $browserHeaders -WebSession $msSession
+            $msPageText = [string]$msPage.Content
         $contextMatch = [regex]::Match($msPageText, '(?s)var\s+t0\s*=\s*(\{.*?\})\s*;')
         if ($contextMatch.Success) { try { $msContext = ConvertFrom-Json -InputObject $contextMatch.Groups[1].Value } catch { } }
         if ($null -eq $msContext -or -not $msContext.apiCanary) {
             $canaryMatch = [regex]::Match($msPageText, '(?i)"?apiCanary"?\s*[:=]\s*"([^"]+)"')
             if ($canaryMatch.Success) { $msContext = [pscustomobject]@{ apiCanary=$canaryMatch.Groups[1].Value; uaid=[string][guid]::NewGuid(); cpgids=$null } }
         }
-        if ($null -eq $msContext -or -not $msContext.apiCanary) { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message='Microsoft/Outlook: основная проверка идёт через GetCredentialType; токен формы регистрации не найден.'}) }
+            if ($null -ne $msContext -and $msContext.apiCanary) { break }
+        }
+        if ($null -eq $msContext -or -not $msContext.apiCanary) { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message='Microsoft/Outlook: токен формы регистрации не найден — доступность сможет только подтверждать заняность через GetCredentialType.'}) }
     } catch { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=('Microsoft/Outlook: инициализация проверки не удалась: ' + $_.Exception.Message)}) }
 }
 try {
@@ -3714,44 +3743,11 @@ try {
                 }
 # --- Google Api
                 'Google' {
+                    # --- Google закрыл анонимные опросы (400 на «холодные» запросы), поэтому первым идёт signin-lookup с прогретой сессией
                     $email = $name + '@gmail.com'
                     $googleCode = ''
-                    $googleCells = @()
-                    for ($nullIndex = 0; $nullIndex -lt 8; $nullIndex++) { $googleCells += 'null' }
-                    $googleCells += ('"' + $email + '"')
-                    $googleCells += 'null'
-                    $googleCells += '0'
-                    for ($nullIndex = 0; $nullIndex -lt 6; $nullIndex++) { $googleCells += 'null' }
-                    $googleCells += '[1]'
-                    $googlePlainBody = 'f.req=[[' + ($googleCells -join ',') + ']]'
-                    $googleVariants = @()
-                    $googleVariants += @{Url='https://accounts.google.com/_/signup/webusernameavailability'; Body=$googlePlainBody; NeedToken=$false}
-                    $googleTokenBody = ''
-                    if ($googleSetupToken) { $googleTokenBody = 'f.req=[' + '"' + $googleSetupToken.Replace('"','') + '","","","' + $email + '"]' }
-                    $googleVariants += @{Url='https://accounts.google.com/_/signup/usernameavailability?hl=en'; Body=$googleTokenBody; NeedToken=$true}
-                    foreach ($googleVariant in $googleVariants) {
-                        if ($googleVariant.NeedToken -and (-not $googleSetupToken -or $null -eq $googleSession -or [string]::IsNullOrWhiteSpace([string]$googleVariant.Body))) { continue }
-                        $googleBody = [string]$googleVariant.Body
-                        $googleHeaders = @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='*/*'; 'Google-Accounts-Xsrf'='1'; 'Origin'='https://accounts.google.com'; 'Referer'='https://accounts.google.com/signup/v2/webcreateaccount?service=mail&flowEntry=SignUp'}
-                        try {
-                            if ($googleVariant.NeedToken) {
-                                $r = Get-HttpResult -Url ([string]$googleVariant.Url) -Timeout $timeoutSec -Headers $googleHeaders -Method Post -Body $googleBody -ContentType 'application/x-www-form-urlencoded; charset=UTF-8' -WebSession $googleSession
-                            } else {
-                                $r = Get-HttpResult -Url ([string]$googleVariant.Url) -Timeout $timeoutSec -Headers $googleHeaders -Method Post -Body $googleBody -ContentType 'application/x-www-form-urlencoded; charset=UTF-8'
-                            }
-                            $httpStatus = [int]$r.Code
-                            if ($httpStatus -eq 200) {
-                                $bodyText = ([string]$r.Content).Trim()
-                                if ($bodyText -match '\[\[\s*null\s*,\s*\[\s*([12])\s*(?:,|\])') { $googleCode = $Matches[1] }
-                                elseif ($bodyText -match '(?is)\[\s*null\s*,\s*([12])\s*(?:,|\])') { $googleCode = $Matches[1] }
-                                elseif ($bodyText -match '(?i)"(?:usernameAvailable|available)"\s*:\s*(true|false)') { if ($Matches[1] -ieq 'true') { $googleCode = '1' } else { $googleCode = '2' } }
-                                elseif ($bodyText -match '(?i)IDENTIFIER_EXISTS|username.{0,80}(?:taken|not available)|email.{0,80}already') { $googleCode = '2' }
-                            }
-                        } catch { }
-                        if ($googleCode) { break }
-                        if ($httpStatus -eq 429 -or $httpStatus -ge 500) { break }
-                    }
-                    if (-not $googleCode -and $null -ne $googleSession) {
+                    $googleHttpNote = ''
+                    if ($null -ne $googleSession) {
                         $lookupCells = @()
                         for ($nullIndex = 0; $nullIndex -lt 4; $nullIndex++) { $lookupCells += 'null' }
                         $lookupCells += ('"' + $email + '"')
@@ -3767,9 +3763,44 @@ try {
                             }
                         } catch { }
                     }
-                    if ($googleCode -eq '1') { $status='Свободен'; $reason='Google сообщил, что адрес Gmail доступен'; $consecutiveErrors=0 }
-                    elseif ($googleCode -eq '2') { $status='Занят'; $reason='Google сообщил, что адрес Gmail занят'; $consecutiveErrors=0 }
-                    else { $status='Не подтверждено'; $reason='Google не вернул распознаваемый код доступности; страница регистрации могла потребовать свежую сессию — повторите позже или задайте прокси'; $consecutiveErrors=0 }
+                    $googleCells = @()
+                    for ($nullIndex = 0; $nullIndex -lt 8; $nullIndex++) { $googleCells += 'null' }
+                    $googleCells += ('"' + $email + '"')
+                    $googleCells += 'null'
+                    $googleCells += '0'
+                    for ($nullIndex = 0; $nullIndex -lt 6; $nullIndex++) { $googleCells += 'null' }
+                    $googleCells += '[1]'
+                    $googlePlainBody = 'f.req=[[' + ($googleCells -join ',') + ']]'
+                    $googleVariants = @()
+                    $googleVariants += @{Url='https://accounts.google.com/_/signup/webusernameavailability'; Body=$googlePlainBody; NeedToken=$false}
+                    $googleTokenBody = ''
+                    if ($googleSetupToken) { $googleTokenBody = 'f.req=[' + '"' + $googleSetupToken.Replace('"','') + '","","","' + $email + '"]' }
+                    $googleVariants += @{Url='https://accounts.google.com/_/signup/usernameavailability?hl=en'; Body=$googleTokenBody; NeedToken=$true}
+                    if (-not $googleCode) {
+                        $googleHeaders = @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='*/*'; 'Accept-Language'='en-US,en;q=0.9'; 'Google-Accounts-Xsrf'='1'; 'Origin'='https://accounts.google.com'; 'Referer'='https://accounts.google.com/signup/v2/webcreateaccount?service=mail&flowEntry=SignUp'}
+                        foreach ($googleVariant in $googleVariants) {
+                            if ($googleVariant.NeedToken -and (-not $googleSetupToken -or $null -eq $googleSession -or [string]::IsNullOrWhiteSpace([string]$googleVariant.Body))) { continue }
+                            $googleBody = [string]$googleVariant.Body
+                            $httpStatus = 0
+                            try {
+                                $r = Get-HttpResult -Url ([string]$googleVariant.Url) -Timeout $timeoutSec -Headers $googleHeaders -Method Post -Body $googleBody -ContentType 'application/x-www-form-urlencoded; charset=UTF-8' -WebSession $googleSession
+                                $httpStatus = [int]$r.Code
+                                if ($httpStatus -eq 400) { $googleHttpNote = 'валидатор регистрации ответил 400 (Google закрыл его для автоматических запросов)' }
+                                if ($httpStatus -eq 200) {
+                                    $bodyText = ([string]$r.Content).Trim()
+                                    if ($bodyText -match '\[\[\s*null\s*,\s*\[\s*([12])\s*(?:,|\])') { $googleCode = $Matches[1] }
+                                    elseif ($bodyText -match '(?is)\[\s*null\s*,\s*([12])\s*(?:,|\])') { $googleCode = $Matches[1] }
+                                    elseif ($bodyText -match '(?i)"(?:usernameAvailable|available)"\s*:\s*(true|false)') { if ($Matches[1] -ieq 'true') { $googleCode = '1' } else { $googleCode = '2' } }
+                                    elseif ($bodyText -match '(?i)IDENTIFIER_EXISTS|username.{0,80}(?:taken|not available)|email.{0,80}already') { $googleCode = '2' }
+                                }
+                            } catch { }
+                            if ($googleCode) { break }
+                            if ($httpStatus -eq 429 -or $httpStatus -ge 500) { break }
+                        }
+                    }
+                    if ($googleCode -eq '1') { $status='Свободен'; $reason='Google: страница входа не нашла аккаунт с этим адресом'; $consecutiveErrors=0 }
+                    elseif ($googleCode -eq '2') { $status='Занят'; $reason='Google: адрес Gmail используется'; $consecutiveErrors=0 }
+                    else { $status='Не подтверждено'; if ($googleHttpNote) { $reason='Google: ' + $googleHttpNote + '; lookup тоже молчит — проверьте позже или через «Прокси»' } else { $reason='Google не вернул распознаваемого ответа — точную доступность покажет только форма регистрации' }; $consecutiveErrors=0 }
                 }
 # --- Mail.ru Api
                 'Mail.ru' {
@@ -3796,13 +3827,13 @@ try {
                     if ($httpStatus -eq 200) {
                         $response = ConvertFrom-Json -InputObject $r.Content -ErrorAction Stop
                         if ($null -ne $response.response -and $response.response.object_id) { $status='Занят'; $reason='VK разрешил screen name в существующий профиль'; $consecutiveErrors=0 }
-                        elseif ($null -ne $response.PSObject.Properties['response'] -and $null -eq $response.response) { $status='Вероятно свободен'; $reason='VK не разрешил screen name в публичный профиль; зарезервированные имена могут быть недоступны'; $consecutiveErrors=0 }
+                        elseif ($null -ne $response.PSObject.Properties['response'] -and $null -eq $response.response) { $status='Свободен'; $reason='VK не разрешил screen name в публичный профиль — имя не занято (зарезервированные исключения покажет регистрация)'; $consecutiveErrors=0 }
                         else {
                             $profileUrl = 'https://vk.com/' + [uri]::EscapeDataString($name)
                             $pr = Get-HttpResult -Url $profileUrl -Timeout $timeoutSec -Headers $browserHeaders
                             $httpStatus = [int]$pr.Code
                             if ($pr.Content -match ('(?is)id="profile_short"|id="profile_full"|"screen_name"\s*:\s*"' + [regex]::Escape($name) + '"')) { $status='Занят'; $reason='Публичный профиль VK найден'; $consecutiveErrors=0 }
-                            elseif ([int]$pr.Code -eq 404 -or $pr.Content -match '(?i)страница удалена|пользователь не найден|page not found|profile is unavailable') { $status='Вероятно свободен'; $reason='VK не нашёл публичный профиль с таким screen name; имя может быть зарезервировано'; $consecutiveErrors=0 }
+                            elseif ([int]$pr.Code -eq 404 -or $pr.Content -match '(?i)страница удалена|пользователь не найден|page not found|profile is unavailable') { $status='Свободен'; $reason='VK не нашёл публичный профиль с таким screen name'; $consecutiveErrors=0 }
                             else { $status='Не подтверждено'; $reason='VK не раскрыл однозначный статус screen name'; $consecutiveErrors=0 }
                         }
                     }
@@ -3839,8 +3870,8 @@ try {
                         if ($httpStatus -eq 200 -and $existsMatch.Success) {
                             $credentialCode = [int]$existsMatch.Groups[1].Value
                             if ($credentialCode -eq 0) { $status='Занят'; $reason='Outlook: IfExistsResult=0 — Microsoft сообщает, что пользователь с таким адресом существует'; $consecutiveErrors=0 }
-                            elseif ($credentialCode -eq 1) { $status='Вероятно свободен'; $reason='Outlook: IfExistsResult=1 — адрес не найден (невалидный аккаунт); окончательную доступность подтвердит регистрация'; $consecutiveErrors=0 }
-                            elseif ($credentialCode -eq 4) { $status='Вероятно свободен'; $reason='Outlook: IfExistsResult=4 — федеративный домен, занячность личного адреса не подтверждена'; $consecutiveErrors=0 }
+                            elseif ($credentialCode -eq 1) { $status='Не подтверждено'; $reason='Outlook: аккаунта для входа нет (IfExistsResult=1), но форма регистрации может отказать (резерв/ограничения). Ответа signup.live.com не получил — не считаю имя свободным'; $consecutiveErrors=0 }
+                            elseif ($credentialCode -eq 4) { $status='Не подтверждено'; $reason='Outlook: IfExistsResult=4 — федеративный домен, доступность личного адреса не подтверждена'; $consecutiveErrors=0 }
                             elseif ($credentialCode -eq 5 -or $credentialCode -eq 6) { $status='Не подтверждено'; $reason='Outlook: IfExistsResult=' + $credentialCode + ' — домен не найден или ошибка домена'; $consecutiveErrors=0 }
                             else { $status='Не подтверждено'; $reason='Outlook: неизвестный IfExistsResult=' + $credentialCode; $consecutiveErrors=0 }
                         } elseif ($errorThrottle) {
@@ -3849,7 +3880,7 @@ try {
                             $status='Не подтверждено'; $reason='Outlook: GetCredentialType ответил без поля IfExistsResult; включаю резервную проверку регистрации'; $consecutiveErrors=0
                         }
                     } catch { }
-                    if ($status -notin @('Занят','Свободен','Вероятно свободен') -and $null -ne $msContext -and $null -ne $msSession -and $msContext.apiCanary) {
+                    if ($status -notin @('Занят','Свободен') -and $null -ne $msContext -and $null -ne $msSession -and $msContext.apiCanary) {
                         $hpgid = $null
                         try { $hpgid = $msContext.cpgids.Signup_MemberNamePage_Client } catch { }
                         if ($null -eq $hpgid) { $hpgid = 1001 }
@@ -3871,7 +3902,7 @@ try {
                                     if ($existsMatch2.Success) {
                                         $existsCode = [int]$existsMatch2.Groups[1].Value
                                         if ($existsCode -eq 0) { $status='Занят'; $reason='Outlook: резервная проверка вернула IfExistsResult=0 — аккаунт существует'; $consecutiveErrors=0 }
-                                        elseif ($existsCode -eq 1) { $status='Вероятно свободен'; $reason='Outlook: резервная проверка вернула IfExistsResult=1 — аккаунт не найден'; $consecutiveErrors=0 }
+                                        elseif ($existsCode -eq 1) { $status='Не подтверждено'; $reason='Outlook: резервная проверка вернула IfExistsResult=1 — аккаунт не найден, форму регистрации не подтвердил'; $consecutiveErrors=0 }
                                         else { $status='Не подтверждено'; $reason='Outlook: резервная проверка вернула IfExistsResult=' + $existsCode; $consecutiveErrors=0 }
                                     }
                                 }
@@ -3907,7 +3938,7 @@ try {
                             }
                         } catch { }
                         if ($httpStatus -eq 200) { $status='Занят'; $reason='Публичный профиль GitHub найден'; $consecutiveErrors=0 }
-                        elseif ($httpStatus -eq 404) { $status='Вероятно свободен'; $reason='Профиль GitHub не найден; имя может быть зарезервировано регистрационной формой'; $consecutiveErrors=0 }
+                        elseif ($httpStatus -eq 404) { $status='Свободен'; $reason='GitHub: регистрационный endpoint не нашёл профиль с таким именем'; $consecutiveErrors=0 }
                         elseif ($httpStatus -eq 403) { $status='Ошибка сети'; $reason='GitHub ограничил анонимный API (403/возможный лимит)'; $stopReason='GitHub ограничил запросы; проверка остановлена' }
                         if ($rateRemaining -eq 0 -and -not $stopReason) {
                             $stopReason = 'Исчерпан часовой лимит анонимного API GitHub (60 запросов); проверка остановлена. Повтори позже или используй только регистрационный endpoint.'
@@ -3925,26 +3956,28 @@ try {
                     $matchingCanonical = $content -match ('(?is)"canonicalBaseUrl"\s*:\s*"/@' + $escapedHandle + '"') -or $content -match ('(?is)<link[^>]+rel="canonical"[^>]+href="https?://www\.youtube\.com/@' + $escapedHandle + '"') -or $content -match ('(?is)property="og:url"[^>]+content="https?://www\.youtube\.com/@' + $escapedHandle + '"') -or $content -match ('(?is)"canonicalChannelUrl"\s*:\s*"https?://www\.youtube\.com/@' + $escapedHandle + '"')
                     $channelMetadata = $content -match '(?is)"channelMetadataRenderer"\s*:\s*\{'
                     if ($httpStatus -eq 200 -and $matchingCanonical -and $channelMetadata) { $status='Занят'; $reason='YouTube вернул страницу канала, canonical handle совпадает с запрошенным'; $consecutiveErrors=0 }
-                    elseif (($httpStatus -eq 404 -or $content -match '(?i)channelNotFound|This page isn.t available|channel does not exist') -and -not $channelMetadata) { $status='Вероятно свободен'; $reason='YouTube не нашёл канал с этим handle; зарезервированность имени не исключена'; $consecutiveErrors=0 }
+                    elseif (($httpStatus -eq 404 -or $content -match '(?i)channelNotFound|This page isn.t available|channel does not exist') -and -not $channelMetadata) { $status='Свободен'; $reason='YouTube не нашёл канал с этим handle'; $consecutiveErrors=0 }
                     else { $status='Не подтверждено'; $reason='Публичная страница не подтвердила ни существование канала с этим canonical handle, ни регистрационную доступность'; $consecutiveErrors=0 }
                 }
 # --- Telegram Api
                 'Telegram' {
+                    # --- Публичный метод t.me: код ответа и маркеры страницы читаются однозначно
                     $url = 'https://t.me/' + [uri]::EscapeDataString($name)
                     $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers $browserHeaders
                     $httpStatus = [int]$r.Code
                     $content = [string]$r.Content
                     $normalizedHandle = [regex]::Escape($name)
-                    $directHandleMarker = $content -match ('(?is)class="tgme_page_extra"[^>]*>\s*@?' + $normalizedHandle + '\s*</')
-                    $hasProfileTitle = $content -match '(?is)class="tgme_page_title"[^>]*>\s*<span[^>]*>\s*[^<\s][^<]*</span>'
-                    $hasProfileData = $content -match '(?i)tgme_page_photo|tgme_page_profile|tgme_page_extra'
-                    $ogContactMatch = $content -match ('(?is)<meta property="og:title" content="Telegram\s*:\s*Contact @?' + $normalizedHandle + '"')
-                    $reservedPage = $content -match '(?i)username has been reserved|reserved for payment|this username is reserved'
-                    $genericNotFound = $content -match '(?i)this user doesn.t seem to exist|page not found|username not found|tgme_page_error'
-                    if ($httpStatus -eq 200 -and -not $genericNotFound -and ($directHandleMarker -or $ogContactMatch -or ($hasProfileTitle -and $hasProfileData -and $content -notmatch '(?i)if you have telegram|contact @'))) { $status='Занят'; $reason='Публичная страница Telegram содержит данные целевого профиля/канала'; $consecutiveErrors=0 }
-                    elseif ($httpStatus -eq 200 -and $reservedPage) { $status='Занят'; $reason='Telegram: имя зарезервировано платформой (резерв или платный ник)'; $consecutiveErrors=0 }
-                    elseif ($httpStatus -eq 404 -or $genericNotFound) { $status='Вероятно свободен'; $reason='Публичная страница Telegram не найдена; авторизованный метод может выявить резервирование'; $consecutiveErrors=0 }
-                    else { $status='Не подтверждено'; $reason='Публичная страница не дала однозначного результата; account.checkUsername требует авторизованной пользовательской сессии'; $consecutiveErrors=0 }
+                    $profileOwner = ($content -match ('(?is)class="tgme_page_extra"[^>]*>\s*@?' + $normalizedHandle + '\s*</')) -or ($content -match ('(?is)<meta property="og:title" content="Telegram\s*:\s*Contact @?' + $normalizedHandle + '"'))
+                    $freeHintPage = $content -match '(?i)if you have a telegram account|reserve this username|doesn.t seem to exist|username not found|tgme_page_error'
+                    $reservedPage = $content -match '(?i)username has been reserved|reserved for payment|this username is reserved|has been frozen'
+                    $blockedPage = $content -match '(?i)доступ к странице ограничен|access is restricted|reestr|roskomnadzor'
+                    if ($blockedPage) { $status='Не подтверждено'; $reason='Telegram: страница провайдера о блокировке t.me — задай «Прокси» над таблицей или включи VPN'; $consecutiveErrors++ }
+                    elseif ($httpStatus -eq 404) { $status='Свободен'; $reason='Telegram: t.me вернул 404 — страница @' + $name + ' никем не занята'; $consecutiveErrors=0 }
+                    elseif ($httpStatus -eq 200 -and $freeHintPage -and -not $reservedPage) { $status='Свободен'; $reason='Telegram: t.me предложил настроить или забронировать @' + $name + ' — тег свободен'; $consecutiveErrors=0 }
+                    elseif ($httpStatus -eq 200 -and $reservedPage) { $status='Занят'; $reason='Telegram: тег @' + $name + ' зарезервирован платформой (резерв или платный ник) — регистрация закрыта'; $consecutiveErrors=0 }
+                    elseif ($httpStatus -eq 200 -and $profileOwner) { $status='Занят'; $reason='Telegram: t.me отдаёт публичную страницу @' + $name; $consecutiveErrors=0 }
+                    elseif ($httpStatus -eq 200) { $status='Не подтверждено'; $reason='Telegram: t.me ответил без распознаваемых маркеров профиля; попробуй повторить или задать прокси'; $consecutiveErrors=0 }
+                    else { $status='Не подтверждено'; $reason='Telegram: неожиданный HTTP ' + $httpStatus + ' от t.me'; $consecutiveErrors=0 }
                 }
 # --- Steam Api
                 'Steam' {
@@ -4303,14 +4336,14 @@ $script:StopButton.Add_Click({
 
 $script:SaveButton.Add_Click({
     Update-AvailableNames
-    if ($script:AvailableNames.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show('Пока нет подтверждённых или вероятных вариантов.','Сохранение','OK','Information') | Out-Null; return }
+    if ($script:AvailableNames.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show('Пока нет свободных ников.','Сохранение','OK','Information') | Out-Null; return }
     $dialog = New-Object System.Windows.Forms.SaveFileDialog
     $dialog.Filter = 'Текстовый файл (*.txt)|*.txt'
-    $dialog.FileName = 'Universal_Usernames_Free_Or_Possible_' + (Get-Date -Format 'yyyy-MM-dd_HH-mm') + '.txt'
+    $dialog.FileName = 'Universal_Usernames_Free_' + (Get-Date -Format 'yyyy-MM-dd_HH-mm') + '.txt'
     $dialog.Title = 'Сохранить свободные ники'
     if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         [System.IO.File]::WriteAllLines($dialog.FileName,$script:AvailableNames.ToArray(),(New-Object System.Text.UTF8Encoding -ArgumentList $true))
-        Add-Diagnostic "TXT экспортировано подтверждённых/предположительных вариантов: $($script:AvailableNames.Count) → $($dialog.FileName)"
+        Add-Diagnostic "TXT экспортировано свободных ников: $($script:AvailableNames.Count) → $($dialog.FileName)"
     }
 })
 $script:CsvButton.Add_Click({
@@ -4326,9 +4359,9 @@ $script:CsvButton.Add_Click({
 })
 $script:CopyButton.Add_Click({
     Update-AvailableNames
-    if ($script:AvailableNames.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show('Пока нет подтверждённых или вероятных вариантов.','Копирование','OK','Information') | Out-Null; return }
+    if ($script:AvailableNames.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show('Пока нет свободных ников.','Копирование','OK','Information') | Out-Null; return }
     [System.Windows.Forms.Clipboard]::SetText(($script:AvailableNames -join [Environment]::NewLine))
-    $script:SummaryLabel.Text = "Скопировано подтверждённых/вероятных вариантов: $($script:AvailableNames.Count)"
+    $script:SummaryLabel.Text = "Скопировано свободных ников: $($script:AvailableNames.Count)"
 })
 $script:ClearButton.Add_Click({
     if (Test-CheckRunning) { return }

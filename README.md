@@ -38,6 +38,16 @@ UUF — приложение для Windows, которое придумывае
 2. Запустите `UUF.exe` (после сборки лежит в `dist\`) — PowerShell не нужен.
 3. Либо откройте `UniversalUsernameFinder.ps1` в Windows PowerShell 5.1; если политика выполнения запрещает скрипты, разово выполните `Set-ExecutionPolicy -Scope Process Bypass`.
 
+## Установка на рабочий стол
+
+Артефакт `UniversalUsernameFinder-windows` из GitHub Actions (или папка `dist\` после локальной сборки) содержит `UUF.exe` и `Install-UUF.ps1`. Распакуйте оба файла в одну папку и выполните:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1
+```
+
+Установщик положит программу в `%LOCALAPPDATA%\Programs\UniversalUsernameFinder\UUF.exe` и создаст ярлык на рабочем столе и в меню «Пуск». Все данные программы — история `username_history.json`, настройки, зашифрованный сейф и журнал — живут в `%LOCALAPPDATA%\UniversalUsernameFinder`, поэтому переустановка или перенос `.exe` их не затирают. Удаление: `.\Install-UUF.ps1 -Uninstall` (с ключом `-RemoveData` — вместе с данными).
+
 ## Сборка .exe
 
 Сборка выполняется модулем [ps2exe](https://github.com/MScholtes/PS2EXE): `build\Build-Exe.bat` или `build\Build-Exe.ps1`. Результат — `dist\UUF.exe` с иконкой приложения. `.exe` встраивает скрипт в открытом виде (извлекается параметром `-extract`), поэтому это оболочка запуска, а не защита кода; источник правды — `.ps1`.
@@ -50,7 +60,7 @@ UUF — приложение для Windows, которое придумывае
 
 - `UniversalUsernameFinder.ps1` — всё приложение: словарь, генератор, интерфейс, воркеры проверки.
 - `tests/UniversalUsernameFinder.Tests.ps1` — тесты Pester.
-- `build/` — сборка `.exe` через ps2exe.
+- `build/` — сборка `.exe` через ps2exe и установщик `Install-UUF.ps1` (ярлык на рабочем столе).
 - `assets/` — логотип и иконка.
 - `.github/workflows/ci.yml` — прогон CI.
 
