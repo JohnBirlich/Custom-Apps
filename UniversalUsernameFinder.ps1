@@ -31,8 +31,7 @@ function Get-AppDirectory {
 }
 
 function Resolve-LogPath {
-    # --- Журнал пишется туда, где его не затирает новая сборка: %LOCALAPPDATA%\UniversalUsernameFinder;
-    # папка программы — только запасной вариант для portable-режима
+    # --- Журнал пишется в %LOCALAPPDATA%\UniversalUsernameFinder, где его не затирает сборка; папка программы — portable-резерв
     $primary = Join-Path (Get-AppDirectory) 'UniversalUsernameFinder.log'
     try {
         $preferredDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
@@ -1882,9 +1881,7 @@ $footer.Font = New-Object System.Drawing.Font('Segoe UI',9.5,[System.Drawing.Fon
 $footer.TextAlign = 'MiddleLeft'
 $footer.Padding = New-Object System.Windows.Forms.Padding(8,0,4,0)
 $right.Controls.Add($footer)
-# --- Правая панель: финальная подгонка под реальное клиентское окно.
-# Дочерние элементы уже добавлены с якорями Top/Bottom, поэтому сжатие панели
-# поднимает полосу «Диагностика и журнал» вместе с жёлтым предупреждением вверх.
+# --- Правая панель: подгонка под клиентское окно после добавления детей — якоря Bottom поднимают журнал и футер вверх
 try {
     $uufClientFit = $script:Form.ClientSize
     $right.Size = New-Object System.Drawing.Size([Math]::Max(520,[int]$uufClientFit.Width - 440),[Math]::Max(320,[int]$uufClientFit.Height - 114))
