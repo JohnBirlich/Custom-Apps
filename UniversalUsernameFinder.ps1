@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.6.2'
+$script:AppVersion = '2.7.0'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -362,13 +362,13 @@ $script:HistoryDirtySince = $null
 $script:LastGridRefresh = [DateTime]::MinValue
 $script:GridRefreshPending = $false
 $script:StatusColors = @{
-    'Свободен'            = [System.Drawing.Color]::FromArgb(24,26,30)
-    'Вероятно свободен'   = [System.Drawing.Color]::FromArgb(70,74,80)
-    'Занят'               = [System.Drawing.Color]::FromArgb(150,153,158)
-    'Недопустимый'        = [System.Drawing.Color]::FromArgb(150,153,158)
-    'Не подтверждено'      = [System.Drawing.Color]::FromArgb(120,124,130)
-    'Ошибка сети'         = [System.Drawing.Color]::FromArgb(120,124,130)
-    'Проверяется'         = [System.Drawing.Color]::FromArgb(170,173,178)
+    'Свободен'            = [System.Drawing.Color]::FromArgb(99,222,151)
+    'Вероятно свободен'   = [System.Drawing.Color]::FromArgb(120,205,250)
+    'Занят'               = [System.Drawing.Color]::FromArgb(245,120,120)
+    'Недопустимый'        = [System.Drawing.Color]::FromArgb(180,188,203)
+    'Не подтверждено'      = [System.Drawing.Color]::FromArgb(207,185,255)
+    'Ошибка сети'         = [System.Drawing.Color]::FromArgb(255,190,92)
+    'Проверяется'         = [System.Drawing.Color]::FromArgb(105,185,255)
     'Ожидает'             = [System.Drawing.Color]::FromArgb(170,173,178)
 }
 try {
@@ -473,7 +473,7 @@ function Test-RobloxUsernameFormat {
 }
 
 # --- Платформы и правила длины
-$script:SupportedPlatforms = @('Roblox','Google','Mail.ru','VK','Discord','Outlook','Telegram','Telegram Channel','GitHub','YouTube')
+$script:SupportedPlatforms = @('Roblox','Google','Mail.ru','VK','Discord','Outlook','Telegram','Steam','GitHub','YouTube')
 
 function Test-SupportedPlatform {
     param([string]$Platform)
@@ -491,7 +491,7 @@ $script:PlatformLengthRules = @{
     'Telegram'  = @{ Min = 5; Max = 32 }
     'GitHub'    = @{ Min = 1; Max = 39 }
     'YouTube'   = @{ Min = 3; Max = 30 }
-    'Telegram Channel' = @{ Min = 4; Max = 32 }
+    'Steam'      = @{ Min = 3; Max = 30 }
 }
 
 function Get-PlatformLengthRule {
@@ -540,7 +540,7 @@ function Test-UsernameFormat {
         }
         'YouTube' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9._-]+$' -and $Username -notmatch '\.\.$') }
         'Telegram' { return ($Username.Length -ge 5 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z][A-Za-z0-9_]*$') }
-        'Telegram Channel' { return ($Username.Length -ge 4 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_+]+$') }
+        'Steam' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9_-]*$') }
         default { return ($Username.Length -ge 3 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_.-]+$') }
     }
 }
@@ -558,7 +558,7 @@ function Get-PlatformWebsiteUrl {
         'Discord' { return 'https://discord.com/register' }
         'YouTube' { if ($Username) { return ('https://www.youtube.com/@' + $safeName) }; return 'https://www.youtube.com/' }
         'Telegram' { if ($Username) { return ('https://t.me/' + $safeName) }; return 'https://telegram.org/' }
-        'Telegram Channel' { return ('https://t.me/' + ([string]$Username).Trim()) }
+        'Steam' { return ('https://steamcommunity.com/id/' + ([string]$Username).Trim()) }
         default { return 'https://www.google.com/search?q=' + [uri]::EscapeDataString($Platform + ' username ' + $Username) }
     }
 }
@@ -1128,7 +1128,7 @@ function New-AdvancedCandidatePool {
 
 # --- Интерфейс: окно и заголовок
 $script:Form = New-Object System.Windows.Forms.Form
-$script:Form.Text = ('UUF v{0}' -f $script:AppVersion)
+$script:Form.Text = ('Universal Username Finder v{0}' -f $script:AppVersion)
 $script:Form.StartPosition = 'CenterScreen'
 $designWindowSize = New-Object System.Drawing.Size(1480, 1010)
 $designMinimumSize = New-Object System.Drawing.Size(1240, 960)
@@ -1151,143 +1151,75 @@ try {
 } catch { }
 $script:Form.MinimumSize = New-Object System.Drawing.Size($minimumWidth, $minimumHeight)
 $script:Form.Size = New-Object System.Drawing.Size($windowWidth, $windowHeight)
-$script:Form.BackColor = [System.Drawing.Color]::FromArgb(245,246,248)
-$script:Form.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:Form.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
+$script:Form.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $script:Form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-$script:Form.FormBorderStyle = 'None'
-$script:UufWin32Available = $false
+$script:AppLogoImage = $null
+$script:AppIconCached = $null
+$script:UufDwmAvailable = $false
 try {
-Add-Type -TypeDefinition @'
+    $null = Add-Type -TypeDefinition @'
 using System;
-using System.Drawing;
-using System.Windows.Forms;
-public sealed class UufResizeFrame : NativeWindow {
-    protected override void WndProc(ref Message m) {
-        if (m.Msg == 0x84) {
-            base.WndProc(ref m);
-            if ((int)m.Result == 1) {
-                Form f = Control.FromHandle(m.HWnd) as Form;
-                if (f != null) {
-                    int lp = m.LParam.ToInt32();
-                    int x = (short)(lp & 0xFFFF);
-                    int y = (short)((lp >> 16) & 0xFFFF);
-                    Point p = f.PointToClient(new Point(x, y));
-                    int g = 7;
-                    bool l = p.X < g, r = p.X >= f.ClientSize.Width - g, t = p.Y < g, b = p.Y >= f.ClientSize.Height - g;
-                    if (l && t) { m.Result = (IntPtr)13; } else if (r && t) { m.Result = (IntPtr)14; }
-                    else if (l && b) { m.Result = (IntPtr)16; } else if (r && b) { m.Result = (IntPtr)17; }
-                    else if (l) { m.Result = (IntPtr)10; } else if (r) { m.Result = (IntPtr)11; }
-                    else if (t) { m.Result = (IntPtr)12; } else if (b) { m.Result = (IntPtr)15; }
-                }
-            }
-            return;
-        }
-        base.WndProc(ref m);
+using System.Runtime.InteropServices;
+
+public static class UufDwmCorners {
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    public static void Round(IntPtr hwnd) {
+        int preference = 2;
+        DwmSetWindowAttribute(hwnd, 33, ref preference, 4);
     }
 }
-public static class UufWin32 {
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    public static extern bool ReleaseCapture();
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    public static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
-}
-'@ -ReferencedAssemblies System.Windows.Forms, System.Drawing
-$script:UufWin32Available = $true
-} catch {
-    try { Write-StartupLog ('Не удалось подключить Win32-рамку окна: ' + $_.Exception.Message) } catch { }
+'@
+    $script:UufDwmAvailable = $true
+} catch { }
+
+function Set-WindowChrome {
+    param([object]$Window)
+    if ($null -eq $Window) { return }
+    try {
+        if ($script:AppIconCached) { $Window.Icon = $script:AppIconCached; $Window.ShowIcon = $true }
+    } catch { }
+    if ($script:UufDwmAvailable) {
+        try { $Window.Add_Load({ param($sender,$e) try { [UufDwmCorners]::Round($sender.Handle) } catch { } }) } catch { }
+    }
 }
 
-$script:CaptionBar = New-Object System.Windows.Forms.Panel
-$script:CaptionBar.Location = New-Object System.Drawing.Point(0, 6)
-$script:CaptionBar.Size = New-Object System.Drawing.Size($windowWidth, 44)
-$script:CaptionBar.Anchor = 'Top, Left, Right'
-$script:CaptionBar.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:CaptionIcon = New-Object System.Windows.Forms.PictureBox
-$script:CaptionIcon.Location = New-Object System.Drawing.Point(14,10)
-$script:CaptionIcon.Size = New-Object System.Drawing.Size(24,24)
-$script:CaptionIcon.SizeMode = 'Zoom'
-$script:CaptionIcon.BackColor = [System.Drawing.Color]::Transparent
-$script:CaptionBar.Controls.Add($script:CaptionIcon)
-$script:CaptionTitle = New-Object System.Windows.Forms.Label
-$script:CaptionTitle.Text = 'UUF'
-$script:CaptionTitle.Location = New-Object System.Drawing.Point(46,13)
-$script:CaptionTitle.Size = New-Object System.Drawing.Size(400,20)
-$script:CaptionTitle.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
-$script:CaptionTitle.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
-$script:CaptionBar.Controls.Add($script:CaptionTitle)
-$captionMinX = [int]$windowWidth - 146
-$captionMaxX = [int]$windowWidth - 100
-$captionCloseX = [int]$windowWidth - 54
-$script:CaptionMin = New-Object System.Windows.Forms.Button
-$script:CaptionMin.Text = '—'
-$script:CaptionMin.Location = New-Object System.Drawing.Point($captionMinX, 8)
-$script:CaptionMin.Size = New-Object System.Drawing.Size(46,28)
-$script:CaptionMin.Anchor = 'Top, Right'
-$script:CaptionMin.FlatStyle = 'Flat'
-$script:CaptionMin.FlatAppearance.BorderSize = 0
-$script:CaptionMin.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:CaptionMin.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
-$script:CaptionBar.Controls.Add($script:CaptionMin)
-$script:CaptionMax = New-Object System.Windows.Forms.Button
-$script:CaptionMax.Text = '□'
-$script:CaptionMax.Location = New-Object System.Drawing.Point($captionMaxX, 8)
-$script:CaptionMax.Size = New-Object System.Drawing.Size(46,28)
-$script:CaptionMax.Anchor = 'Top, Right'
-$script:CaptionMax.FlatStyle = 'Flat'
-$script:CaptionMax.FlatAppearance.BorderSize = 0
-$script:CaptionMax.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:CaptionMax.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
-$script:CaptionBar.Controls.Add($script:CaptionMax)
-$script:CaptionClose = New-Object System.Windows.Forms.Button
-$script:CaptionClose.Text = '✕'
-$script:CaptionClose.Location = New-Object System.Drawing.Point($captionCloseX, 8)
-$script:CaptionClose.Size = New-Object System.Drawing.Size(46,28)
-$script:CaptionClose.Anchor = 'Top, Right'
-$script:CaptionClose.FlatStyle = 'Flat'
-$script:CaptionClose.FlatAppearance.BorderSize = 0
-$script:CaptionClose.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:CaptionClose.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
-$script:CaptionBar.Controls.Add($script:CaptionClose)
-$script:Form.Controls.Add($script:CaptionBar)
-$captionDrag = {
-    param($sender, $e)
-    if ($script:UufWin32Available -and $e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
-        [void][UufWin32]::ReleaseCapture()
-        [void][UufWin32]::SendMessage($script:Form.Handle, 0xA1, [IntPtr]2, [IntPtr]::Zero)
+function Set-ButtonEdgeStyle {
+    param([object]$Root)
+    if ($null -eq $Root) { return }
+    foreach ($child in @($Root.Controls)) {
+        if ($child -is [System.Windows.Forms.Button]) {
+            try {
+                $child.FlatAppearance.BorderSize = 1
+                $child.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(64,78,104)
+            } catch { }
+        }
+        if ($child.Controls.Count -gt 0) { Set-ButtonEdgeStyle -Root $child }
     }
 }
-$captionDblClick = {
-    if ($script:Form.WindowState -eq 'Maximized') { $script:Form.WindowState = 'Normal' } else { $script:Form.WindowState = 'Maximized' }
-}
-foreach ($captionPart in @($script:CaptionBar, $script:CaptionTitle, $script:CaptionIcon)) {
-    $captionPart.Add_MouseDown($captionDrag)
-    $captionPart.Add_MouseDoubleClick($captionDblClick)
-}
-$script:CaptionMin.Add_Click({ $script:Form.WindowState = 'Minimized' })
-$script:CaptionMax.Add_Click($captionDblClick)
-$script:CaptionClose.Add_Click({ $script:Form.Close() })
+
 try {
     $assetsDirectory = [System.IO.Path]::Combine((Get-AppDirectory), 'assets')
     $logoPngPath = [System.IO.Path]::Combine($assetsDirectory, 'logo.png')
-    if ([System.IO.File]::Exists($logoPngPath)) {
-        $logoImage = [System.Drawing.Image]::FromFile($logoPngPath)
-        $script:CaptionIcon.Image = $logoImage
-    }
+    if ([System.IO.File]::Exists($logoPngPath)) { $script:AppLogoImage = [System.Drawing.Image]::FromFile($logoPngPath) }
     $uufIcoPath = [System.IO.Path]::Combine($assetsDirectory, 'uuf.ico')
-    if ([System.IO.File]::Exists($uufIcoPath)) { $script:Form.Icon = New-Object System.Drawing.Icon($uufIcoPath) }
+    if ([System.IO.File]::Exists($uufIcoPath)) { $script:AppIconCached = New-Object System.Drawing.Icon($uufIcoPath) }
 } catch { }
+Set-WindowChrome -Window $script:Form
 
 $header = New-Object System.Windows.Forms.Panel
-$header.Location = New-Object System.Drawing.Point(0, 50)
+$header.Location = New-Object System.Drawing.Point(0, 0)
 $header.Size = New-Object System.Drawing.Size(1480, 76)
 $header.Anchor = 'Top, Left, Right'
-$header.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+$header.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
 $script:Form.Controls.Add($header)
 
 $title = New-Object System.Windows.Forms.Label
 $title.Text = ('UNIVERSAL USERNAME FINDER  •  v{0}' -f $script:AppVersion)
 $title.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 19, [System.Drawing.FontStyle]::Bold)
-$title.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$title.ForeColor = [System.Drawing.Color]::FromArgb(112,164,255)
 $title.AutoSize = $true
 $title.Location = New-Object System.Drawing.Point(22, 12)
 $header.Controls.Add($title)
@@ -1295,7 +1227,7 @@ $header.Controls.Add($title)
 $subtitle = New-Object System.Windows.Forms.Label
 $subtitle.Text = 'Автоматическая генерация и проверка имён для популярных платформ'
 $subtitle.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-$subtitle.ForeColor = [System.Drawing.Color]::FromArgb(140,145,153)
+$subtitle.ForeColor = [System.Drawing.Color]::FromArgb(177,188,207)
 $subtitle.AutoSize = $true
 $subtitle.Location = New-Object System.Drawing.Point(25, 48)
 $header.Controls.Add($subtitle)
@@ -1307,9 +1239,19 @@ $script:ApiDocsButton.Size = New-Object System.Drawing.Size(100, 38)
 $script:ApiDocsButton.Anchor = 'Top, Right'
 $script:ApiDocsButton.FlatStyle = 'Flat'
 $script:ApiDocsButton.FlatAppearance.BorderSize = 0
-$script:ApiDocsButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-$script:ApiDocsButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:ApiDocsButton.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+$script:ApiDocsButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $header.Controls.Add($script:ApiDocsButton)
+if ($script:AppLogoImage) {
+    $headerLogo = New-Object System.Windows.Forms.PictureBox
+    $headerLogo.Location = New-Object System.Drawing.Point(1414, 14)
+    $headerLogo.Size = New-Object System.Drawing.Size(48, 48)
+    $headerLogo.SizeMode = 'Zoom'
+    $headerLogo.BackColor = [System.Drawing.Color]::Transparent
+    $headerLogo.Anchor = 'Top, Right'
+    $headerLogo.Image = $script:AppLogoImage
+    $header.Controls.Add($headerLogo)
+}
 $script:HistoryButton = New-Object System.Windows.Forms.Button
 $script:HistoryButton.Text = 'Свободные ники'
 $script:HistoryButton.Location = New-Object System.Drawing.Point(1110, 19)
@@ -1317,8 +1259,8 @@ $script:HistoryButton.Size = New-Object System.Drawing.Size(150, 38)
 $script:HistoryButton.Anchor = 'Top, Right'
 $script:HistoryButton.FlatStyle = 'Flat'
 $script:HistoryButton.FlatAppearance.BorderSize = 0
-$script:HistoryButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-$script:HistoryButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:HistoryButton.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+$script:HistoryButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $header.Controls.Add($script:HistoryButton)
 $script:AccountButton = New-Object System.Windows.Forms.Button
 $script:AccountButton.Text = 'Пароль / регистрация'
@@ -1327,7 +1269,7 @@ $script:AccountButton.Size = New-Object System.Drawing.Size(167, 42)
 $script:AccountButton.Anchor = 'Top, Right'
 $script:AccountButton.FlatStyle = 'Flat'
 $script:AccountButton.FlatAppearance.BorderSize = 0
-$script:AccountButton.BackColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:AccountButton.BackColor = [System.Drawing.Color]::FromArgb(67,123,235)
 $script:AccountButton.ForeColor = [System.Drawing.Color]::FromArgb(255,255,255)
 $script:AccountButton.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 9.5, [System.Drawing.FontStyle]::Bold)
 $script:AccountButton.Cursor = [System.Windows.Forms.Cursors]::Hand
@@ -1335,10 +1277,10 @@ $header.Controls.Add($script:AccountButton)
 
 # --- Интерфейс: левая панель
 $left = New-Object System.Windows.Forms.Panel
-$left.Location = New-Object System.Drawing.Point(14, 138)
-$left.Size = New-Object System.Drawing.Size(390, 852)
+$left.Location = New-Object System.Drawing.Point(14, 88)
+$left.Size = New-Object System.Drawing.Size(390, 902)
 $left.Anchor = 'Top, Bottom, Left'
-$left.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+$left.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
 $left.AutoScroll = $true
 $script:Form.Controls.Add($left)
 
@@ -1348,7 +1290,7 @@ function Add-UiLabel {
     $label.Text = $Text
     $label.Location = New-Object System.Drawing.Point($X, $Y)
     $label.Size = New-Object System.Drawing.Size($Width, $Height)
-    $label.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+    $label.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
     $Parent.Controls.Add($label)
     return $label
 }
@@ -1362,11 +1304,11 @@ function Add-UiButton {
     $button.FlatAppearance.BorderSize = 0
     $button.Cursor = [System.Windows.Forms.Cursors]::Hand
     if ($Primary) {
-        $button.BackColor = [System.Drawing.Color]::FromArgb(24, 26, 30)
-        $button.ForeColor = [System.Drawing.Color]::FromArgb(255, 255, 255)
+        $button.BackColor = [System.Drawing.Color]::FromArgb(93,73,222)
+        $button.ForeColor = [System.Drawing.Color]::White
     } else {
-        $button.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-        $button.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+        $button.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+        $button.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     }
     $Parent.Controls.Add($button)
     return $button
@@ -1376,25 +1318,25 @@ function New-TextBox {
     $box = New-Object System.Windows.Forms.TextBox
     $box.Location = New-Object System.Drawing.Point($X,$Y)
     $box.Size = New-Object System.Drawing.Size($Width,$Height)
-    $box.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-    $box.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $box.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $box.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $box.BorderStyle = 'FixedSingle'
     if ($Placeholder) {
         $box.Tag = $Placeholder
         $box.Text = $Placeholder
-        $box.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+        $box.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
         $box.Add_GotFocus({
             $hint = [string]$this.Tag
             if ($hint -and $this.Text -eq $hint) {
                 $this.Text = ''
-                $this.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+                $this.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
             }
         })
         $box.Add_LostFocus({
             $hint = [string]$this.Tag
             if ($hint -and [string]::IsNullOrWhiteSpace($this.Text)) {
                 $this.Text = $hint
-                $this.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+                $this.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
             }
         })
     }
@@ -1415,7 +1357,7 @@ function New-CheckBox {
     $box.Text = $Text
     $box.Location = New-Object System.Drawing.Point($X,$Y)
     $box.Size = New-Object System.Drawing.Size($Width,23)
-    $box.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+    $box.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
     $box.Checked = $Checked
     $left.Controls.Add($box)
     return $box
@@ -1428,8 +1370,8 @@ function New-NumberBox {
     $box.Minimum = $Min
     $box.Maximum = $Max
     $box.Value = $Value
-    $box.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-    $box.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $box.BackColor = [System.Drawing.Color]::FromArgb(32,41,56)
+    $box.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $left.Controls.Add($box)
     return $box
 }
@@ -1437,11 +1379,14 @@ function New-NumberBox {
 Add-UiLabel 'ЕДИНЫЙ ВЫБОР КАТЕГОРИЙ НИКНЕЙМОВ' 14 12 355 22 | Out-Null
 $script:CategoryList = New-Object System.Windows.Forms.CheckedListBox
 $script:CategoryList.Location = New-Object System.Drawing.Point(14, 36)
-$script:CategoryList.Size = New-Object System.Drawing.Size(350, 300)
+$script:CategoryList.Size = New-Object System.Drawing.Size(350, 390)
 $script:CategoryList.CheckOnClick = $true
-$script:CategoryList.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:CategoryList.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:CategoryList.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+$script:CategoryList.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
 $script:CategoryList.BorderStyle = 'FixedSingle'
+$script:CategoryList.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$script:CategoryList.IntegralHeight = $false
+$script:CategoryList.HorizontalScrollbar = $true
 [void]$script:CategoryList.Items.AddRange([object[]]@($script:WordCategories))
 for ($categoryIndex = 0; $categoryIndex -lt $script:CategoryList.Items.Count; $categoryIndex++) {
     $script:CategoryList.SetItemChecked($categoryIndex, $true)
@@ -1463,29 +1408,29 @@ $script:UncheckAllCategoriesButton.Add_Click({
 
 Add-UiLabel 'Игровой стиль' 14 372 150 22 | Out-Null
 $script:StyleBox = New-Object System.Windows.Forms.ComboBox
-$script:StyleBox.Location = New-Object System.Drawing.Point(14,396)
+$script:StyleBox.Location = New-Object System.Drawing.Point(14,486)
 $script:StyleBox.Size = New-Object System.Drawing.Size(350,27)
 $script:StyleBox.DropDownStyle = 'DropDownList'
-$script:StyleBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:StyleBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:StyleBox.BackColor = [System.Drawing.Color]::FromArgb(32,41,56)
+$script:StyleBox.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 [void]$script:StyleBox.Items.AddRange([object[]]@('Минималистичный','Киберспортивный','Футуристический','Тёмный','Эстетичный','Редкий','Короткий','Двусловный','— без стиля —'))
 $script:StyleBox.SelectedItem = '— без стиля —'
 $left.Controls.Add($script:StyleBox)
 
 Add-UiLabel 'Свои слова через запятую' 14 431 350 22 | Out-Null
-$script:CustomBox = New-TextBox 14 454 350 27 'Pixel, Void, Storm'
+$script:CustomBox = New-TextBox 14 544 350 27 'Pixel, Void, Storm'
 Add-UiLabel 'Ручные ники для проверки (каждый с новой строки или через запятую)' 14 489 350 35 | Out-Null
-$script:ManualNickBox = New-TextBox 14 512 350 60 ''
+$script:ManualNickBox = New-TextBox 14 602 350 60 ''
 $script:ManualNickBox.Multiline = $true
 $script:ManualNickBox.ScrollBars = 'Vertical'
 
 Add-UiLabel 'НАСТРОЙКИ ГЕНЕРАЦИИ' 14 581 350 22 | Out-Null
 Add-UiLabel 'Количество' 14 605 90 18 | Out-Null
-$script:CountBox = New-NumberBox 14 624 90 5 2000 40
+$script:CountBox = New-NumberBox 14 714 90 5 2000 40
 Add-UiLabel 'Мин. длина' 120 605 90 18 | Out-Null
-$script:MinLengthBox = New-NumberBox 120 624 80 1 64 3
+$script:MinLengthBox = New-NumberBox 120 714 80 1 64 3
 Add-UiLabel 'Макс. длина' 216 605 100 18 | Out-Null
-$script:MaxLengthBox = New-NumberBox 216 624 80 1 64 25
+$script:MaxLengthBox = New-NumberBox 216 714 80 1 64 25
 
 $script:NumbersCheck = New-CheckBox 'Использовать цифры' 14 659 170 $false
 $script:UnderscoreCheck = New-CheckBox 'Разделитель _' 194 659 170 $false
@@ -1502,13 +1447,13 @@ $script:OrderedCheck = New-CheckBox 'Генерация по порядку' 194
 $script:RandomCharsCheck = New-CheckBox 'Случайные символы' 14 803 180 $true
 
 Add-UiLabel 'Исключить слова/части ника (пример: xxx, test, 123)' 14 835 350 20 | Out-Null
-$script:ExcludeBox = New-TextBox 14 856 350 27 ''
+$script:ExcludeBox = New-TextBox 14 946 350 27 ''
 Add-UiLabel 'Пауза (мс)' 14 891 110 18 | Out-Null
 Add-UiLabel 'Тайм-аут (мс)' 134 891 110 18 | Out-Null
 Add-UiLabel 'Потоки' 254 891 110 18 | Out-Null
-$script:DelayBox = New-NumberBox 14 910 110 500 15000 700
-$script:TimeoutBox = New-NumberBox 134 910 110 1000 30000 8000
-$script:ThreadsBox = New-NumberBox 254 910 110 1 8 2
+$script:DelayBox = New-NumberBox 14 1000 110 500 15000 700
+$script:TimeoutBox = New-NumberBox 134 1000 110 1000 30000 8000
+$script:ThreadsBox = New-NumberBox 254 1000 110 1 8 2
 $script:ThreadsLabel = Add-UiLabel 'Рекомендуется 2–4 потока. Пауза адаптивная: растёт при HTTP 429 и снижается после успехов.' 14 943 350 40
 
 $script:GenerateButton = Add-UiButton 'Сгенерировать и проверить' 14 991 350 $true 37
@@ -1524,10 +1469,10 @@ $script:CopyButton = Add-UiButton '⧉  Копировать доступные/
 $script:CheckedNamesButton = Add-UiButton '≡  Проверенные ники (0)' 14 1197 350 $false 33
 
 $right = New-Object System.Windows.Forms.Panel
-$right.Location = New-Object System.Drawing.Point(418, 138)
-$right.Size = New-Object System.Drawing.Size(1040, 852)
+$right.Location = New-Object System.Drawing.Point(418, 88)
+$right.Size = New-Object System.Drawing.Size(1040, 902)
 $right.Anchor = 'Top, Bottom, Left, Right'
-$right.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+$right.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
 $script:Form.Controls.Add($right)
 
 $script:StatTotal = New-Object System.Windows.Forms.Label
@@ -1538,12 +1483,12 @@ $script:StatErrors = New-Object System.Windows.Forms.Label
 $script:StatChecked = New-Object System.Windows.Forms.Label
 $statLabels = @($script:StatTotal,$script:StatChecked,$script:StatFree,$script:StatTaken,$script:StatInvalid,$script:StatErrors)
 $statTexts = @('Всего: 0','Проверено: 0','Свободно: 0','Занято: 0','Недопустимо: 0','Ошибки: 0')
-$statColors = @([System.Drawing.Color]::FromArgb(24,26,30),[System.Drawing.Color]::FromArgb(140,145,153),[System.Drawing.Color]::FromArgb(24,26,30),[System.Drawing.Color]::FromArgb(150,153,158),[System.Drawing.Color]::FromArgb(150,153,158),[System.Drawing.Color]::FromArgb(120,124,130))
+$statColors = @([System.Drawing.Color]::White,[System.Drawing.Color]::FromArgb(200,210,226),[System.Drawing.Color]::FromArgb(99,222,151),[System.Drawing.Color]::FromArgb(245,120,120),[System.Drawing.Color]::FromArgb(186,194,207),[System.Drawing.Color]::FromArgb(255,190,92))
 for ($i=0; $i -lt $statLabels.Count; $i++) {
     $statLabels[$i].Text = $statTexts[$i]
     $statLabels[$i].Location = New-Object System.Drawing.Point((12 + 168*$i), 10)
     $statLabels[$i].Size = New-Object System.Drawing.Size(160,26)
-    $statLabels[$i].BackColor = [System.Drawing.Color]::FromArgb(240,241,243)
+    $statLabels[$i].BackColor = [System.Drawing.Color]::FromArgb(31,40,56)
     $statLabels[$i].ForeColor = $statColors[$i]
     $statLabels[$i].TextAlign = 'MiddleCenter'
     $statLabels[$i].Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
@@ -1554,7 +1499,7 @@ $script:ProgressCaption = New-Object System.Windows.Forms.Label
 $script:ProgressCaption.Text = 'Прогресс проверки'
 $script:ProgressCaption.Location = New-Object System.Drawing.Point(14,40)
 $script:ProgressCaption.Size = New-Object System.Drawing.Size(500,18)
-$script:ProgressCaption.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+$script:ProgressCaption.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
 $right.Controls.Add($script:ProgressCaption)
 $script:ProgressBar = New-Object System.Windows.Forms.ProgressBar
 $script:ProgressBar.Location = New-Object System.Drawing.Point(14,59)
@@ -1568,8 +1513,8 @@ $script:StatusFilterBox = New-Object System.Windows.Forms.ComboBox
 $script:StatusFilterBox.Location = New-Object System.Drawing.Point(14,78)
 $script:StatusFilterBox.Size = New-Object System.Drawing.Size(160,27)
 $script:StatusFilterBox.DropDownStyle = 'DropDownList'
-$script:StatusFilterBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:StatusFilterBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:StatusFilterBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+$script:StatusFilterBox.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 [void]$script:StatusFilterBox.Items.AddRange([object[]]@('Все статусы','Свободен','Вероятно свободен','Занят','Недопустимый','Не подтверждено','Ошибка сети','Ожидает','Проверяется'))
 $script:StatusFilterBox.SelectedIndex = 0
 $right.Controls.Add($script:StatusFilterBox)
@@ -1577,8 +1522,8 @@ $script:SortBox = New-Object System.Windows.Forms.ComboBox
 $script:SortBox.Location = New-Object System.Drawing.Point(184,78)
 $script:SortBox.Size = New-Object System.Drawing.Size(150,27)
 $script:SortBox.DropDownStyle = 'DropDownList'
-$script:SortBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:SortBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:SortBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+$script:SortBox.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 [void]$script:SortBox.Items.AddRange([object[]]@('Порядок генерации','Ник','Статус','Категория','Короткие сначала','Свободные первыми'))
 $script:SortBox.SelectedIndex = 0
 $right.Controls.Add($script:SortBox)
@@ -1586,8 +1531,8 @@ $script:SearchBox = New-Object System.Windows.Forms.TextBox
 $script:SearchBox.Location = New-Object System.Drawing.Point(344,78)
 $script:SearchBox.Size = New-Object System.Drawing.Size(678,27)
 $script:SearchBox.Anchor = 'Top, Left, Right'
-$script:SearchBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:SearchBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:SearchBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+$script:SearchBox.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $script:SearchBox.BorderStyle = 'FixedSingle'
 $script:SearchBox.Text = ''
 $right.Controls.Add($script:SearchBox)
@@ -1597,14 +1542,14 @@ $platformRowLabel.Text = 'Платформа проверки:'
 $platformRowLabel.Location = New-Object System.Drawing.Point(14, 112)
 $platformRowLabel.Size = New-Object System.Drawing.Size(125, 27)
 $platformRowLabel.TextAlign = 'MiddleLeft'
-$platformRowLabel.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+$platformRowLabel.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
 $right.Controls.Add($platformRowLabel)
 $script:PlatformBox = New-Object System.Windows.Forms.ComboBox
 $script:PlatformBox.Location = New-Object System.Drawing.Point(140, 112)
 $script:PlatformBox.Size = New-Object System.Drawing.Size(220, 27)
 $script:PlatformBox.DropDownStyle = 'DropDownList'
-$script:PlatformBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:PlatformBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:PlatformBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+$script:PlatformBox.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 [void]$script:PlatformBox.Items.AddRange([object[]]@($script:SupportedPlatforms))
 $script:PlatformBox.SelectedItem = 'Roblox'
 $right.Controls.Add($script:PlatformBox)
@@ -1614,14 +1559,14 @@ $script:OpenPlatformButton.Location = New-Object System.Drawing.Point(370, 112)
 $script:OpenPlatformButton.Size = New-Object System.Drawing.Size(170, 27)
 $script:OpenPlatformButton.FlatStyle = 'Flat'
 $script:OpenPlatformButton.FlatAppearance.BorderSize = 0
-$script:OpenPlatformButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-$script:OpenPlatformButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:OpenPlatformButton.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+$script:OpenPlatformButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $right.Controls.Add($script:OpenPlatformButton)
 $platformNote = New-Object System.Windows.Forms.Label
 $platformNote.Text = 'Для каждой платформы используется отдельный способ проверки.'
 $platformNote.Location = New-Object System.Drawing.Point(550, 112)
 $platformNote.Size = New-Object System.Drawing.Size(470, 27)
-$platformNote.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+$platformNote.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
 $platformNote.TextAlign = 'MiddleLeft'
 $right.Controls.Add($platformNote)
 
@@ -1629,17 +1574,17 @@ $script:Grid = New-Object System.Windows.Forms.DataGridView
 $script:Grid.Location = New-Object System.Drawing.Point(14,146)
 $script:Grid.Size = New-Object System.Drawing.Size(1008,431)
 $script:Grid.Anchor = 'Top, Bottom, Left, Right'
-$script:Grid.BackgroundColor = [System.Drawing.Color]::FromArgb(255,255,255)
+$script:Grid.BackgroundColor = [System.Drawing.Color]::FromArgb(17,23,32)
 $script:Grid.BorderStyle = 'None'
-$script:Grid.GridColor = [System.Drawing.Color]::FromArgb(250,250,251)
+$script:Grid.GridColor = [System.Drawing.Color]::FromArgb(42,52,70)
 $script:Grid.EnableHeadersVisualStyles = $false
-$script:Grid.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(235,236,239)
-$script:Grid.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:Grid.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(35,46,63)
+$script:Grid.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $script:Grid.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
-$script:Grid.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:Grid.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
-$script:Grid.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(225,227,231)
-$script:Grid.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:Grid.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(20,27,38)
+$script:Grid.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
+$script:Grid.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(50,75,112)
+$script:Grid.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $script:Grid.RowHeadersVisible = $false
 $script:Grid.AllowUserToAddRows = $false
 $script:Grid.AllowUserToDeleteRows = $false
@@ -1684,7 +1629,7 @@ $diagnosticHeader.Text = 'ДИАГНОСТИКА И ЖУРНАЛ'
 $diagnosticHeader.Location = New-Object System.Drawing.Point(14,584)
 $diagnosticHeader.Size = New-Object System.Drawing.Size(250,20)
 $diagnosticHeader.Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
-$diagnosticHeader.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$diagnosticHeader.ForeColor = [System.Drawing.Color]::FromArgb(194,207,226)
 $right.Controls.Add($diagnosticHeader)
 $script:DiagnosticBox = New-Object System.Windows.Forms.TextBox
 $script:DiagnosticBox.Location = New-Object System.Drawing.Point(14,606)
@@ -1694,8 +1639,8 @@ $script:DiagnosticBox.Multiline = $true
 $script:DiagnosticBox.ReadOnly = $true
 $script:DiagnosticBox.ScrollBars = 'Vertical'
 $script:DiagnosticBox.WordWrap = $true
-$script:DiagnosticBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:DiagnosticBox.ForeColor = [System.Drawing.Color]::FromArgb(64,67,72)
+$script:DiagnosticBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+$script:DiagnosticBox.ForeColor = [System.Drawing.Color]::FromArgb(255,198,112)
 $script:DiagnosticBox.Font = New-Object System.Drawing.Font('Consolas',8.5)
 $script:DiagnosticBox.Text = 'Готово. Здесь отображаются события, ошибки сети и ответы API.'
 $right.Controls.Add($script:DiagnosticBox)
@@ -1706,7 +1651,7 @@ $script:SummaryLabel.Text = 'Готово к генерации'
 $script:SummaryLabel.Location = New-Object System.Drawing.Point(390,708)
 $script:SummaryLabel.Size = New-Object System.Drawing.Size(632,28)
 $script:SummaryLabel.Anchor = 'Bottom, Left, Right'
-$script:SummaryLabel.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+$script:SummaryLabel.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
 $script:SummaryLabel.TextAlign = 'MiddleRight'
 $right.Controls.Add($script:SummaryLabel)
 $footer = New-Object System.Windows.Forms.Label
@@ -1714,8 +1659,8 @@ $footer.Text = '!  Доступность имени зависит от пла�
 $footer.Location = New-Object System.Drawing.Point(14,744)
 $footer.Size = New-Object System.Drawing.Size(1008,34)
 $footer.Anchor = 'Bottom, Left, Right'
-$footer.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
-$footer.BackColor = [System.Drawing.Color]::FromArgb(240,241,243)
+$footer.ForeColor = [System.Drawing.Color]::FromArgb(20,20,24)
+$footer.BackColor = [System.Drawing.Color]::FromArgb(248,185,65)
 $footer.Font = New-Object System.Drawing.Font('Segoe UI',9.5,[System.Drawing.FontStyle]::Bold)
 $footer.TextAlign = 'MiddleLeft'
 $footer.Padding = New-Object System.Windows.Forms.Padding(8,0,4,0)
@@ -1882,7 +1827,7 @@ function Get-RegistrationUrl {
         'Discord' { return 'https://discord.com/register' }
         'Outlook' { return 'https://signup.live.com/' }
         'Telegram' { return 'https://telegram.org/' }
-        'Telegram Channel' { return 'https://t.me/' }
+        'Steam' { return 'https://store.steampowered.com/join/' }
         'GitHub' { return 'https://github.com/signup' }
         'YouTube' { return 'https://www.youtube.com/' }
         default { return 'https://www.google.com/' }
@@ -1931,9 +1876,10 @@ function Open-AccountTools {
     $script:AccountForm.MinimumSize = New-Object System.Drawing.Size(780, 610)
     $script:AccountForm.MaximizeBox = $false
     $script:AccountForm.MinimizeBox = $false
-    $script:AccountForm.BackColor = [System.Drawing.Color]::FromArgb(245,246,248)
-    $script:AccountForm.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $script:AccountForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
+    $script:AccountForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $script:AccountForm.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+    Set-WindowChrome -Window $script:AccountForm
 
     $tabs = New-Object System.Windows.Forms.TabControl
     $tabs.Location = New-Object System.Drawing.Point(14, 14)
@@ -1941,12 +1887,12 @@ function Open-AccountTools {
     $tabs.Anchor = 'Top, Bottom, Left, Right'
     $prepareTab = New-Object System.Windows.Forms.TabPage
     $prepareTab.Text = 'Пароль и регистрация'
-    $prepareTab.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-    $prepareTab.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $prepareTab.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
+    $prepareTab.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $vaultTab = New-Object System.Windows.Forms.TabPage
     $vaultTab.Text = 'Сохранённые аккаунты'
-    $vaultTab.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-    $vaultTab.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $vaultTab.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
+    $vaultTab.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     [void]$tabs.TabPages.Add($prepareTab)
     [void]$tabs.TabPages.Add($vaultTab)
     $script:AccountTabs = $tabs
@@ -1954,17 +1900,17 @@ function Open-AccountTools {
     $script:AccountForm.Controls.Add($tabs)
 
     $intro = New-Object System.Windows.Forms.Label
-    $intro.Text = 'Выбери ник из списка или введи свой. Пароль генерируется локально; программа не отправляет его Roblox.'
+    $intro.Text = 'Выбери ник из списка или введи свой. Платформа берётся из выбранной строки таблицы или из списка «Платформа проверки». Пароль генерируется локально и никуда не отправляется.'
     $intro.Location = New-Object System.Drawing.Point(18, 16)
     $intro.Size = New-Object System.Drawing.Size(680, 38)
-    $intro.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+    $intro.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
     $prepareTab.Controls.Add($intro)
 
     $script:AccountUsernameLabel = New-Object System.Windows.Forms.Label
-    $script:AccountUsernameLabel.Text = 'Никнейм Roblox'
+    $script:AccountUsernameLabel.Text = 'Никнейм платформы'
     $script:AccountUsernameLabel.Location = New-Object System.Drawing.Point(18, 60)
     $script:AccountUsernameLabel.Size = New-Object System.Drawing.Size(440, 22)
-    $script:AccountUsernameLabel.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+    $script:AccountUsernameLabel.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
     $prepareTab.Controls.Add($script:AccountUsernameLabel)
 
     $script:AccountUsernameBox = New-Object System.Windows.Forms.ComboBox
@@ -1973,8 +1919,8 @@ function Open-AccountTools {
     $script:AccountUsernameBox.DropDownStyle = 'DropDown'
     $script:AccountUsernameBox.AutoCompleteMode = 'SuggestAppend'
     $script:AccountUsernameBox.AutoCompleteSource = 'ListItems'
-    $script:AccountUsernameBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-    $script:AccountUsernameBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $script:AccountUsernameBox.BackColor = [System.Drawing.Color]::FromArgb(32,41,56)
+    $script:AccountUsernameBox.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $prepareTab.Controls.Add($script:AccountUsernameBox)
 
     $refreshNicks = New-Object System.Windows.Forms.Button
@@ -1983,15 +1929,15 @@ function Open-AccountTools {
     $refreshNicks.Size = New-Object System.Drawing.Size(220, 32)
     $refreshNicks.FlatStyle = 'Flat'
     $refreshNicks.FlatAppearance.BorderSize = 0
-    $refreshNicks.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-    $refreshNicks.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $refreshNicks.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $refreshNicks.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $prepareTab.Controls.Add($refreshNicks)
 
     $passwordLabel = New-Object System.Windows.Forms.Label
     $passwordLabel.Text = 'Случайный пароль (буквы, цифры и спецсимволы)'
     $passwordLabel.Location = New-Object System.Drawing.Point(18, 129)
     $passwordLabel.Size = New-Object System.Drawing.Size(440, 22)
-    $passwordLabel.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+    $passwordLabel.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
     $prepareTab.Controls.Add($passwordLabel)
 
     $script:PasswordLengthBox = New-Object System.Windows.Forms.NumericUpDown
@@ -2000,8 +1946,8 @@ function Open-AccountTools {
     $script:PasswordLengthBox.Minimum = 16
     $script:PasswordLengthBox.Maximum = 32
     $script:PasswordLengthBox.Value = 20
-    $script:PasswordLengthBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-    $script:PasswordLengthBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $script:PasswordLengthBox.BackColor = [System.Drawing.Color]::FromArgb(32,41,56)
+    $script:PasswordLengthBox.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $prepareTab.Controls.Add($script:PasswordLengthBox)
 
     $generateButton = New-Object System.Windows.Forms.Button
@@ -2010,15 +1956,15 @@ function Open-AccountTools {
     $generateButton.Size = New-Object System.Drawing.Size(190, 36)
     $generateButton.FlatStyle = 'Flat'
     $generateButton.FlatAppearance.BorderSize = 0
-    $generateButton.BackColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $generateButton.BackColor = [System.Drawing.Color]::FromArgb(67,123,235)
     $generateButton.ForeColor = [System.Drawing.Color]::FromArgb(255,255,255)
     $prepareTab.Controls.Add($generateButton)
 
     $script:AccountPasswordBox = New-Object System.Windows.Forms.TextBox
     $script:AccountPasswordBox.Location = New-Object System.Drawing.Point(18, 198)
     $script:AccountPasswordBox.Size = New-Object System.Drawing.Size(677, 29)
-    $script:AccountPasswordBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-    $script:AccountPasswordBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $script:AccountPasswordBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:AccountPasswordBox.ForeColor = [System.Drawing.Color]::FromArgb(149,222,176)
     $script:AccountPasswordBox.Font = New-Object System.Drawing.Font('Consolas', 11)
     $script:AccountPasswordBox.BorderStyle = 'FixedSingle'
     $prepareTab.Controls.Add($script:AccountPasswordBox)
@@ -2029,18 +1975,18 @@ function Open-AccountTools {
     $copyPassButton.Size = New-Object System.Drawing.Size(180, 36)
     $copyPassButton.FlatStyle = 'Flat'
     $copyPassButton.FlatAppearance.BorderSize = 0
-    $copyPassButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-    $copyPassButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $copyPassButton.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $copyPassButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $prepareTab.Controls.Add($copyPassButton)
 
     $script:OpenRegisterButton = New-Object System.Windows.Forms.Button
-    $script:OpenRegisterButton.Text = 'Открыть Roblox для регистрации'
+    $script:OpenRegisterButton.Text = 'Открыть страницу регистрации'
     $script:OpenRegisterButton.Location = New-Object System.Drawing.Point(210, 240)
     $script:OpenRegisterButton.Size = New-Object System.Drawing.Size(260, 36)
     $script:OpenRegisterButton.FlatStyle = 'Flat'
     $script:OpenRegisterButton.FlatAppearance.BorderSize = 0
-    $script:OpenRegisterButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-    $script:OpenRegisterButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $script:OpenRegisterButton.BackColor = [System.Drawing.Color]::FromArgb(67,123,235)
+    $script:OpenRegisterButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $prepareTab.Controls.Add($script:OpenRegisterButton)
 
     $copyNickButton = New-Object System.Windows.Forms.Button
@@ -2049,15 +1995,15 @@ function Open-AccountTools {
     $copyNickButton.Size = New-Object System.Drawing.Size(213, 36)
     $copyNickButton.FlatStyle = 'Flat'
     $copyNickButton.FlatAppearance.BorderSize = 0
-    $copyNickButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-    $copyNickButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $copyNickButton.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $copyNickButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $prepareTab.Controls.Add($copyNickButton)
 
     $script:RegistrationConfirmedCheck = New-Object System.Windows.Forms.CheckBox
     $script:RegistrationConfirmedCheck.Text = 'Я завершил регистрацию с этими данными'
     $script:RegistrationConfirmedCheck.Location = New-Object System.Drawing.Point(18, 294)
     $script:RegistrationConfirmedCheck.Size = New-Object System.Drawing.Size(677, 28)
-    $script:RegistrationConfirmedCheck.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+    $script:RegistrationConfirmedCheck.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
     $prepareTab.Controls.Add($script:RegistrationConfirmedCheck)
 
     $saveAccountButton = New-Object System.Windows.Forms.Button
@@ -2066,7 +2012,7 @@ function Open-AccountTools {
     $saveAccountButton.Size = New-Object System.Drawing.Size(677, 42)
     $saveAccountButton.FlatStyle = 'Flat'
     $saveAccountButton.FlatAppearance.BorderSize = 0
-    $saveAccountButton.BackColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $saveAccountButton.BackColor = [System.Drawing.Color]::FromArgb(37,125,83)
     $saveAccountButton.ForeColor = [System.Drawing.Color]::FromArgb(255,255,255)
     $prepareTab.Controls.Add($saveAccountButton)
 
@@ -2074,31 +2020,31 @@ function Open-AccountTools {
     $safetyInfo.Text = "Порядок действий: скопируй ник и пароль → открой Roblox → заполни форму и пройди проверку → отметь галочку и сохрани данные.`r`nПароль хранится в DPAPI-шифровании Windows для текущего пользователя. Автоматический ввод или обход проверок не выполняется."
     $safetyInfo.Location = New-Object System.Drawing.Point(18, 390)
     $safetyInfo.Size = New-Object System.Drawing.Size(677, 70)
-    $safetyInfo.ForeColor = [System.Drawing.Color]::FromArgb(140,145,153)
-    $safetyInfo.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+    $safetyInfo.ForeColor = [System.Drawing.Color]::FromArgb(177,188,207)
+    $safetyInfo.BackColor = [System.Drawing.Color]::FromArgb(32,41,56)
     $safetyInfo.Padding = New-Object System.Windows.Forms.Padding(8, 7, 8, 5)
     $prepareTab.Controls.Add($safetyInfo)
 
     $script:AccountListBox = New-Object System.Windows.Forms.ListBox
     $script:AccountListBox.Location = New-Object System.Drawing.Point(18, 18)
     $script:AccountListBox.Size = New-Object System.Drawing.Size(677, 275)
-    $script:AccountListBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-    $script:AccountListBox.ForeColor = [System.Drawing.Color]::FromArgb(225, 232, 242)
+    $script:AccountListBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:AccountListBox.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
     $vaultTab.Controls.Add($script:AccountListBox)
 
     $vaultPasswordLabel = New-Object System.Windows.Forms.Label
     $vaultPasswordLabel.Text = 'Пароль выбранной записи'
     $vaultPasswordLabel.Location = New-Object System.Drawing.Point(18, 304)
     $vaultPasswordLabel.Size = New-Object System.Drawing.Size(400, 22)
-    $vaultPasswordLabel.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+    $vaultPasswordLabel.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
     $vaultTab.Controls.Add($vaultPasswordLabel)
 
     $script:SavedPasswordBox = New-Object System.Windows.Forms.TextBox
     $script:SavedPasswordBox.Location = New-Object System.Drawing.Point(18, 330)
     $script:SavedPasswordBox.Size = New-Object System.Drawing.Size(677, 29)
     $script:SavedPasswordBox.ReadOnly = $true
-    $script:SavedPasswordBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-    $script:SavedPasswordBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $script:SavedPasswordBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:SavedPasswordBox.ForeColor = [System.Drawing.Color]::FromArgb(149,222,176)
     $script:SavedPasswordBox.Font = New-Object System.Drawing.Font('Consolas', 10)
     $vaultTab.Controls.Add($script:SavedPasswordBox)
 
@@ -2108,8 +2054,8 @@ function Open-AccountTools {
     $copySavedPasswordButton.Size = New-Object System.Drawing.Size(180, 36)
     $copySavedPasswordButton.FlatStyle = 'Flat'
     $copySavedPasswordButton.FlatAppearance.BorderSize = 0
-    $copySavedPasswordButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-    $copySavedPasswordButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $copySavedPasswordButton.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $copySavedPasswordButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $vaultTab.Controls.Add($copySavedPasswordButton)
 
     $copySavedUsernameButton = New-Object System.Windows.Forms.Button
@@ -2118,8 +2064,8 @@ function Open-AccountTools {
     $copySavedUsernameButton.Size = New-Object System.Drawing.Size(180, 36)
     $copySavedUsernameButton.FlatStyle = 'Flat'
     $copySavedUsernameButton.FlatAppearance.BorderSize = 0
-    $copySavedUsernameButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-    $copySavedUsernameButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $copySavedUsernameButton.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $copySavedUsernameButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $vaultTab.Controls.Add($copySavedUsernameButton)
 
     $deleteAccountButton = New-Object System.Windows.Forms.Button
@@ -2128,14 +2074,14 @@ function Open-AccountTools {
     $deleteAccountButton.Size = New-Object System.Drawing.Size(180, 36)
     $deleteAccountButton.FlatStyle = 'Flat'
     $deleteAccountButton.FlatAppearance.BorderSize = 0
-    $deleteAccountButton.BackColor = [System.Drawing.Color]::FromArgb(235,236,239)
-    $deleteAccountButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $deleteAccountButton.BackColor = [System.Drawing.Color]::FromArgb(115,47,55)
+    $deleteAccountButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $vaultTab.Controls.Add($deleteAccountButton)
 
     $script:VaultStatusLabel = New-Object System.Windows.Forms.Label
     $script:VaultStatusLabel.Location = New-Object System.Drawing.Point(18, 425)
     $script:VaultStatusLabel.Size = New-Object System.Drawing.Size(677, 35)
-    $script:VaultStatusLabel.ForeColor = [System.Drawing.Color]::FromArgb(140,145,153)
+    $script:VaultStatusLabel.ForeColor = [System.Drawing.Color]::FromArgb(177,188,207)
     $vaultTab.Controls.Add($script:VaultStatusLabel)
 
     $script:AccountUsernameBox.Add_TextChanged({
@@ -2300,6 +2246,13 @@ function Open-AccountTools {
         $script:VaultStatusLabel.Text = 'Не удалось прочитать хранилище: ' + $_.Exception.Message
         Write-AppLog ('Ошибка открытия инструментов аккаунта: ' + $_.Exception.ToString())
     }
+    try {
+        if ($script:Grid.CurrentRow -and $script:Grid.CurrentRow.Index -ge 0) {
+            $rowPlatform = [string]$script:Grid.CurrentRow.Cells['Platform'].Value
+            if ($rowPlatform -and ($script:SupportedPlatforms -contains $rowPlatform) -and $rowPlatform -ne [string]$script:PlatformBox.SelectedItem) { $script:PlatformBox.SelectedItem = $rowPlatform }
+        }
+    } catch { }
+    Set-ButtonEdgeStyle -Root $script:AccountForm
     Update-AccountPlatformUi
     [void]$script:AccountForm.ShowDialog($script:Form)
 }
@@ -2577,8 +2530,13 @@ function Refresh-FreeHistoryList {
     if ($script:HistorySortBox -and $script:HistorySortBox.SelectedItem) { $historySort = [string]$script:HistorySortBox.SelectedItem }
     switch ($historySort) {
         'По нику' { $historyItems = @($historyItems | Sort-Object Name, Platform) }
-        'По платформе (почте)' { $historyItems = @($historyItems | Sort-Object Platform, Name) }
-        default { $historyItems = @($historyItems | Sort-Object Time -Descending) }
+        'По времени' { $historyItems = @($historyItems | Sort-Object Time -Descending) }
+        default {
+            $platformOrder = @{}
+            $orderIndex = 0
+            foreach ($supportedPlatform in $script:SupportedPlatforms) { $platformOrder[[string]$supportedPlatform] = $orderIndex; $orderIndex++ }
+            $historyItems = @($historyItems | Sort-Object @{Expression={ if ($platformOrder.ContainsKey([string]$_.Platform)) { $platformOrder[[string]$_.Platform] } else { $orderIndex } }}, @{Expression='Time'; Descending=$true}, @{Expression='Name'})
+        }
     }
     foreach ($item in $historyItems) {
         $display = '{0} — {1}' -f (Get-DisplayNick -Platform ([string]$item.Platform) -Name ([string]$item.Name)), [string]$item.Platform
@@ -2635,20 +2593,21 @@ function Open-CheckedNamesWindow {
     $checkedForm.StartPosition = 'CenterParent'
     $checkedForm.Size = New-Object System.Drawing.Size(560,600)
     $checkedForm.MinimumSize = New-Object System.Drawing.Size(480,480)
-    $checkedForm.BackColor = [System.Drawing.Color]::FromArgb(245,246,248)
-    $checkedForm.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $checkedForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
+    $checkedForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $checkedForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
+    Set-WindowChrome -Window $checkedForm
     $script:CheckedNamesDescription = New-Object System.Windows.Forms.Label
     $script:CheckedNamesDescription.Location = New-Object System.Drawing.Point(16,14)
     $script:CheckedNamesDescription.Size = New-Object System.Drawing.Size(516,50)
-    $script:CheckedNamesDescription.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+    $script:CheckedNamesDescription.ForeColor = [System.Drawing.Color]::FromArgb(190,202,221)
     $checkedForm.Controls.Add($script:CheckedNamesDescription)
     $script:CheckedNamesSearchBox = New-Object System.Windows.Forms.TextBox
     $script:CheckedNamesSearchBox.Location = New-Object System.Drawing.Point(16,70)
     $script:CheckedNamesSearchBox.Size = New-Object System.Drawing.Size(516,27)
     $script:CheckedNamesSearchBox.Anchor = 'Top, Left, Right'
-    $script:CheckedNamesSearchBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-    $script:CheckedNamesSearchBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $script:CheckedNamesSearchBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:CheckedNamesSearchBox.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $script:CheckedNamesSearchBox.BorderStyle = 'FixedSingle'
     $checkedForm.Controls.Add($script:CheckedNamesSearchBox)
     $script:CheckedNamesListBox = New-Object System.Windows.Forms.ListBox
@@ -2657,8 +2616,8 @@ function Open-CheckedNamesWindow {
     $script:CheckedNamesListBox.Anchor = 'Top, Bottom, Left, Right'
     $script:CheckedNamesListBox.DisplayMember = 'Display'
     $script:CheckedNamesListBox.SelectionMode = 'MultiExtended'
-    $script:CheckedNamesListBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-    $script:CheckedNamesListBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $script:CheckedNamesListBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:CheckedNamesListBox.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
     $checkedForm.Controls.Add($script:CheckedNamesListBox)
     $recheckChecked = New-Object System.Windows.Forms.Button
     $recheckChecked.Text = '↻ Проверить снова'
@@ -2666,8 +2625,8 @@ function Open-CheckedNamesWindow {
     $recheckChecked.Size = New-Object System.Drawing.Size(180,34)
     $recheckChecked.Anchor = 'Bottom, Left'
     $recheckChecked.FlatStyle = 'Flat'
-    $recheckChecked.BackColor = [System.Drawing.Color]::FromArgb(24,26,30)
-    $recheckChecked.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $recheckChecked.BackColor = [System.Drawing.Color]::FromArgb(93,73,222)
+    $recheckChecked.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $checkedForm.Controls.Add($recheckChecked)
     $deleteChecked = New-Object System.Windows.Forms.Button
     $deleteChecked.Text = 'Удалить из списка'
@@ -2675,8 +2634,8 @@ function Open-CheckedNamesWindow {
     $deleteChecked.Size = New-Object System.Drawing.Size(160,34)
     $deleteChecked.Anchor = 'Bottom, Left'
     $deleteChecked.FlatStyle = 'Flat'
-    $deleteChecked.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-    $deleteChecked.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $deleteChecked.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $deleteChecked.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $checkedForm.Controls.Add($deleteChecked)
     $clearChecked = New-Object System.Windows.Forms.Button
     $clearChecked.Text = 'Очистить весь список'
@@ -2684,8 +2643,8 @@ function Open-CheckedNamesWindow {
     $clearChecked.Size = New-Object System.Drawing.Size(160,34)
     $clearChecked.Anchor = 'Bottom, Left'
     $clearChecked.FlatStyle = 'Flat'
-    $clearChecked.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-    $clearChecked.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $clearChecked.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $clearChecked.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $checkedForm.Controls.Add($clearChecked)
     $script:CheckedNamesSearchBox.Add_TextChanged({ Refresh-CheckedNamesList })
     $deleteChecked.Add_Click({
@@ -2774,20 +2733,21 @@ function Open-FreeHistoryWindow {
     $script:HistoryForm.StartPosition = 'CenterParent'
     $script:HistoryForm.Size = New-Object System.Drawing.Size(520,560)
     $script:HistoryForm.MinimumSize = New-Object System.Drawing.Size(480,480)
-    $script:HistoryForm.BackColor = [System.Drawing.Color]::FromArgb(245,246,248)
-    $script:HistoryForm.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $script:HistoryForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
+    $script:HistoryForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $script:HistoryForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
+    Set-WindowChrome -Window $script:HistoryForm
     $script:HistoryDescription = New-Object System.Windows.Forms.Label
     $script:HistoryDescription.Location = New-Object System.Drawing.Point(16,14)
     $script:HistoryDescription.Size = New-Object System.Drawing.Size(470,50)
-    $script:HistoryDescription.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+    $script:HistoryDescription.ForeColor = [System.Drawing.Color]::FromArgb(190,202,221)
     $script:HistoryForm.Controls.Add($script:HistoryDescription)
     $script:HistorySortBox = New-Object System.Windows.Forms.ComboBox
     $script:HistorySortBox.Location = New-Object System.Drawing.Point(330,66)
     $script:HistorySortBox.Size = New-Object System.Drawing.Size(156,27)
     $script:HistorySortBox.DropDownStyle = 'DropDownList'
-    [void]$script:HistorySortBox.Items.AddRange([object[]]@('По времени','По нику','По платформе (почте)'))
-    $script:HistorySortBox.SelectedItem = 'По времени'
+    [void]$script:HistorySortBox.Items.AddRange([object[]]@('По платформе и дате','По времени','По нику'))
+    $script:HistorySortBox.SelectedItem = 'По платформе и дате'
     $script:HistorySortBox.Add_SelectedIndexChanged({ Refresh-FreeHistoryList })
     $script:HistoryForm.Controls.Add($script:HistorySortBox)
     $script:HistoryListBox = New-Object System.Windows.Forms.ListBox
@@ -2795,8 +2755,8 @@ function Open-FreeHistoryWindow {
     $script:HistoryListBox.Size = New-Object System.Drawing.Size(470,340)
     $script:HistoryListBox.Anchor = 'Top, Bottom, Left, Right'
     $script:HistoryListBox.DisplayMember = 'Display'
-    $script:HistoryListBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-    $script:HistoryListBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $script:HistoryListBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:HistoryListBox.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
     $script:HistoryForm.Controls.Add($script:HistoryListBox)
     $recheck = New-Object System.Windows.Forms.Button
     $recheck.Text = '↻ Повторная проверка'
@@ -2804,8 +2764,8 @@ function Open-FreeHistoryWindow {
     $recheck.Size = New-Object System.Drawing.Size(190,34)
     $recheck.Anchor = 'Bottom, Left'
     $recheck.FlatStyle = 'Flat'
-    $recheck.BackColor = [System.Drawing.Color]::FromArgb(24,26,30)
-    $recheck.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $recheck.BackColor = [System.Drawing.Color]::FromArgb(93,73,222)
+    $recheck.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $recheck.Enabled = -not (Test-CheckRunning)
     $script:HistoryForm.Controls.Add($recheck)
     $copy = New-Object System.Windows.Forms.Button
@@ -2814,8 +2774,8 @@ function Open-FreeHistoryWindow {
     $copy.Size = New-Object System.Drawing.Size(130,34)
     $copy.Anchor = 'Bottom, Left'
     $copy.FlatStyle = 'Flat'
-    $copy.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-    $copy.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $copy.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $copy.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $script:HistoryForm.Controls.Add($copy)
     $open = New-Object System.Windows.Forms.Button
     $open.Text = 'Открыть сайт'
@@ -2823,8 +2783,8 @@ function Open-FreeHistoryWindow {
     $open.Size = New-Object System.Drawing.Size(134,34)
     $open.Anchor = 'Bottom, Right'
     $open.FlatStyle = 'Flat'
-    $open.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-    $open.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $open.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $open.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $script:HistoryForm.Controls.Add($open)
     $copy.Add_Click({
         $selected = $script:HistoryListBox.SelectedItem
@@ -2867,6 +2827,7 @@ function Open-FreeHistoryWindow {
         Add-Diagnostic "Повторная проверка: $selectedName ($selectedPlatform)."
         Start-Checking -RetryErrorsOnly $false
     })
+    Set-ButtonEdgeStyle -Root $script:HistoryForm
     Refresh-FreeHistoryList
     $script:HistoryForm.Add_Shown({ $script:HistoryForm.Activate() })
     [void]$script:HistoryForm.ShowDialog($script:Form)
@@ -2879,8 +2840,9 @@ function Show-UsernameFinderHelp {
     $helpForm.StartPosition = 'CenterParent'
     $helpForm.Size = New-Object System.Drawing.Size(880,700)
     $helpForm.MinimumSize = New-Object System.Drawing.Size(640,520)
-    $helpForm.BackColor = [System.Drawing.Color]::FromArgb(245,246,248)
+    $helpForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
     $helpForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
+    Set-WindowChrome -Window $helpForm
 
     $guideText = @'
 КАК ПОЛЬЗОВАТЬСЯ
@@ -2901,7 +2863,7 @@ function Show-UsernameFinderHelp {
 
 8. Пароль и регистрация. Кнопка «Пароль / регистрация» открывает окно под текущую платформу: заголовок, подпись ника и кнопка «Открыть <платформа> для регистрации» соответствуют выбранному сервису. Сайт открывается в окне инкогнито (Chrome, Edge, Brave или Vivaldi); если ни один не найден — в браузере по умолчанию. Пароль содержит заглавные и строчные буквы, цифры и спецсимвол.
 
-9. Telegram Channel. Отдельная платформа: категории и настройки генерации на неё не влияют. Программа перебирает случайные значения после https://t.me/ и проверяет, существует ли канал; для действующих каналов показывается тема из описания канала.
+9. Steam. Публичная проверка адреса steamcommunity.com/id/<ник>: страница профиля существует — имя занято. Занятость публичного адреса не равна занятости логина аккаунта Steam; категории и настройки генерации применяются как обычно.
 
 10. Стандартный набор. При каждом запуске выставлены: все категории, стиль «без стиля», 40 ников, длина 3–25, однословные, редкие короткие, выдуманные слова, случайные символы, исключать проверенные, только короткие, пауза 700 мс, 2 потока. Остальное выключено. Сохраняются между запусками только положение окна, фильтр статусов и сортировка.
 '@
@@ -2913,7 +2875,7 @@ function Show-UsernameFinderHelp {
 
 Проверка. Запросы идут в несколько потоков (до 8, рекомендуется 2–4): все потоки разбирают одну общую очередь ников, поэтому медленный ответ не блокирует остальных. Пауза адаптивная: при HTTP 429 и 403 она растёт с учётом Retry-After, после серии успехов постепенно снижается. Под полосой прогресса показывается оценка остатка времени и время завершения. Прогон завершается, когда закончили все потоки.
 
-Платформы. Для каждой платформы используется свой регистрационный или публичный интерфейс: Roblox — валидатор регистрации, Google — валидатор доступности Gmail (резервно форма входа), Mail.ru — API существования адреса, Discord — endpoint уникального имени, Outlook — проверщик регистрационных имён, VK и YouTube — публичные страницы, Telegram — страница t.me, Telegram Channel — прямая проверка ссылок каналов, GitHub — сессия регистрации.
+Платформы. Для каждой платформы используется свой регистрационный или публичный интерфейс: Roblox — валидатор регистрации, Google — валидатор доступности Gmail (резервно форма входа), Mail.ru — API существования адреса, Discord — endpoint уникального имени, Outlook — проверщик регистрационных имён, VK и YouTube — публичные страницы, Telegram — страница t.me, Steam — публичные профили steamcommunity.com/id, GitHub — сессия регистрации.
 
 Хранилище. username_history.json держит список проверенных ников и историю свободных; accounts.dat — сохранённые пары ник/пароль, зашифрованные Windows DPAPI для текущего пользователя; settings.json — только положение окна, фильтр статусов и сортировку. Журнал UniversalUsernameFinder.log пишется рядом с программой или в %LOCALAPPDATA%\UniversalUsernameFinder.
 
@@ -2958,7 +2920,7 @@ function Show-UsernameFinderHelp {
         'Discord' = 'endpoint уникального имени'
         'Outlook' = 'проверщик регистрационных имён signup.live.com; ник проверяется как адрес outlook.com'
         'Telegram' = 'публичная страница t.me'
-        'Telegram Channel' = 'прямая проверка ссылок каналов t.me/… с извлечением описания; категории и настройки генерации не применяются'
+        'Steam' = 'публичная страница steamcommunity.com/id/<ник>; занятость vanity-адреса не равна занятости логина аккаунта'
         'GitHub' = 'сессия страницы регистрации'
         'YouTube' = 'публичная страница канала по handle'
     }
@@ -2973,21 +2935,34 @@ function Show-UsernameFinderHelp {
     $helpTabs = New-Object System.Windows.Forms.TabControl
     $helpTabs.Dock = 'Fill'
     $helpTabs.Font = New-Object System.Drawing.Font('Segoe UI',9.5)
+    $helpBodyFont = New-Object System.Drawing.Font('Segoe UI', 10)
+    $helpHeadingFont = New-Object System.Drawing.Font('Segoe UI Semibold', 12, [System.Drawing.FontStyle]::Bold)
     foreach ($page in @(@('Инструкция', $guideText), @('Как работает', $howText), @('Стили и категории', $stylesText), @('Платформы и домены', $platformsText))) {
         $tabPage = New-Object System.Windows.Forms.TabPage
         $tabPage.Text = [string]$page[0]
-        $tabPage.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-        $pageBox = New-Object System.Windows.Forms.TextBox
-        $pageBox.Multiline = $true
+        $tabPage.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
+        $pageBox = New-Object System.Windows.Forms.RichTextBox
         $pageBox.ReadOnly = $true
-        $pageBox.WordWrap = $true
-        $pageBox.ScrollBars = 'Vertical'
-        $pageBox.Dock = 'Fill'
         $pageBox.BorderStyle = 'None'
-        $pageBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-        $pageBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
-        $pageBox.Font = New-Object System.Drawing.Font('Segoe UI',9.5)
-        $pageBox.Text = [string]$page[1]
+        $pageBox.DetectUrls = $false
+        $pageBox.Dock = 'Fill'
+        $pageBox.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
+        $pageBox.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
+        $pageBox.Font = $helpBodyFont
+        foreach ($helpLine in (([string]$page[1]) -split "`n")) {
+            $helpLine = $helpLine.TrimEnd([char]13)
+            $pageBox.SelectionStart = $pageBox.TextLength
+            $pageBox.SelectionLength = 0
+            if ($helpLine -match '^[A-ZА-ЯЁ0-9][A-ZА-ЯЁ0-9 ,.:;«»()—…\-]+$' -or $helpLine -match '^\d+\. ') {
+                $pageBox.SelectionFont = $helpHeadingFont
+                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(112,164,255)
+            } else {
+                $pageBox.SelectionFont = $helpBodyFont
+                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(225,232,242)
+            }
+            $pageBox.AppendText($helpLine + "`n")
+        }
+        $pageBox.Select(0, 0)
         $tabPage.Controls.Add($pageBox)
         $helpTabs.TabPages.Add($tabPage) | Out-Null
     }
@@ -3223,7 +3198,7 @@ param($InputQueue, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform, $AppV
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.6.2' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.7.0' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -3628,26 +3603,24 @@ try {
                     elseif ($httpStatus -eq 404 -or $genericNotFound) { $status='Вероятно свободен'; $reason='Публичная страница Telegram не найдена; авторизованный метод может выявить резервирование'; $consecutiveErrors=0 }
                     else { $status='Не подтверждено'; $reason='Публичная страница не дала однозначного результата; account.checkUsername требует авторизованной пользовательской сессии'; $consecutiveErrors=0 }
                 }
-# --- Telegram Channel Api
-                'Telegram Channel' {
-                    $url = 'https://t.me/' + $name
+# --- Steam Api
+                'Steam' {
+                    $url = 'https://steamcommunity.com/id/' + $name
                     $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers $browserHeaders
                     $httpStatus = [int]$r.Code
                     $content = [string]$r.Content
-                    $channelMarker = $content -match '(?is)tgme_channel_info|tgme_page_title|tgme_page_description'
-                    $invalidMarker = $content -match "(?is)doesn.?t seem to exist|does not exist|channel not found|invalid link|Page not found|tgme_page_error"
-                    if ($httpStatus -eq 200 -and $channelMarker -and -not $invalidMarker) {
-                        $descMatch = [regex]::Match($content, '(?is)<meta\s+(?:property="og:description"|name="description")\s+content="([^"]*)"')
-                        $channelAbout = ''
-                        if ($descMatch.Success) { $channelAbout = [System.Net.WebUtility]::HtmlDecode($descMatch.Groups[1].Value).Trim() }
-                        $channelAbout = $channelAbout -replace '[\r\n]+', ' '
-                        if ($channelAbout.Length -gt 200) { $channelAbout = $channelAbout.Substring(0,200) + '…' }
+                    $profileMarker = $content -match '(?is)class="profile_header"|id="personaName"|profile_rightcolumn|profileHeader'
+                    $errorMarker = ($httpStatus -eq 404) -or ($content -match '(?is)The specified profile could not be found|Steam Community :: Error')
+                    if ($httpStatus -eq 200 -and $profileMarker -and -not $errorMarker) {
+                        $titleMatch = [regex]::Match($content, '(?is)<title>\s*Steam Community :: (.*?)\s*</title>')
+                        $profileName = ''
+                        if ($titleMatch.Success) { $profileName = [System.Net.WebUtility]::HtmlDecode($titleMatch.Groups[1].Value).Trim() }
                         $status='Занят'
-                        if ($channelAbout) { $reason = 'Канал действует; из описания: ' + $channelAbout } else { $reason = 'Канал действует; публичное описание не раскрыто' }
+                        if ($profileName) { $reason = 'Профиль сообщества занят: ' + $profileName } else { $reason = 'Профиль сообщества занят' }
                         $consecutiveErrors=0
-                    } elseif ($httpStatus -eq 404 -or $invalidMarker) {
-                        $status='Свободен'; $reason='Канал по ссылке не найден или ссылка недействительна — адрес свободен'; $consecutiveErrors=0
-                    } else { $status='Не подтверждено'; $reason='Telegram не раскрыл статус ссылки на канал'; $consecutiveErrors=0 }
+                    } elseif ($errorMarker) {
+                        $status='Свободен'; $reason='Адрес steamcommunity.com/id не занят — профиль не найден'; $consecutiveErrors=0
+                    } else { $status='Не подтверждено'; $reason='Steam не раскрыл статус публичного адреса'; $consecutiveErrors=0 }
                 }
                 default {
                     $status='Не подтверждено'
@@ -4047,6 +4020,14 @@ $script:OpenPlatformButton.Add_Click({
         [System.Windows.Forms.MessageBox]::Show('Не удалось открыть сайт: ' + $_.Exception.Message,'Ошибка','OK','Error') | Out-Null
     }
 })
+$script:Grid.Add_SelectionChanged({
+    try {
+        if ($null -ne $script:AccountForm -and -not $script:AccountForm.IsDisposed -and $script:Grid.CurrentRow -and $script:Grid.CurrentRow.Index -ge 0) {
+            $rowPlatform = [string]$script:Grid.CurrentRow.Cells['Platform'].Value
+            if ($rowPlatform -and ($script:SupportedPlatforms -contains $rowPlatform) -and $rowPlatform -ne [string]$script:PlatformBox.SelectedItem) { $script:PlatformBox.SelectedItem = $rowPlatform }
+        }
+    } catch { }
+})
 $script:PlatformBox.Add_SelectedIndexChanged({
     if ($script:PlatformBox.SelectedItem) {
         $selectedPlatform = [string]$script:PlatformBox.SelectedItem
@@ -4103,10 +4084,8 @@ $script:Form.Add_FormClosing({
 })
 
 try {
-    try {
-        $script:ResizeFrame = New-Object UufResizeFrame
-        $script:ResizeFrame.AssignHandle($script:Form.Handle)
-    } catch { }
+    Set-ButtonEdgeStyle -Root $script:Form
+    try { if ($script:UufDwmAvailable) { [UufDwmCorners]::Round($script:Form.Handle) } } catch { }
     [void]$script:Form.ShowDialog()
 } catch {
     Write-StartupLog ('Фатальная ошибка главного окна: ' + $_.Exception.ToString())
