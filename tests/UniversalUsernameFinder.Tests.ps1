@@ -1,6 +1,5 @@
-﻿#requires -Version 5.1
-
-<#
+﻿
+<
     Тесты чистой логики Universal Username Finder.
 
     Скрипт приложения — монолитный WinForms-файл, который при импорте создаёт окна,
@@ -14,7 +13,6 @@
 
     Намеренно не используются регулярные выражения там, где в искомом тексте есть
     символы $ и кавычки: строковый поиск предсказуемее и не зависит от экранирования.
-#>
 
 BeforeAll {
     $scriptPath = [System.IO.Path]::GetFullPath((Join-Path (Join-Path $PSScriptRoot '..') 'UniversalUsernameFinder.ps1'))
@@ -22,20 +20,14 @@ BeforeAll {
 
     $fullText = [System.IO.File]::ReadAllText($scriptPath)
 
-    # Основная часть и here-string воркера разбираются отдельно: в воркере свои локальные
-    # функции, и они не должны подмешиваться в тесты.
     $workerMarker = '$workerScript = @'
     $workerStart = $fullText.IndexOf($workerMarker)
     if ($workerStart -lt 0) { throw 'Не найден here-string воркера' }
     $global:UufMainText = $fullText.Substring(0, $workerStart)
     $global:UufWorkerText = $fullText.Substring($workerStart)
-    # Полный текст нужен для структурных проверок кода, который расположен ПОСЛЕ
-    # here-string воркера (экспорт CSV, обработчик кнопки генерации): в UufMainText
-    # его нет, и поиск по нему давал ложный отказ.
     $global:UufFullText = $fullText
     $global:UufScriptPath = $scriptPath
 
-    # Извлечение определения функции по имени с учётом вложенности фигурных скобок.
     $global:UufExtractFunction = {
         param([string]$Source, [string]$Name)
         $pattern = '(?ms)^function\s+' + [regex]::Escape($Name) + '\s*\{'
@@ -70,6 +62,11 @@ BeforeAll {
         'Get-SeedForWord',
         'Get-NickStructure',
         'Get-PlatformLengthRule',
+        'Get-PlatformDomain',
+        'Get-DisplayNick',
+        'Get-RegistrationUrl',
+        'Open-UrlInIncognito',
+        'Update-AccountPlatformUi',
         'New-InventedWord',
         'Convert-ToLeetWord',
         'New-AdvancedCandidatePool'
@@ -77,13 +74,10 @@ BeforeAll {
 
     foreach ($functionName in $functionNames) {
         $definition = & $global:UufExtractFunction $global:UufMainText $functionName
-        # Обращения к области видимости скрипта приложения заменяются на global,
-        # чтобы извлечённые функции работали независимо от области определения.
         $definition = $definition -replace '\$script:', '$$global:'
         Invoke-Expression $definition
     }
 
-    # Список поддерживаемых платформ читается из самого скрипта, а не дублируется в тесте.
     $platformNeedle = '$script:SupportedPlatforms = @('
     $platformStart = $global:UufMainText.IndexOf($platformNeedle)
     if ($platformStart -lt 0) { throw 'Не найден список поддерживаемых платформ' }
@@ -96,14 +90,9 @@ BeforeAll {
             Where-Object { $_ }
     )
 
-    # Таблица правил длины платформ извлекается из скрипта, а не дублируется в тесте:
-    # иначе правило в интерфейсе могло бы разойтись с правилом валидации формата.
     $rulesNeedle = '$script:PlatformLengthRules = @{'
     $rulesStart = $global:UufMainText.IndexOf($rulesNeedle)
     if ($rulesStart -lt 0) { throw 'Не найдена таблица правил длины платформ' }
-    # Конец таблицы ищем подсчётом вложенности фигурных скобок, а не по «}\n» в начале
-    # строки: вырезанный фрагмент обязан включать закрывающую скобку, иначе
-    # Invoke-Expression получит незакрытый хештейб и упадёт с ошибкой разбора.
     $rulesBraceStart = $global:UufMainText.IndexOf('{', $rulesStart)
     $rulesDepth = 0
     $rulesEnd = -1
@@ -123,7 +112,6 @@ BeforeAll {
         throw 'Таблица правил длины платформ извлечена пустой'
     }
 
-    # Ветки switch в воркере: строки вида "                'Имя' {" (16 пробелов).
     $branchPrefix = '                ' + [char]39
     $branchSuffix = [string][char]39 + ' {'
     $branches = New-Object System.Collections.Generic.List[string]
@@ -136,10 +124,6 @@ BeforeAll {
     }
     $global:UufWorkerBranches = $branches.ToArray()
 
-    # Небольшие фиксированные словари: проверяется логика генератора и определения
-    # структуры ника, а не наполнение категорий (реальные словари в скрипте содержат
-    # несколько сотен слов). Индекс словарей обнуляется, чтобы он построился заново
-    # из этих фикстур.
     $global:AppSeeds = @()
     $global:NatureSeeds = @()
     $global:MythSeeds = @()
@@ -159,16 +143,12 @@ BeforeAll {
     )
     $global:MeaningGroups = @{ 'Тестовая' = @('Nova', 'Echo', 'Pulse', 'Orbit', 'Frost', 'Shadow', 'Raven', 'Comet') }
     $global:StyleWords = @{ 'Двусловный' = @('Nova', 'Echo', 'Pulse') }
-    # Наборы слогов для выдуманных слов и список редких коротких слов: генератор
-    # обращается к ним напрямую, поэтому без фикстур он не смог бы работать.
     $global:InventedOnsets = @('Kr', 'Dav', 'Vel', 'Zan', 'Tor')
     $global:InventedNuclei = @('a', 'e', 'i', 'o')
     $global:InventedCodas = @('n', 'l', 'r', 's', 'k', 'nn')
     $global:RareShortWords = @('Nyx', 'Lux', 'Vex', 'Zed', 'Ryn', 'Kai')
     $global:SeedIndex = $null
 
-    # RNGCryptoServiceProvider в .NET Core устарел; тестам достаточно любого
-    # RandomNumberGenerator с тем же методом GetBytes.
     $global:PasswordRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
 }
 
@@ -211,7 +191,6 @@ Describe 'Структура скрипта' {
     }
 
     It 'воркер отключил авто-редирект и не отправляет тело при GET и HEAD' {
-        # Именно эта комбинация давала ProtocolViolationException в Windows PowerShell 5.1.
         $global:UufWorkerText.Contains('MaximumRedirection=0') | Should -BeTrue
         $methodGuard = '$currentMethod -ne '
         $guardCount = ([regex]::Matches($global:UufWorkerText, [regex]::Escape($methodGuard))).Count
@@ -226,10 +205,7 @@ Describe 'Структура скрипта' {
         $global:UufWorkerText.Contains('$currentDelayMs') | Should -BeTrue
         $global:UufWorkerText.Contains('$minDelayMs') | Should -BeTrue
         $global:UufWorkerText.Contains('$successStreak') | Should -BeTrue
-        # Ограничение частоты обрабатывается откатом темпа, а не обрывом прогона:
-        # остановка только после трёх HTTP 429 подряд.
         $global:UufWorkerText.Contains('consecutiveRateLimits -ge 3') | Should -BeTrue
-        # Прежняя фиксированная пауза не должна вернуться.
         $global:UufWorkerText.Contains('$elapsed -lt $DelayMs') | Should -BeFalse
         $global:UufWorkerText.Contains('[Math]::Max(1200,[int]$DelayMs)') | Should -BeFalse
     }
@@ -240,22 +216,18 @@ Describe 'Структура скрипта' {
     }
 
     It 'лимит количества ников за генерацию поднят до 2000' {
-        $global:UufMainText.Contains('$script:CountBox = New-NumberBox 14 694 90 5 2000 40') | Should -BeTrue
+        $global:UufMainText.Contains('$script:CountBox = New-NumberBox 14 624 90 5 2000 40') | Should -BeTrue
     }
 
     It 'колонка «СТРУКТУРА» убрана из таблицы, но свойство Structure сохранено' {
-        # Колонка дублировала смысл категории и дробила строку таблицы, поэтому её нет.
         $global:UufMainText.Contains("Columns.Add('Structure'") | Should -BeFalse
         $global:UufMainText.Contains("'СТРУКТУРА'") | Should -BeFalse
         $global:UufMainText.Contains('Sort-Object Structure') | Should -BeFalse
-        # Свойство Structure по-прежнему используется логикой и видно в экспорте CSV.
-        # Экспорт CSV расположен после here-string воркера, поэтому ищем в полном тексте.
         $global:UufFullText.Contains('Name=''Структура'';Expression={$_.Structure}') | Should -BeTrue
         $global:UufMainText.Contains('function Get-NickStructure') | Should -BeTrue
     }
 
     It 'исключения передаются в генератор до его запуска' {
-        # Обработчик кнопки генерации тоже расположен после here-string воркера.
         $global:UufFullText.Contains('-ExcludeKeys $excludeKeys') | Should -BeTrue
         $global:UufFullText.Contains('Создано {0} из {1}') | Should -BeTrue
     }
@@ -265,16 +237,11 @@ Describe 'Структура скрипта' {
     }
 
     It 'история ников читается с явным UTF-8, а не через Get-Content' {
-        # Регрессия: в Windows PowerShell 5.1 Get-Content без -Encoding читает файл
-        # без BOM как ANSI. История, созданная до версии 2.5.2, записывалась без BOM,
-        # поэтому кириллические статусы превращались в нечитаемые символы.
         $global:UufMainText.Contains('[System.IO.File]::ReadAllText($script:HistoryPath)') | Should -BeTrue
         $global:UufMainText.Contains('Get-Content -LiteralPath $script:HistoryPath -Raw') | Should -BeFalse
     }
 
     It 'автоширина столбцов отключается на время массовой вставки строк' {
-        # При AutoSizeMode=Fill ширина пересчитывается на каждой добавленной строке,
-        # и SuspendLayout этого не блокирует.
         $global:UufMainText.Contains('$script:Grid.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::None') | Should -BeTrue
         $global:UufMainText.Contains('$script:Grid.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill') | Should -BeTrue
         $global:UufMainText.Contains('if ($restoreAutoSize) {') | Should -BeTrue
@@ -286,26 +253,16 @@ Describe 'Структура скрипта' {
     }
 
     It 'подсказка поля ввода не считается значением' {
-        # Регрессия: строка «Pixel, Void, Storm» лежала в .Text, и при дописывании
-        # своих слов Pixel и Void молча становились базовыми словами генератора.
         $global:UufMainText.Contains('function Get-TextBoxValue') | Should -BeTrue
         $global:UufMainText.Contains('$box.Add_GotFocus({') | Should -BeTrue
-        # Обработчик кнопки генерации расположен после here-string воркера.
         $global:UufFullText.Contains('Get-TextBoxValue $script:CustomBox') | Should -BeTrue
-        # Сам литерал остался только как текст подсказки; сравнивать с ним значение
-        # поля больше нигде не должны.
         $global:UufFullText.Contains('-eq ''Pixel, Void, Storm''') | Should -BeFalse
     }
 
     It 'свободные ники пересчитываются только при изменении списка' {
-        # Update-ResultGrid вызывается таймером примерно каждые 250 мс во время прогона,
-        # и полный пересчёт свободных ников каждый раз был лишней работой.
         $global:UufMainText.Contains('function Touch-Candidates') | Should -BeTrue
         $global:UufMainText.Contains('$script:CandidateRevision -eq $script:AvailableNamesRevision') | Should -BeTrue
-        # Точки повышения ревизии разбросаны по всему файлу: часть из них расположена
-        # после here-string воркера, поэтому считаем по полному тексту.
         $touchCount = ([regex]::Matches($global:UufFullText, [regex]::Escape('Touch-Candidates'))).Count
-        # Одно определение и не меньше пяти вызовов в точках изменения списка и статусов.
         $touchCount | Should -BeGreaterOrEqual 6
     }
 
@@ -313,7 +270,6 @@ Describe 'Структура скрипта' {
         $global:UufMainText.Contains('$script:VaultDirectory = Join-Path $env:LOCALAPPDATA ''UniversalUsernameFinder''') | Should -BeTrue
         $global:UufMainText.Contains('$script:LegacyVaultPath = Join-Path $script:LegacyVaultDirectory ''accounts.dat''') | Should -BeTrue
         $global:UufMainText.Contains('function Migrate-LegacyVault') | Should -BeTrue
-        # Миграция обязана сохранять старый файл, а не удалять его.
         $global:UufMainText.Contains('.migrated') | Should -BeTrue
     }
 }
@@ -458,8 +414,6 @@ Describe 'Write-AtomicJsonFile и Write-AtomicFile' {
     }
 
     It 'пишет JSON в UTF-8 с BOM' {
-        # Регрессия: Encoding.GetBytes() не добавляет BOM, его возвращает только GetPreamble().
-        # Без BOM Windows PowerShell 5.1 читает файл как ANSI, и кириллица ломается.
         $file = Join-Path $script:AtomicDirectory 'bom.json'
         Write-AtomicJsonFile -Path $file -Json (@{ Style = 'Английские' } | ConvertTo-Json -Depth 3)
         $bytes = [System.IO.File]::ReadAllBytes($file)
@@ -470,9 +424,6 @@ Describe 'Write-AtomicJsonFile и Write-AtomicFile' {
     }
 
     It 'перезаписывает существующий файл' {
-        # Регрессия: резервный путь использовал File.Move поверх существующего файла,
-        # что в .NET Framework даёт IOException «Cannot create a file when that file
-        # already exists». Перезапись должна идти через File.Copy(..., true).
         $file = Join-Path $script:AtomicDirectory 'overwrite.json'
         Write-AtomicJsonFile -Path $file -Json '{"a":1}'
         Write-AtomicJsonFile -Path $file -Json '{"b":2}'
@@ -552,7 +503,6 @@ Describe 'Export-AppSettings и Import-AppSettings' {
         $loaded = Import-AppSettings -Path $script:SettingsFile
         $loaded['Platform'] | Should -Be 'GitHub'
         [int]$loaded['Count'] | Should -Be 40
-        # Старые ключи не должны «протекать» из предыдущей версии файла.
         $loaded.ContainsKey('DelayMs') | Should -BeFalse
     }
 
@@ -576,8 +526,6 @@ Describe 'Export-AppSettings и Import-AppSettings' {
     }
 
     It 'корректно сохраняет набор с одной категорией' {
-        # ConvertTo-Json разворачивает массив из одного элемента в скаляр —
-        # Import-AppSettings не должен из-за этого ломаться.
         $single = @{ Categories = @('Фэнтези') }
         $file = Join-Path $script:SettingsDirectory 'single.json'
         Export-AppSettings -Settings $single -Path $file
@@ -589,8 +537,6 @@ Describe 'Export-AppSettings и Import-AppSettings' {
 
 Describe 'Get-NickStructure' {
     It 'распознаёт склейку двух слов по внутренней заглавной букве' {
-        # Именно этот случай пользователь видел как «цельное слово»: BoomSquare —
-        # это Boom + Square, соединённые без разделителя.
         Get-NickStructure -Name 'BoomSquare' | Should -Be 'Два слова'
         Get-NickStructure -Name 'NovaVoid' | Should -Be 'Два слова'
         Get-NickStructure -Name 'StormPixel' | Should -Be 'Два слова'
@@ -621,21 +567,16 @@ Describe 'Get-NickStructure' {
 
 Describe 'New-AdvancedCandidatePool' {
     It 'однословная генерация возвращает ровно запрошенное количество' {
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 5 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $false -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 5 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $false -OnlyShort $false -ExcludeTokens @())
         $pool | Should -HaveCount 5
         @($pool | Where-Object { [string]$_.Structure -ne 'Одно слово' }) | Should -HaveCount 0
     }
 
     It 'при обеих галочках создаются и однословные, и двухсловные ники' {
-        # Регрессия 2.5.3: этапы генерации шли строго последовательно, и одиночные
-        # слова заполняли весь запрос (по умолчанию отмечено шесть категорий — около
-        # 189 баз против запрошенных 40), поэтому пары не создавались вовсе.
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $true -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $true -OnlyShort $false -ExcludeTokens @())
         $pool | Should -HaveCount 20
         $single = @($pool | Where-Object { [string]$_.Structure -eq 'Одно слово' })
         $pair = @($pool | Where-Object { [string]$_.Structure -eq 'Два слова' })
-        # В тестовом наборе восемь базовых слов, поэтому одиночными заполняется
-        # не больше восьми; остальное обязано прийти парами.
         $single.Count | Should -BeGreaterThan 0
         $pair.Count | Should -BeGreaterOrEqual 8
         $global:GenerationStats['Single'] | Should -Be $single.Count
@@ -643,33 +584,28 @@ Describe 'New-AdvancedCandidatePool' {
     }
 
     It 'галочка «Использовать цифры» даёт числовые варианты даже при полном пространстве имён' {
-        # Регрессия 2.5.3: цифры добирались только при нехватке количества, поэтому
-        # при большом пространстве имён галочка не давала ничего.
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $true -UseUnderscore $false -OneWord $true -TwoWords $true -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $true -UseUnderscore $false -OneWord $true -TwoWords $true -OnlyShort $false -ExcludeTokens @())
         $pool | Should -HaveCount 20
         $numeric = @($pool | Where-Object { ([string]$_.Name) -match '[0-9]' })
-        # Квота цифр — 30 % от запрошенного количества, то есть 6 из 20.
         $numeric.Count | Should -BeGreaterOrEqual 5
         $global:GenerationStats['Number'] | Should -BeGreaterOrEqual 5
     }
 
     It 'без галочки «Использовать цифры» числовых вариантов нет' {
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $true -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $true -OnlyShort $false -ExcludeTokens @())
         @($pool | Where-Object { ([string]$_.Name) -match '[0-9]' }) | Should -HaveCount 0
         $global:GenerationStats['Number'] | Should -Be 0
     }
 
     It 'двухсловная генерация помечает склейки как «Два слова» и относит к категории «Двусловные»' {
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 30 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $true -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 30 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $true -OnlyShort $false -ExcludeTokens @())
         $pool | Should -HaveCount 30
         @($pool | Where-Object { [string]$_.Structure -ne 'Два слова' }) | Should -HaveCount 0
-        # Регрессия: раньше склейка наследовала категорию базового слова и попадала
-        # в «Цельные слова», выглядя одним словом.
         @($pool | Where-Object { [string]$_.Category -ne 'Двусловные' }) | Should -HaveCount 0
     }
 
     It 'структура, заданная генератором, совпадает с определением по имени' {
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $true -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $true -OnlyShort $false -ExcludeTokens @())
         $pool.Count | Should -BeGreaterThan 0
         foreach ($candidate in $pool) {
             Get-NickStructure -Name ([string]$candidate.Name) | Should -Be ([string]$candidate.Structure)
@@ -678,14 +614,12 @@ Describe 'New-AdvancedCandidatePool' {
 
     It 'уже использованные ники отсеиваются внутри генератора, и количество добирается' {
         $excludeKeys = @{}
-        $first = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $true -OnlyShort $false -ExcludeTokens @())
+        $first = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $true -OnlyShort $false -ExcludeTokens @())
         $first | Should -HaveCount 10
         foreach ($candidate in $first) {
             $excludeKeys[(Get-HistoryKey -Name ([string]$candidate.Name) -Platform 'Roblox')] = $true
         }
-        # Регрессия: раньше исключения применялись после генерации без добора,
-        # поэтому вместо 40 ников добавлялось 37.
-        $second = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $true -OnlyShort $false -ExcludeTokens @() -ExcludeKeys $excludeKeys)
+        $second = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $true -OnlyShort $false -ExcludeTokens @() -ExcludeKeys $excludeKeys)
         $second | Should -HaveCount 10
         foreach ($candidate in $second) {
             $excludeKeys.ContainsKey((Get-HistoryKey -Name ([string]$candidate.Name) -Platform 'Roblox')) | Should -BeFalse
@@ -693,47 +627,41 @@ Describe 'New-AdvancedCandidatePool' {
     }
 
     It 'при исчерпании пространства возвращается меньше, а статистика объясняет причину' {
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 5 -MaxLength 20 -Count 50 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $false -OnlyShort $false -ExcludeTokens @())
-        # Из восьми базовых слов минимальной длине 5 удовлетворяют шесть.
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 5 -MaxLength 20 -Count 50 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $false -OnlyShort $false -ExcludeTokens @())
         $pool | Should -HaveCount 6
         $global:GenerationStats['ByLength'] | Should -Be 2
     }
 
     It 'стиль «Двусловный» даёт два слова, даже если галочка двухсловной генерации снята' {
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style 'Двусловный' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $false -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style 'Двусловный' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $false -OnlyShort $false -ExcludeTokens @())
         $pool | Should -HaveCount 10
         @($pool | Where-Object { [string]$_.Structure -ne 'Два слова' }) | Should -HaveCount 0
     }
 
     It 'свои слова через пробел не склеиваются в один ник' {
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @() -CustomWords 'boom square' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $false -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @() -CustomWords 'boom square' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $false -OnlyShort $false -ExcludeTokens @())
         @($pool | Where-Object { [string]$_.Name -eq 'BoomSquare' }) | Should -HaveCount 0
         @($pool | Where-Object { [string]$_.Name -eq 'Boom' }) | Should -HaveCount 1
         @($pool | Where-Object { [string]$_.Name -eq 'Square' }) | Should -HaveCount 1
     }
 
     It 'с разделителем каждая склейка содержит подчёркивание' {
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $true -OneWord $false -TwoWords $true -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $true -OneWord $false -TwoWords $true -OnlyShort $false -ExcludeTokens @())
         $pool | Should -HaveCount 10
         @($pool | Where-Object { ([string]$_.Name).IndexOf('_') -lt 0 }) | Should -HaveCount 0
     }
 
     It 'слова-исключения отсеиваются и учитываются в статистике' {
-        # Количество намеренно большое: пары выбираются случайно, поэтому при малом
-        # запросе модификатор-исключение мог бы ни разу не попасться, и проверка
-        # счётчика стала бы вероятностной.
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 40 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $true -OnlyShort $false -ExcludeTokens @('Void'))
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 40 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $true -OnlyShort $false -ExcludeTokens @('Void'))
         @($pool | Where-Object { ([string]$_.Name).IndexOf('Void') -ge 0 }) | Should -HaveCount 0
         $global:GenerationStats['ByExcludedToken'] | Should -BeGreaterThan 0
     }
 
     It 'большое количество ников создаётся без материализации всех пар' {
         $measure = Measure-Command {
-            $global:BigPool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 60 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $true -OnlyShort $false -ExcludeTokens @())
+            $global:BigPool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 60 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $true -OnlyShort $false -ExcludeTokens @())
         }
         $global:BigPool | Should -HaveCount 60
-        # Пространство из восьми баз и пяти модификаторов даёт 80 комбинаций,
-        # поэтому 60 набираются быстро; прежняя реализация перебирала все пары.
         $measure.TotalSeconds | Should -BeLessThan 10
     }
 }
@@ -795,13 +723,10 @@ Describe 'Convert-ToLeetWord' {
     }
 
     It 'никогда не заменяет первую букву' {
-        # Правила Mail.ru, Outlook и Telegram требуют начинать имя с буквы.
         Convert-ToLeetWord -Word 'anna' -MaxSubstitutions 5 | Should -Be 'ann4'
     }
 
     It 'сохраняет заглавную букву в середине слова' {
-        # Заглавной отмечается граница слов в склейке: заменив её цифрой, ник потерял
-        # бы вид двух слов, и структура по имени разошлась бы с заданной генератором.
         Convert-ToLeetWord -Word 'VoidStorm' -MaxSubstitutions 10 | Should -Match '^[A-Za-z0-9]*S[A-Za-z0-9]*$'
         ([string](Convert-ToLeetWord -Word 'VoidStorm' -MaxSubstitutions 10)).Contains('S') | Should -BeTrue
     }
@@ -831,7 +756,7 @@ Describe 'Get-PlatformLengthRule' {
         $roblox.Min | Should -Be 3
         $roblox.Max | Should -Be 20
         (Get-PlatformLengthRule -Platform 'Google').Min | Should -Be 6
-        (Get-PlatformLengthRule -Platform 'TikTok').Max | Should -Be 24
+        (Get-PlatformLengthRule -Platform 'Telegram Channel').Max | Should -Be 32
         (Get-PlatformLengthRule -Platform 'GitHub').Min | Should -Be 1
     }
 
@@ -842,9 +767,6 @@ Describe 'Get-PlatformLengthRule' {
     }
 
     It 'границы из правила совпадают с валидатором формата для всех платформ' {
-        # Регрессия: правило в интерфейсе и правило валидации жили отдельно и могли
-        # разойтись. При расхождении сгенерированные ники отбраковывались бы уже после
-        # генерации как недопустимые, и количество в таблице не совпадало бы с запросом.
         foreach ($platform in $global:SupportedPlatforms) {
             $rule = Get-PlatformLengthRule -Platform $platform
             Test-UsernameFormat -Username ('a' * $rule.Min) -Platform $platform | Should -BeTrue
@@ -856,28 +778,24 @@ Describe 'Get-PlatformLengthRule' {
 
 Describe 'Новые источники генерации' {
     It 'выдуманные слова добирают количество, когда словарь уже исчерпан' {
-        # Регрессия: при включённом «Исключать проверенные» словарь со временем
-        # заканчивался, и генерация возвращала ноль вариантов.
         $excludeKeys = @{}
         foreach ($word in @('Nova', 'Echo', 'Pulse', 'Orbit', 'Frost', 'Shadow', 'Raven', 'Comet')) {
             $excludeKeys[(Get-HistoryKey -Name $word -Platform 'Roblox')] = $true
         }
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $false -InventedWords $true -OnlyShort $false -ExcludeTokens @() -ExcludeKeys $excludeKeys)
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $false -InventedWords $true -OnlyShort $false -ExcludeTokens @() -ExcludeKeys $excludeKeys)
         $pool | Should -HaveCount 10
         $global:GenerationStats['Single'] | Should -Be 0
         $global:GenerationStats['Invented'] | Should -Be 10
     }
 
     It 'своё слово входит в каждый созданный ник' {
-        # Регрессия: свои слова лишь добавлялись в общий пул из сотен слов, поэтому
-        # слово Void встречалось в лучшем случае в одном нике из двадцати.
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords 'Void' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 12 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $true -InventedWords $true -InventedPairs $true -RareShort $false -LeetWords $false -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords 'Void' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 12 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $true -InventedWords $true -InventedPairs $true -RareShort $false -LeetWords $false -OnlyShort $false -ExcludeTokens @())
         $pool | Should -HaveCount 12
         @($pool | Where-Object { ([string]$_.Name).IndexOf('Void', [StringComparison]::OrdinalIgnoreCase) -lt 0 }) | Should -HaveCount 0
     }
 
     It 'замена символами даёт ники с цифрами без галочки «Использовать цифры»' {
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $false -LeetWords $true -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $false -LeetWords $true -OnlyShort $false -ExcludeTokens @())
         $pool | Should -HaveCount 10
         @($pool | Where-Object { ([string]$_.Name) -notmatch '[0-9]' }) | Should -HaveCount 0
         $global:GenerationStats['Number'] | Should -Be 0
@@ -885,21 +803,21 @@ Describe 'Новые источники генерации' {
     }
 
     It 'редкие короткие ники укладываются в 3-6 символов' {
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 8 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $false -RareShort $true -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 8 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $false -RareShort $true -OnlyShort $false -ExcludeTokens @())
         $pool | Should -HaveCount 8
         @($pool | Where-Object { ([string]$_.Name).Length -lt 3 -or ([string]$_.Name).Length -gt 6 }) | Should -HaveCount 0
         $global:GenerationStats['Rare'] | Should -Be 8
     }
 
     It 'выдуманные словосочетания помечаются как два слова' {
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @() -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 8 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $false -InventedPairs $true -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @() -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 8 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $false -InventedPairs $true -OnlyShort $false -ExcludeTokens @())
         $pool | Should -HaveCount 8
         @($pool | Where-Object { [string]$_.Structure -ne 'Два слова' }) | Should -HaveCount 0
         @($pool | Where-Object { [string]$_.Category -ne 'Выдуманные словосочетания' }) | Should -HaveCount 0
     }
 
     It 'структура ников из новых источников совпадает с определением по имени' {
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords 'Void' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $true -UseUnderscore $false -OneWord $true -TwoWords $true -InventedWords $true -InventedPairs $true -RareShort $true -LeetWords $true -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords 'Void' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $true -UseUnderscore $false -OneWord $true -TwoWords $true -InventedWords $true -InventedPairs $true -RareShort $true -LeetWords $true -OnlyShort $false -ExcludeTokens @())
         $pool | Should -HaveCount 20
         foreach ($candidate in $pool) {
             Get-NickStructure -Name ([string]$candidate.Name) | Should -Be ([string]$candidate.Structure)
@@ -907,9 +825,7 @@ Describe 'Новые источники генерации' {
     }
 
     It 'генерация по порядку сохраняет последовательность источников' {
-        # Восемь слов тестовой категории заполняют однословную квоту, дальше идут пары.
-        # Без перемешивания источники видны в выдаче подряд.
-        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $true -Ordered $true -OnlyShort $false -ExcludeTokens @())
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $true -Ordered $true -OnlyShort $false -ExcludeTokens @())
         $pool | Should -HaveCount 20
         @($pool[0..7] | Where-Object { [string]$_.Structure -ne 'Одно слово' }) | Should -HaveCount 0
         @($pool[8..19] | Where-Object { [string]$_.Structure -ne 'Два слова' }) | Should -HaveCount 0
@@ -918,7 +834,7 @@ Describe 'Новые источники генерации' {
     It 'без галочки «Генерация по порядку» выдача перемешивается' {
         $firstNames = New-Object System.Collections.ArrayList
         for ($run = 0; $run -lt 5; $run++) {
-            $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -CustomTheme '' -Style '— без стиля —' -Platform 'Roblox' -Prefix '' -Suffix '' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $true -OnlyShort $false -ExcludeTokens @())
+            $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @('Тестовая') -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 3 -MaxLength 20 -Count 20 -UseNumbers $false -UseUnderscore $false -OneWord $true -TwoWords $true -OnlyShort $false -ExcludeTokens @())
             [void]$firstNames.Add([string]$pool[0].Name)
         }
         (@($firstNames | Select-Object -Unique)).Count | Should -BeGreaterThan 1
@@ -927,14 +843,11 @@ Describe 'Новые источники генерации' {
 
 Describe 'Интерфейс и поведение версии 2.5.5' {
     It 'список категорий строится из того же массива, которым пользуется генератор' {
-        # Раньше названия были зашиты в интерфейсе строками и расходились со словарём.
         $global:UufMainText.Contains('AddRange([object[]]@($script:WordCategories))') | Should -BeTrue
         $global:UufMainText.Contains('$script:WordCategories = @(') | Should -BeTrue
     }
 
     It 'категории «Цельные слова» и «Короткие» убраны из выбора' {
-        # Они дублировали галочки «Однословные ники» и «Только короткие», а короткие
-        # слова теперь приходят из источника «Редкие короткие (3-6)».
         $global:UufFullText.Contains("'Цельные слова'") | Should -BeFalse
         $global:UufMainText.Contains('$script:RareShortCheck = New-CheckBox') | Should -BeTrue
     }
@@ -950,7 +863,6 @@ Describe 'Интерфейс и поведение версии 2.5.5' {
         $global:UufMainText.Contains('$script:LeetCheck = New-CheckBox') | Should -BeTrue
         $global:UufMainText.Contains('$script:RareShortCheck = New-CheckBox') | Should -BeTrue
         $global:UufMainText.Contains('$script:OrderedCheck = New-CheckBox') | Should -BeTrue
-        # Все пять галочек должны доходить до генератора.
         $global:UufFullText.Contains('-InventedWords ([bool]$script:InventedWordsCheck.Checked)') | Should -BeTrue
         $global:UufFullText.Contains('-InventedPairs ([bool]$script:InventedPairsCheck.Checked)') | Should -BeTrue
         $global:UufFullText.Contains('-LeetWords ([bool]$script:LeetCheck.Checked)') | Should -BeTrue
@@ -959,20 +871,15 @@ Describe 'Интерфейс и поведение версии 2.5.5' {
     }
 
     It 'число потоков задаётся в интерфейсе и ограничено восемью' {
-        $global:UufMainText.Contains('$script:ThreadsBox = New-NumberBox 254 1007 110 1 8 2') | Should -BeTrue
-        # Рекомендация 2–4 потока видна пользователю рядом с полем.
+        $global:UufMainText.Contains('$script:ThreadsBox = New-NumberBox 254 910 110 1 8 2') | Should -BeTrue
         $global:UufMainText.Contains('Рекомендуется 2–4 потока') | Should -BeTrue
         $global:UufMainText.Contains('if ($threadCount -gt 8) { $threadCount = 8 }') | Should -BeTrue
     }
 
     It 'проверка идёт в несколько потоков через общую очередь' {
-        # Код запуска потоков расположен после here-string воркера, поэтому ищем в
-        # полном тексте; сам цикл разбора очереди — внутри воркера.
         $global:UufFullText.Contains('for ($workerIndex = 1; $workerIndex -le $threadCount; $workerIndex++)') | Should -BeTrue
         $global:UufWorkerText.Contains('$InputQueue.TryDequeue([ref]$item)') | Should -BeTrue
         $global:UufMainText.Contains('function Test-CheckRunning') | Should -BeTrue
-        # Прогон завершается только когда закончились все потоки. Проверка расположена
-        # в PollTimer, то есть после here-string воркера, поэтому ищем в полном тексте.
         $global:UufFullText.Contains('-and -not (Test-CheckRunning)) {') | Should -BeTrue
     }
 
@@ -984,36 +891,90 @@ Describe 'Интерфейс и поведение версии 2.5.5' {
     It 'под полосой прогресса выводится оценка оставшегося времени' {
         $global:UufMainText.Contains('function Get-CheckEtaText') | Should -BeTrue
         $global:UufMainText.Contains('осталось ~') | Should -BeTrue
-        # Момент старта прогона фиксируется в Start-Checking — тоже после here-string.
         $global:UufFullText.Contains('$script:CheckStartedAt = [DateTime]::UtcNow') | Should -BeTrue
     }
 
     It 'позиция прокрутки таблицы сохраняется при перерисовке' {
-        # Регрессия: таблица пересобирается целиком, и список прыгал наверх на каждом
-        # результате проверки — смотреть нижние строки во время прогона было нельзя.
         $global:UufMainText.Contains('FirstDisplayedScrollingRowIndex') | Should -BeTrue
     }
 
     It 'таблица очищается перед каждой генерацией' {
-        # Без очистки результаты накапливались, и вместо 1000 ников показывалось 1978.
         $global:UufFullText.Contains('$script:Candidates.Clear()') | Should -BeTrue
     }
 
     It 'список проверенных имён сохраняется между сеансами' {
         $global:UufMainText.Contains('CheckedNames = @($script:CheckedNames.Keys') | Should -BeTrue
         $global:UufMainText.Contains('$historyData.CheckedNames') | Should -BeTrue
-        # Очистка таблицы не должна стирать постоянный список.
         $global:UufMainText.Contains('function Update-CheckedNamesButtonText') | Should -BeTrue
     }
 
     It 'потолок в 30 свободных ников снят' {
-        # Из-за него новые свободные ники переставали попадать в историю после
-        # тридцатого, хотя проверка продолжала их находить.
         $global:UufFullText.Contains('Select-Object -First 29') | Should -BeFalse
         $global:UufMainText.Contains('$script:FreeHistory = @(@($entry) + @($remaining))') | Should -BeTrue
     }
 
     It 'выбор платформы подставляет правило длины' {
         $global:UufFullText.Contains('Get-PlatformLengthRule -Platform $selectedPlatform') | Should -BeTrue
+    }
+}
+
+Describe 'Платформы, домены и интерфейс версии 2.6.0' {
+    It 'почтовые платформы добавляют домен к нику' {
+        Get-PlatformDomain -Platform 'Google' | Should -Be 'gmail.com'
+        Get-PlatformDomain -Platform 'Mail.ru' | Should -Be 'mail.ru'
+        Get-PlatformDomain -Platform 'Outlook' | Should -Be 'outlook.com'
+        Get-PlatformDomain -Platform 'Roblox' | Should -Be ''
+        Get-DisplayNick -Platform 'Google' -Name 'voidstorm' | Should -Be 'voidstorm@gmail.com'
+        Get-DisplayNick -Platform 'GitHub' -Name 'voidstorm' | Should -Be 'voidstorm'
+    }
+    It 'удалённые платформы исчезли, Telegram Channel добавлен' {
+        $global:SupportedPlatforms -contains 'TikTok' | Should -BeFalse
+        $global:SupportedPlatforms -contains 'Apple' | Should -BeFalse
+        $global:SupportedPlatforms -contains 'Microsoft' | Should -BeFalse
+        $global:SupportedPlatforms -contains 'Telegram Channel' | Should -BeTrue
+        Test-UsernameFormat -Username '+RMHfPxr3hVBkMGE6' -Platform 'Telegram Channel' | Should -BeTrue
+        Test-UsernameFormat -Username 'ab' -Platform 'Telegram Channel' | Should -BeFalse
+    }
+    It 'источник случайных символов работает автономно' {
+        $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @() -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 4 -MaxLength 12 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $false -OnlyShort $false -ExcludeTokens @() -RandomChars $true)
+        $pool.Count | Should -Be 10
+        foreach ($item in $pool) { $item.Category | Should -Be 'Случайные символы' }
+    }
+    It 'регистрация открывается в инкогнито под текущую платформу' {
+        Get-RegistrationUrl -Platform 'Google' | Should -Be 'https://accounts.google.com/signup'
+        Get-RegistrationUrl -Platform 'Outlook' | Should -Be 'https://signup.live.com/'
+        $global:UufMainText.Contains('--incognito') | Should -BeTrue
+        $global:UufMainText.Contains('function Open-UrlInIncognito') | Should -BeTrue
+        $global:UufMainText.Contains('function Update-AccountPlatformUi') | Should -BeTrue
+    }
+    It 'стандартный набор выставлен при запуске' {
+        $global:UufMainText.Contains('$script:StyleBox.SelectedItem = ' + [char]39 + '— без стиля —' + [char]39) | Should -BeTrue
+        $global:UufMainText.Contains('$script:MaxLengthBox = New-NumberBox 216 624 80 1 64 25') | Should -BeTrue
+        $global:UufMainText.Contains('$script:RandomCharsCheck = New-CheckBox ' + [char]39 + 'Случайные символы' + [char]39 + ' 14 803 180 $true') | Should -BeTrue
+        $global:UufMainText.Contains('$script:TwoWordsCheck = New-CheckBox ' + [char]39 + 'Два осмысленных слова' + [char]39 + ' 194 683 170 $false') | Should -BeTrue
+        $global:UufMainText.Contains('$script:DelayBox = New-NumberBox 14 910 110 500 15000 700') | Should -BeTrue
+    }
+    It 'интерфейс монохромный с кастомным заголовком и анимациями' {
+        $global:UufMainText.Contains('$script:Form.FormBorderStyle = ' + [char]39 + 'None' + [char]39) | Should -BeTrue
+        $global:UufMainText.Contains('public sealed class UufResizeFrame : NativeWindow') | Should -BeTrue
+        $global:UufMainText.Contains('$script:SplashForm = New-Object System.Windows.Forms.Form') | Should -BeTrue
+        $global:UufMainText.Contains('function Start-ColorTransition') | Should -BeTrue
+        $global:UufMainText.Contains('$script:WireButtonAnimations = {') | Should -BeTrue
+        $global:UufMainText.Contains('FromArgb(93,73,222)') | Should -BeFalse
+    }
+    It 'помощь стала полноценным разделом с вкладками' {
+        $global:UufMainText.Contains('$helpForm.Text = ' + [char]39 + 'UUF — помощь' + [char]39) | Should -BeTrue
+        $global:UufMainText.Contains('КАК ПОЛЬЗОВАТЬСЯ') | Should -BeTrue
+        $global:UufMainText.Contains('КАТЕГОРИИ И ПРИМЕРЫ СЛОВ') | Should -BeTrue
+        $global:UufMainText.Contains('ПЛАТФОРМЫ: ПРАВИЛА, ДОМЕНЫ И РЕГИСТРАЦИЯ') | Should -BeTrue
+    }
+    It 'исполняемый файл переименован в UUF и получает иконку' {
+        $buildText = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\build\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
+        $buildText.Contains("Join-Path $OutputDirectory 'UUF.exe'") | Should -BeTrue
+        $buildText.Contains('iconFile') | Should -BeTrue
+    }
+    It 'в коде не осталось пояснительных комментариев, только маркеры блоков' {
+        $longComments = @($global:UufFullText -split "`n" | Where-Object { $_ -match '^\s*#' -and $_ -notmatch '^\s*#\s*---' })
+        $longComments.Count | Should -Be 0
     }
 }
