@@ -112,9 +112,9 @@
     }
     if ($domainsEnd -lt 0) { throw 'Не найден конец таблицы доменов платформ' }
     $domainsText = $global:UufMainText.Substring($domainsStart, $domainsEnd + 1 - $domainsStart)
-    $domainsText = $domainsText -replace '\$script:', '$$script:'
+    $domainsText = $domainsText -replace '\$script:', '$$global:'
     Invoke-Expression $domainsText
-    if (-not $script:PlatformDomains -or $script:PlatformDomains.Count -lt 1) {
+    if (-not $global:PlatformDomains -or $global:PlatformDomains.Count -lt 1) {
         throw 'Таблица доменов платформ извлечена пустой'
     }
 
