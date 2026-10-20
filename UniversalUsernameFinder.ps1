@@ -1,16 +1,20 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.6.0'
+$script:AppVersion = '2.6.1'
 
 trap {
     $trapMessage = $_.Exception.Message
+    $trapPosition = ''
+    try { $trapPosition = [string]$_.InvocationInfo.PositionMessage } catch { }
     try {
-        $trapLine = '[{0}] Необработанная ошибка запуска: {1}{2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $_.Exception.ToString(), [Environment]::NewLine
+        $trapLine = '[{0}] Необработанная ошибка запуска: {1}{2}{3}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $_.Exception.ToString(), $trapPosition, [Environment]::NewLine
         $trapPath = if ($script:LogPath) { [string]$script:LogPath } else { Join-Path ([System.AppDomain]::CurrentDomain.BaseDirectory) 'UniversalUsernameFinder.log' }
         [System.IO.File]::AppendAllText($trapPath, $trapLine, (New-Object System.Text.UTF8Encoding -ArgumentList $true))
     } catch { }
     try {
+        $trapShown = ('Приложение завершилось из-за ошибки:`r`n`r`n{0}`r`n`r`n{1}`r`n`r`nПодробности: UniversalUsernameFinder.log' -f $trapMessage, $trapPosition)
+        if ($trapShown.Length -gt 900) { $trapShown = $trapShown.Substring(0, 900) }
         try { $null = $Host.UI.RawUI.FlushInputBuffer() } catch { }
-        [System.Windows.Forms.MessageBox]::Show(('Приложение завершилось из-за ошибки:`r`n`r`n{0}`r`n`r`nПодробности: UniversalUsernameFinder.log' -f $trapMessage), 'UUF: ошибка запуска', 'OK', 'Error') | Out-Null
+        [System.Windows.Forms.MessageBox]::Show($trapShown, 'UUF: ошибка запуска', 'OK', 'Error') | Out-Null
     } catch { }
     exit 1
 }
@@ -1171,18 +1175,23 @@ $script:Form.Text = ('UUF v{0}' -f $script:AppVersion)
 $script:Form.StartPosition = 'CenterScreen'
 $designWindowSize = New-Object System.Drawing.Size(1480, 1010)
 $designMinimumSize = New-Object System.Drawing.Size(1240, 960)
+$minimumWidth = 1240
+$minimumHeight = 960
+$windowWidth = 1480
+$windowHeight = 1010
 try {
     $workingArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-    $minimumWidth = [Math]::Min($designMinimumSize.Width, [Math]::Max(760, $workingArea.Width - 32))
-    $minimumHeight = [Math]::Min($designMinimumSize.Height, [Math]::Max(520, $workingArea.Height - 32))
-    $windowWidth = [Math]::Max($minimumWidth, [Math]::Min($designWindowSize.Width, $workingArea.Width))
-    $windowHeight = [Math]::Max($minimumHeight, [Math]::Min($designWindowSize.Height, $workingArea.Height))
-} catch {
-    $minimumWidth = $designMinimumSize.Width
-    $minimumHeight = $designMinimumSize.Height
-    $windowWidth = $designWindowSize.Width
-    $windowHeight = $designWindowSize.Height
-}
+    $areaWidth = [int](@($workingArea.Width)[0])
+    $areaHeight = [int](@($workingArea.Height)[0])
+    if ($areaWidth -ge 600 -and $areaHeight -ge 480) {
+        $minimumWidth = [int][Math]::Min([int]$designMinimumSize.Width, [Math]::Max(760, $areaWidth - 32))
+        $minimumHeight = [int][Math]::Min([int]$designMinimumSize.Height, [Math]::Max(520, $areaHeight - 32))
+        $windowWidth = [int][Math]::Max($minimumWidth, [int][Math]::Min([int]$designWindowSize.Width, $areaWidth))
+        $windowHeight = [int][Math]::Max($minimumHeight, [int][Math]::Min([int]$designWindowSize.Height, $areaHeight))
+        if ($windowWidth -lt $minimumWidth) { $windowWidth = $minimumWidth }
+        if ($windowHeight -lt $minimumHeight) { $windowHeight = $minimumHeight }
+    }
+} catch { }
 $script:Form.MinimumSize = New-Object System.Drawing.Size($minimumWidth, $minimumHeight)
 $script:Form.Size = New-Object System.Drawing.Size($windowWidth, $windowHeight)
 $script:Form.BackColor = [System.Drawing.Color]::FromArgb(245,246,248)
@@ -3294,7 +3303,7 @@ param($InputQueue, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform, $AppV
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.6.0' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.6.1' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
