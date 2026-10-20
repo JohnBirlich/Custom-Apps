@@ -971,8 +971,9 @@ Describe 'Интерфейс и поведение версии 2.5.5' {
         $global:UufFullText.Contains('for ($workerIndex = 1; $workerIndex -le $threadCount; $workerIndex++)') | Should -BeTrue
         $global:UufWorkerText.Contains('$InputQueue.TryDequeue([ref]$item)') | Should -BeTrue
         $global:UufMainText.Contains('function Test-CheckRunning') | Should -BeTrue
-        # Прогон завершается только когда закончились все потоки.
-        $global:UufMainText.Contains('-and -not (Test-CheckRunning)) {') | Should -BeTrue
+        # Прогон завершается только когда закончились все потоки. Проверка расположена
+        # в PollTimer, то есть после here-string воркера, поэтому ищем в полном тексте.
+        $global:UufFullText.Contains('-and -not (Test-CheckRunning)) {') | Should -BeTrue
     }
 
     It 'сортировка по умолчанию — порядок генерации, а не алфавит' {
@@ -983,7 +984,8 @@ Describe 'Интерфейс и поведение версии 2.5.5' {
     It 'под полосой прогресса выводится оценка оставшегося времени' {
         $global:UufMainText.Contains('function Get-CheckEtaText') | Should -BeTrue
         $global:UufMainText.Contains('осталось ~') | Should -BeTrue
-        $global:UufMainText.Contains('$script:CheckStartedAt = [DateTime]::UtcNow') | Should -BeTrue
+        # Момент старта прогона фиксируется в Start-Checking — тоже после here-string.
+        $global:UufFullText.Contains('$script:CheckStartedAt = [DateTime]::UtcNow') | Should -BeTrue
     }
 
     It 'позиция прокрутки таблицы сохраняется при перерисовке' {
