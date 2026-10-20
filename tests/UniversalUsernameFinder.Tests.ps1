@@ -963,8 +963,8 @@ Describe 'Платформы, домены и интерфейс версии 2.
         $global:UufMainText.Contains('$script:TwoWordsCheck = New-CheckBox ' + [char]39 + 'Два осмысленных слова' + [char]39 + ' 194 683 170 $false') | Should -BeTrue
         $global:UufMainText.Contains('$script:DelayBox = New-NumberBox 14 910 110 500 15000 700') | Should -BeTrue
     }
-    It 'интерфейс тёмный v2.5.5, стандартная рамка, без анимаций и кастомного заголовка' {
-        $global:UufMainText.Contains('$script:Form.FormBorderStyle') | Should -BeFalse
+    It 'интерфейс тёмный v2.5.5, кастомная строка заголовка, без анимаций' {
+        $global:UufMainText.Contains('$script:Form.FormBorderStyle = ' + [char]39 + 'None' + [char]39) | Should -BeTrue
         $global:UufMainText.Contains('UufResizeFrame') | Should -BeFalse
         $global:UufMainText.Contains('CaptionBar') | Should -BeFalse
         $global:UufMainText.Contains('$script:SplashForm') | Should -BeFalse
@@ -1031,7 +1031,7 @@ Describe 'Изменения версии 2.8.0' {
 Describe 'Изменения версии 2.8.1' {
     It 'логотип в шапке прижат к левому краю к слову Universal' {
         $global:UufMainText.Contains('$headerLogo.Anchor = ' + [char]39 + 'Top, Left' + [char]39) | Should -BeTrue
-        $global:UufMainText.Contains('$headerLogo.Location = New-Object System.Drawing.Point(16, 14)') | Should -BeTrue
+        $global:UufMainText.Contains('$headerLogo.Location = New-Object System.Drawing.Point(16, 40)') | Should -BeTrue
     }
     It 'фильтр истории показывает все платформы, а не только встреченные' {
         $global:UufMainText.Contains('$historyOrderedPlatforms = @($script:SupportedPlatforms)') | Should -BeTrue
@@ -1049,5 +1049,37 @@ Describe 'Изменения версии 2.8.1' {
     It 'в интерфейсе не осталось перенесённых якорей и мусора сортировки' {
         $global:UufMainText.Contains('$historySort') | Should -BeFalse
         $global:UufMainText.Contains('По времени') | Should -BeFalse
+    }
+}
+
+Describe 'Изменения версии 2.8.2' {
+    It 'кастомная строка заголовка: кнопки свернуть, в полный экран и закрыть' {
+        $global:UufMainText.Contains('$script:MinimizeButton = New-UufCaptionButton ') | Should -BeTrue
+        $global:UufMainText.Contains('$script:MaximizeButton = New-UufCaptionButton ') | Should -BeTrue
+        $global:UufMainText.Contains('$script:CloseButton = New-UufCaptionButton ') | Should -BeTrue
+        $global:UufMainText.Contains('public static class UufUser32') | Should -BeTrue
+        $global:UufMainText.Contains('$script:Form.Add_Resize({ if ($script:MaximizeButton)') | Should -BeTrue
+        $global:UufMainText.Contains("$header.Add_MouseDown($uufCaptionMouseDown)") | Should -BeTrue
+    }
+    It 'безрамочное окно сохраняет нативные изменение размера, максимальный размер и меню панели задач' {
+        $global:UufMainText.Contains('$script:Form.MaximizedBounds') | Should -BeTrue
+        $global:UufMainText.Contains('-bor 0x00040000') | Should -BeTrue
+        $global:UufMainText.Contains('New-UufResizeEdge ') | Should -BeTrue
+        $global:UufMainText.Contains('$script:Form.Controls.SetChildIndex($edge, 0)') | Should -BeTrue
+    }
+    It 'нижняя полоса журнала прижата к низу и живёт вместе с окном' {
+        $global:UufMainText.Contains('$diagnosticHeader.Anchor = ' + [char]39 + 'Bottom, Left' + [char]39) | Should -BeTrue
+        $global:UufMainText.Contains('$script:CopyLogButton = Add-UiButton ' + [char]39 + 'Копировать журнал' + [char]39 + ' 14 830 180 $false 28 $right') | Should -BeTrue
+        $global:UufMainText.Contains('$script:CopyLogButton.Anchor = ' + [char]39 + 'Bottom, Left' + [char]39) | Should -BeTrue
+        $global:UufMainText.Contains('$script:ClearLogButton.Anchor = ' + [char]39 + 'Bottom, Left' + [char]39) | Should -BeTrue
+        $global:UufMainText.Contains('$script:Grid.Size = New-Object System.Drawing.Size(1008,554)') | Should -BeTrue
+        $global:UufMainText.Contains('$script:DiagnosticBox.Location = New-Object System.Drawing.Point(14,728)') | Should -BeTrue
+    }
+    It 'правила VK и YouTube запрещают повторные точки и точки по краям' {
+        Test-UsernameFormat -Username 'good_nick' -Platform 'VK' | Should -BeTrue
+        Test-UsernameFormat -Username 'bad__name' -Platform 'VK' | Should -BeFalse
+        Test-UsernameFormat -Username 'a..b' -Platform 'YouTube' | Should -BeFalse
+        Test-UsernameFormat -Username '.start' -Platform 'YouTube' | Should -BeFalse
+        Test-UsernameFormat -Username 'cool.handle' -Platform 'YouTube' | Should -BeTrue
     }
 }
