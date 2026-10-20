@@ -29,6 +29,10 @@ BeforeAll {
     if ($workerStart -lt 0) { throw 'Не найден here-string воркера' }
     $global:UufMainText = $fullText.Substring(0, $workerStart)
     $global:UufWorkerText = $fullText.Substring($workerStart)
+    # Полный текст нужен для структурных проверок кода, который расположен ПОСЛЕ
+    # here-string воркера (экспорт CSV, обработчик кнопки генерации): в UufMainText
+    # его нет, и поиск по нему давал ложный отказ.
+    $global:UufFullText = $fullText
     $global:UufScriptPath = $scriptPath
 
     # Извлечение определения функции по имени с учётом вложенности фигурных скобок.
@@ -207,12 +211,14 @@ Describe 'Структура скрипта' {
         $global:UufMainText.Contains("Columns.Add('Structure','СТРУКТУРА')") | Should -BeTrue
         $global:UufMainText.Contains('[string]$item.Structure') | Should -BeTrue
         $global:UufMainText.Contains('Sort-Object Structure') | Should -BeTrue
-        $global:UufMainText.Contains('Name=''Структура'';Expression={$_.Structure}') | Should -BeTrue
+        # Экспорт CSV расположен после here-string воркера, поэтому ищем в полном тексте.
+        $global:UufFullText.Contains('Name=''Структура'';Expression={$_.Structure}') | Should -BeTrue
     }
 
     It 'исключения передаются в генератор до его запуска' {
-        $global:UufMainText.Contains('-ExcludeKeys $excludeKeys') | Should -BeTrue
-        $global:UufMainText.Contains('Создано {0} из {1}') | Should -BeTrue
+        # Обработчик кнопки генерации тоже расположен после here-string воркера.
+        $global:UufFullText.Contains('-ExcludeKeys $excludeKeys') | Should -BeTrue
+        $global:UufFullText.Contains('Создано {0} из {1}') | Should -BeTrue
     }
 
     It 'Roblox повторяет POST с токеном X-CSRF-Token' {
