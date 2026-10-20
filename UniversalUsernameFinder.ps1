@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.5.2'
+$script:AppVersion = '2.5.3'
 
 # Журнал: предпочитаем папку скрипта, но если она недоступна для записи
 # (например, программа распакована в Program Files), уходим в профиль пользователя.
@@ -272,12 +272,64 @@ try {
     $script:RetiredNames = @{}
 }
 
+# Индекс «слово → значение» строится один раз за сеанс.
+# Раньше Get-SeedForWord на каждый вызов склеивал семь массивов (около 300 объектов)
+# и выполнял линейный поиск через Where-Object; вызовов за одну генерацию сотни,
+# поэтому сборка кандидатов была заметно медленнее самой проверки.
+$script:SeedIndex = $null
+
+function Initialize-SeedIndex {
+    if ($null -ne $script:SeedIndex) { return }
+    $index = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([System.StringComparer]::OrdinalIgnoreCase)
+    $seedArrays = @(
+        $script:AppSeeds, $script:MeaningSeeds, $script:NatureSeeds,
+        $script:MythSeeds, $script:GamingSeeds, $script:MinimalSeeds, $script:Modifiers
+    )
+    foreach ($seedArray in $seedArrays) {
+        foreach ($seed in $seedArray) {
+            if ($null -eq $seed) { continue }
+            $word = [string]$seed.Word
+            if ($word -and -not $index.ContainsKey($word)) { $index[$word] = $seed }
+        }
+    }
+    $script:SeedIndex = $index
+}
+
 function Get-SeedForWord {
     param([string]$Word, [string]$FallbackMeaning = 'осмысленное слово')
-    $all = @($script:AppSeeds) + @($script:MeaningSeeds) + @($script:NatureSeeds) + @($script:MythSeeds) + @($script:GamingSeeds) + @($script:MinimalSeeds) + @($script:Modifiers)
-    $found = $all | Where-Object { [string]$_.Word -ieq $Word } | Select-Object -First 1
-    if ($found) { return $found }
+    if ([string]::IsNullOrWhiteSpace($Word)) {
+        return [pscustomobject]@{ Word = $Word; Meaning = $FallbackMeaning }
+    }
+    Initialize-SeedIndex
+    # ContainsKey с пустым или null-ключом бросил бы исключение, поэтому проверка выше.
+    if ($script:SeedIndex.ContainsKey($Word)) { return $script:SeedIndex[$Word] }
     return [pscustomobject]@{ Word = $Word; Meaning = $FallbackMeaning }
+}
+
+# Определяет, из скольких слов состоит ник. Для сгенерированных кандидатов структура
+# известна в момент создания и задаётся явно; функция нужна для ручного ввода и для
+# собственных слов пользователя, где состав заранее неизвестен.
+function Get-NickStructure {
+    param([string]$Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return 'Одно слово' }
+    $letters = [regex]::Replace($Name, '[^A-Za-z]', '')
+    if ($letters.Length -lt 2) { return 'Одно слово' }
+    # Внутренняя заглавная буква — признак склейки: все словарные токены приложения
+    # начинаются с заглавной и внутренних не имеют (Nova, Aurora, Shadow).
+    # BoomSquare -> граница перед S, то есть два слова.
+    for ($i = 1; $i -lt $letters.Length; $i++) {
+        if ([char]::IsUpper($letters[$i])) { return 'Два слова' }
+    }
+    # Разделитель тоже означает два слова: Boom_Square.
+    if ($Name.IndexOf('_') -ge 0) { return 'Два слова' }
+    # Слитное написание без заглавных проверяем разбиением по словарю.
+    Initialize-SeedIndex
+    for ($i = 3; $i -le $letters.Length - 3; $i++) {
+        $left = $letters.Substring(0, $i)
+        if (-not $script:SeedIndex.ContainsKey($left)) { continue }
+        if ($script:SeedIndex.ContainsKey($letters.Substring($i))) { return 'Два слова' }
+    }
+    return 'Одно слово'
 }
 
 function Convert-ToNickToken {
@@ -399,8 +451,14 @@ function New-AdvancedCandidatePool {
         [bool]$OneWord,
         [bool]$TwoWords,
         [bool]$OnlyShort,
-        [string[]]$ExcludeTokens
+        [string[]]$ExcludeTokens,
+        [hashtable]$ExcludeKeys
     )
+    # ExcludeKeys — уже занятые и уже проверенные ники в формате «платформа|ник».
+    # Генератор отсеивает их сам: раньше это делал вызывающий код после получения
+    # списка, и запрошенное количество из-за этого не добиралось (просили 40 — получали 37).
+    if ($null -eq $ExcludeKeys) { $ExcludeKeys = @{} }
+    $stats = @{ Attempts = 0; ByLength = 0; ByFormat = 0; ByExcludedToken = 0; ByDuplicate = 0; ByAlreadyUsed = 0 }
     $bases = New-Object System.Collections.ArrayList
     foreach ($group in $SelectedWordCategories) {
         if ($script:MeaningGroups.ContainsKey($group)) {
@@ -410,7 +468,9 @@ function New-AdvancedCandidatePool {
             }
         }
     }
-    foreach ($rawWord in ($CustomWords -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+    # Свои слова разбиваются и по разделителям, и по пробелам: раньше «boom square»
+    # склеивалось Convert-ToNickToken в один токен BoomSquare и считалось одним словом.
+    foreach ($rawWord in ($CustomWords -split '[,;\s]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
         $word = Convert-ToNickToken $rawWord
         if ($word.Length -gt 0) { [void]$bases.Add([pscustomobject]@{Word=$word; Meaning='ваше ключевое слово'; Category='Свои слова'}) }
     }
@@ -426,65 +486,117 @@ function New-AdvancedCandidatePool {
             $modifiers += [pscustomobject]@{Word=[string]$seed.Word; Meaning=[string]$seed.Meaning}
         }
     }
+    # Стиль «Двусловный» обязан давать два слова: раньше он лишь добавлял модификаторы,
+    # и при снятой галочке «Два осмысленных слова» выдавал однословные ники.
+    if ($Style -eq 'Двусловный') { $TwoWords = $true }
     if (-not $OneWord -and -not $TwoWords) { $OneWord = $true }
-    $rawCandidates = New-Object System.Collections.ArrayList
-    $seenRaw = @{}
-    foreach ($base in $bases) {
-        $word = [regex]::Replace([string]$base.Word, '[^A-Za-z0-9]', '')
-        if ($word.Length -ge 1 -and $OneWord) {
-            [void]$rawCandidates.Add([pscustomobject]@{Name=$word; Meaning=[string]$base.Meaning; Category=[string]$base.Category})
-        }
-        if ($TwoWords) {
-            foreach ($mod in $modifiers) {
-                $modWord = [regex]::Replace([string]$mod.Word, '[^A-Za-z0-9]', '')
-                if ($modWord.Length -lt 1 -or $modWord -ieq $word) { continue }
-                $joiner = ''
-                if ($UseUnderscore) { $joiner = '_' }
-                $pair1 = $word + $joiner + $modWord
-                $pair2 = $modWord + $joiner + $word
-                [void]$rawCandidates.Add([pscustomobject]@{Name=$pair1; Meaning=("{0} + {1}" -f $base.Meaning, $mod.Meaning); Category=[string]$base.Category})
-                [void]$rawCandidates.Add([pscustomobject]@{Name=$pair2; Meaning=("{0} + {1}" -f $mod.Meaning, $base.Meaning); Category=[string]$base.Category})
-            }
-        }
-    }
+
     $prefixClean = [regex]::Replace([string]$Prefix, '[^A-Za-z0-9_.-]', '')
     $suffixClean = [regex]::Replace([string]$Suffix, '[^A-Za-z0-9_.-]', '')
-    $filtered = New-Object System.Collections.ArrayList
-    $seen = @{}
-    $rawArray = @(Get-ShuffledArray -Items $rawCandidates.ToArray())
-    foreach ($entry in $rawArray) {
-        $name = [string]$entry.Name
-        if ($prefixClean) { $name = $prefixClean + $name }
-        if ($suffixClean) { $name = $name + $suffixClean }
-        $name = [regex]::Replace($name, '[^A-Za-z0-9_.-]', '')
-        $maximum = $MaxLength
-        if ($OnlyShort) { $maximum = [Math]::Min($maximum, 12) }
-        if ($name.Length -lt $MinLength -or $name.Length -gt $maximum -or -not (Test-UsernameFormat -Username $name -Platform $Platform)) { continue }
-        $excluded = $false
+    $maximum = $MaxLength
+    if ($OnlyShort) { $maximum = [Math]::Min($maximum, 12) }
+
+    $result = New-Object System.Collections.ArrayList
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+
+    # Единая точка приёма кандидата: все фильтры применяются здесь, поэтому статистика
+    # отсева и итоговое количество согласованы, а не расходятся, как было раньше.
+    $tryAccept = {
+        param([string]$RawName, [string]$Meaning, [string]$Category, [string]$Structure, [switch]$SkipAffixes)
+        $stats['Attempts'] = $stats['Attempts'] + 1
+        $name = $RawName
+        if (-not $SkipAffixes) {
+            if ($prefixClean) { $name = $prefixClean + $name }
+            if ($suffixClean) { $name = $name + $suffixClean }
+            $name = [regex]::Replace($name, '[^A-Za-z0-9_.-]', '')
+        }
+        if ($name.Length -lt $MinLength -or $name.Length -gt $maximum) { $stats['ByLength'] = $stats['ByLength'] + 1; return $false }
+        if (-not (Test-UsernameFormat -Username $name -Platform $Platform)) { $stats['ByFormat'] = $stats['ByFormat'] + 1; return $false }
         foreach ($token in $ExcludeTokens) {
-            if (-not [string]::IsNullOrWhiteSpace($token) -and $name.IndexOf($token.Trim(), [StringComparison]::OrdinalIgnoreCase) -ge 0) { $excluded = $true; break }
-        }
-        if ($excluded) { continue }
-        $key = $name.ToLowerInvariant()
-        if (-not $seen.ContainsKey($key)) {
-            $seen[$key] = $true
-            [void]$filtered.Add([pscustomobject]@{Name=$name; Platform=$Platform; Meaning=[string]$entry.Meaning; Category=[string]$entry.Category; Status='Ожидает'; Time=''; Reason='Ожидает проверки'; Checked=$false})
-        }
-        if ($UseNumbers -and $name.Length -le ($maximum - 2) -and (Get-Random -Minimum 0 -Maximum 100) -lt 30) {
-            $number = Get-Random -Minimum 2 -Maximum 1000
-            $withNumber = "$name$number"
-            if ($withNumber.Length -ge $MinLength -and $withNumber.Length -le $maximum -and (Test-UsernameFormat -Username $withNumber -Platform $Platform)) {
-                $numberKey = $withNumber.ToLowerInvariant()
-                if (-not $seen.ContainsKey($numberKey)) {
-                    $seen[$numberKey] = $true
-                    [void]$filtered.Add([pscustomobject]@{Name=$withNumber; Platform=$Platform; Meaning=([string]$entry.Meaning + " + число $number"); Category=[string]$entry.Category; Status='Ожидает'; Time=''; Reason='Ожидает проверки'; Checked=$false})
-                }
+            if (-not [string]::IsNullOrWhiteSpace($token) -and $name.IndexOf($token.Trim(), [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                $stats['ByExcludedToken'] = $stats['ByExcludedToken'] + 1
+                return $false
             }
         }
-        if ($filtered.Count -ge ($Count * 4)) { break }
+        if (-not $seen.Add($name)) { $stats['ByDuplicate'] = $stats['ByDuplicate'] + 1; return $false }
+        if ($ExcludeKeys.ContainsKey((Get-HistoryKey -Name $name -Platform $Platform))) {
+            $stats['ByAlreadyUsed'] = $stats['ByAlreadyUsed'] + 1
+            return $false
+        }
+        [void]$result.Add([pscustomobject]@{
+            Name = $name
+            Platform = $Platform
+            Meaning = $Meaning
+            Category = $Category
+            Structure = $Structure
+            Status = 'Ожидает'
+            Time = ''
+            Reason = 'Ожидает проверки'
+            Checked = $false
+        })
+        return $true
     }
-    if ($filtered.Count -eq 0) { return @() }
-    $shuffled = @(Get-ShuffledArray -Items $filtered.ToArray())
+
+    # Этап 1 — одиночные слова. Набор конечен, поэтому перебираем перемешанные базы.
+    if ($OneWord -and $bases.Count -gt 0) {
+        foreach ($base in (Get-ShuffledArray -Items $bases.ToArray())) {
+            if ($result.Count -ge $Count) { break }
+            $word = [regex]::Replace([string]$base.Word, '[^A-Za-z0-9]', '')
+            if ($word.Length -lt 1) { continue }
+            $null = & $tryAccept $word ([string]$base.Meaning) ([string]$base.Category) 'Одно слово'
+        }
+    }
+
+    # Этап 2 — пары слов. Комбинации больше не материализуются: раньше создавались все
+    # пары «база × модификатор» (десятки тысяч объектов), и только потом брались первые
+    # Count. Теперь пара выбирается случайно, пока не набрано нужное количество; предел по
+    # числу неудач подряд означает, что пространство имён при текущих фильтрах исчерпано.
+    if ($TwoWords -and $result.Count -lt $Count -and $bases.Count -gt 0 -and $modifiers.Count -gt 0) {
+        $joiner = ''
+        if ($UseUnderscore) { $joiner = '_' }
+        $baseArray = @($bases.ToArray())
+        $modArray = @($modifiers)
+        $maxAttempts = [Math]::Max(400, $Count * 40)
+        $failureLimit = 400
+        $consecutiveFailures = 0
+        $attempts = 0
+        while ($result.Count -lt $Count -and $attempts -lt $maxAttempts -and $consecutiveFailures -lt $failureLimit) {
+            $attempts++
+            $base = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Length)]
+            $mod = $modArray[(Get-Random -Minimum 0 -Maximum $modArray.Length)]
+            $word = [regex]::Replace([string]$base.Word, '[^A-Za-z0-9]', '')
+            $modWord = [regex]::Replace([string]$mod.Word, '[^A-Za-z0-9]', '')
+            if ($word.Length -lt 1 -or $modWord.Length -lt 1 -or $modWord -ieq $word) { $consecutiveFailures++; continue }
+            if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) {
+                $pairName = $word + $joiner + $modWord
+                $pairMeaning = ('{0} + {1}' -f [string]$base.Meaning, [string]$mod.Meaning)
+            } else {
+                $pairName = $modWord + $joiner + $word
+                $pairMeaning = ('{0} + {1}' -f [string]$mod.Meaning, [string]$base.Meaning)
+            }
+            if (& $tryAccept $pairName $pairMeaning 'Двусловные' 'Два слова') { $consecutiveFailures = 0 } else { $consecutiveFailures++ }
+        }
+    }
+
+    # Этап 3 — добор вариантами с цифрами, если они включены и количество ещё не набрано.
+    if ($UseNumbers -and $result.Count -lt $Count -and $result.Count -gt 0) {
+        foreach ($entry in (Get-ShuffledArray -Items $result.ToArray())) {
+            if ($result.Count -ge $Count) { break }
+            $baseName = [string]$entry.Name
+            for ($try = 0; $try -lt 3; $try++) {
+                $number = Get-Random -Minimum 2 -Maximum 10000
+                $withNumber = $baseName + $number
+                if ($withNumber.Length -gt $maximum) { continue }
+                # Префикс и суффикс уже входят в имя, поэтому повторно не подставляются.
+                $meaningWithNumber = ([string]$entry.Meaning) + (' + число {0}' -f $number)
+                if (& $tryAccept $withNumber $meaningWithNumber ([string]$entry.Category) ([string]$entry.Structure) -SkipAffixes) { break }
+            }
+        }
+    }
+
+    $script:GenerationStats = $stats
+    if ($result.Count -eq 0) { return @() }
+    $shuffled = @(Get-ShuffledArray -Items $result.ToArray())
     $take = [Math]::Min($Count, $shuffled.Count)
     return @($shuffled | Select-Object -First $take)
 }
@@ -685,7 +797,7 @@ $script:ManualNickBox.ScrollBars = 'Vertical'
 
 Add-UiLabel 'НАСТРОЙКИ ГЕНЕРАЦИИ' 14 666 350 22 | Out-Null
 Add-UiLabel 'Количество' 14 690 90 18 | Out-Null
-$script:CountBox = New-NumberBox 14 709 90 5 200 40
+$script:CountBox = New-NumberBox 14 709 90 5 2000 40
 Add-UiLabel 'Мин. длина' 120 690 90 18 | Out-Null
 $script:MinLengthBox = New-NumberBox 120 709 80 1 39 3
 Add-UiLabel 'Макс. длина' 216 690 100 18 | Out-Null
@@ -708,9 +820,13 @@ Add-UiLabel 'Пауза (мс)   •   Тайм-аут (мс)' 14 950 350 20 | O
 # Минимальная пауза ограничена снизу (1200 мс): слишком частые последовательные запросы
 # к одной платформе приводят к HTTP 429, временным блокировкам по IP и нарушают правила
 # использования сервисов. Предел задан в самом контроле, поэтому он виден пользователю.
-$script:DelayBox = New-NumberBox 14 971 145 1200 15000 1500
+# Пауза адаптивная: значение в этом поле — стартовая точка, а не жёсткая задержка.
+# Воркер увеличивает её при HTTP 429/403 (с учётом Retry-After) и постепенно снижает
+# после серии успешных ответов, поэтому средний темп выше прежнего фиксированного порога,
+# а защита от ограничения частоты и блокировки IP сохраняется.
+$script:DelayBox = New-NumberBox 14 971 145 500 15000 700
 $script:TimeoutBox = New-NumberBox 194 971 145 1000 30000 8000
-$script:ThreadsLabel = Add-UiLabel 'Потоки: 1 • пауза не менее 1200 мс (защита от HTTP 429 и блокировок)' 14 1002 350 30
+$script:ThreadsLabel = Add-UiLabel 'Потоки: 1 • пауза адаптивная: старт 700 мс, рост при HTTP 429, снижение после успехов' 14 1002 350 30
 
 $script:GenerateButton = Add-UiButton '✨ Сгенерировать и проверить' 14 1040 350 $true 37
 $script:StartButton = Add-UiButton '▶ Найти свободные' 14 1083 350 $true 37
@@ -779,7 +895,7 @@ $script:SortBox.Size = New-Object System.Drawing.Size(150,27)
 $script:SortBox.DropDownStyle = 'DropDownList'
 $script:SortBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
 $script:SortBox.ForeColor = [System.Drawing.Color]::White
-[void]$script:SortBox.Items.AddRange([object[]]@('Ник','Статус','Категория','Короткие сначала','Свободные первыми'))
+[void]$script:SortBox.Items.AddRange([object[]]@('Ник','Статус','Категория','Структура','Короткие сначала','Свободные первыми'))
 $script:SortBox.SelectedIndex = 0
 $right.Controls.Add($script:SortBox)
 $script:SearchBox = New-Object System.Windows.Forms.TextBox
@@ -851,16 +967,21 @@ $script:Grid.AutoSizeColumnsMode = 'Fill'
 [void]$script:Grid.Columns.Add('Platform','ПЛАТФОРМА')
 [void]$script:Grid.Columns.Add('Status','СТАТУС')
 [void]$script:Grid.Columns.Add('Category','КАТЕГОРИЯ')
+# Колонка «СТРУКТУРА» показывает, из скольких слов состоит ник. Без неё склейка двух
+# слов (BoomSquare) попадала в категорию «Цельные слова» и выглядела одним словом:
+# при снятой галочке «Разделитель _» слова соединяются без разделителя.
+[void]$script:Grid.Columns.Add('Structure','СТРУКТУРА')
 [void]$script:Grid.Columns.Add('Meaning','ЗНАЧЕНИЕ')
 [void]$script:Grid.Columns.Add('Time','ВРЕМЯ')
 [void]$script:Grid.Columns.Add('Reason','ПРИЧИНА')
-$script:Grid.Columns['Nick'].FillWeight = 17
-$script:Grid.Columns['Platform'].FillWeight = 14
-$script:Grid.Columns['Status'].FillWeight = 15
-$script:Grid.Columns['Category'].FillWeight = 18
-$script:Grid.Columns['Meaning'].FillWeight = 20
-$script:Grid.Columns['Time'].FillWeight = 10
-$script:Grid.Columns['Reason'].FillWeight = 24
+$script:Grid.Columns['Nick'].FillWeight = 16
+$script:Grid.Columns['Platform'].FillWeight = 12
+$script:Grid.Columns['Status'].FillWeight = 13
+$script:Grid.Columns['Category'].FillWeight = 15
+$script:Grid.Columns['Structure'].FillWeight = 12
+$script:Grid.Columns['Meaning'].FillWeight = 17
+$script:Grid.Columns['Time'].FillWeight = 8
+$script:Grid.Columns['Reason'].FillWeight = 20
 $script:Grid.RowTemplate.Height = 27
 # Двойная буферизация убирает мерцание при частой перерисовке таблицы.
 # Свойство защищённое, поэтому включаем его через отражение; сбой не критичен.
@@ -1856,7 +1977,7 @@ function Open-FreeHistoryWindow {
         $script:PlatformBox.SelectedItem = $selectedPlatform
         $candidate = Find-Candidate -Name $selectedName -Platform $selectedPlatform
         if (-not $candidate) {
-            $candidate = [pscustomobject]@{Name=$selectedName; Platform=$selectedPlatform; Meaning='Повторная проверка из истории'; Category='История свободных'; Status='Ожидает'; Time=''; Reason='Запрошена повторная проверка'; Checked=$false}
+            $candidate = [pscustomobject]@{Name=$selectedName; Platform=$selectedPlatform; Meaning='Повторная проверка из истории'; Category='История свободных'; Structure=(Get-NickStructure -Name $selectedName); Status='Ожидает'; Time=''; Reason='Запрошена повторная проверка'; Checked=$false}
             [void]$script:Candidates.Add($candidate)
             Register-Candidate $candidate
         }
@@ -2026,6 +2147,7 @@ function Update-ResultGrid {
     switch ([string]$script:SortBox.SelectedItem) {
         'Статус' { $items = @($items | Sort-Object Status, Platform, Name) }
         'Категория' { $items = @($items | Sort-Object Category, Platform, Name) }
+        'Структура' { $items = @($items | Sort-Object Structure, Category, Platform, Name) }
         'Короткие сначала' { $items = @($items | Sort-Object @{Expression={$_.Name.Length}}, Platform, Name) }
         'Свободные первыми' { $items = @($items | Sort-Object @{Expression={ switch ([string]$_.Status) { 'Свободен' {0}; 'Вероятно свободен' {1}; 'Не подтверждено' {2}; 'Ожидает' {3}; 'Проверяется' {4}; 'Ошибка сети' {5}; 'Занят' {6}; default {7} } }}, Platform, Name) }
         default { $items = @($items | Sort-Object Platform, Name) }
@@ -2033,9 +2155,9 @@ function Update-ResultGrid {
     foreach ($item in $items) {
         if ($script:OnlyFreeCheck.Checked -and ([string]$item.Status -ne 'Свободен' -and [string]$item.Status -ne 'Вероятно свободен')) { continue }
         if ($filterStatus -and $filterStatus -ne 'Все статусы' -and [string]$item.Status -ne $filterStatus) { continue }
-        $searchText = ([string]$item.Name + ' ' + [string]$item.Platform + ' ' + [string]$item.Category + ' ' + [string]$item.Meaning + ' ' + [string]$item.Reason)
+        $searchText = ([string]$item.Name + ' ' + [string]$item.Platform + ' ' + [string]$item.Category + ' ' + [string]$item.Structure + ' ' + [string]$item.Meaning + ' ' + [string]$item.Reason)
         if ($query -and $searchText.IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
-        $row = $script:Grid.Rows.Add([string]$item.Name,[string]$item.Platform,[string]$item.Status,[string]$item.Category,[string]$item.Meaning,[string]$item.Time,[string]$item.Reason)
+        $row = $script:Grid.Rows.Add([string]$item.Name,[string]$item.Platform,[string]$item.Status,[string]$item.Category,[string]$item.Structure,[string]$item.Meaning,[string]$item.Time,[string]$item.Reason)
         $color = [System.Drawing.Color]::FromArgb(255,190,92)
         switch ([string]$item.Status) {
             'Свободен' { $color = [System.Drawing.Color]::FromArgb(99,222,151) }
@@ -2085,7 +2207,7 @@ function Start-Checking {
         }
         $candidate.Status = 'Проверяется'
         $candidate.Reason = "Подготовка проверки для $selectedPlatform"
-        [void]$validCandidates.Add([pscustomobject]@{Name=[string]$candidate.Name; Platform=$selectedPlatform; Meaning=[string]$candidate.Meaning; Category=[string]$candidate.Category})
+        [void]$validCandidates.Add([pscustomobject]@{Name=[string]$candidate.Name; Platform=$selectedPlatform; Meaning=[string]$candidate.Meaning; Category=[string]$candidate.Category; Structure=[string]$candidate.Structure})
     }
     if ($validCandidates.Count -eq 0) { Update-ResultGrid; return }
     Update-ResultGrid
@@ -2099,11 +2221,24 @@ param($Candidates, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform, $AppV
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.5.2' }
-# Пределы задаются и в воркере, а не только в интерфейсе: значения приходят аргументами,
-# поэтому защита от слишком частых запросов не должна зависеть от состояния контролов.
-$DelayMs = [Math]::Max(1200,[int]$DelayMs)
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.5.3' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
+# Пауза адаптивная (AIMD): значение из интерфейса — стартовая точка, а не жёсткая задержка.
+# Пол задаётся профилем платформы и не зависит от состояния контролов, потому что
+# аргументы приходят извне; потолок защищает от ухода в бесконечное ожидание.
+$platformFloorMs = 400
+switch ($Platform) {
+    # GitHub: анонимный лимит 60 запросов в час, то есть ограничивает количество,
+    # а не темп. Ускорение здесь бессмысленно — важнее раньше остановиться на 403.
+    'GitHub' { $platformFloorMs = 1000 }
+    # Roblox: активная антибот-защита, поэтому старт осторожнее общего пола.
+    'Roblox' { $platformFloorMs = 600 }
+}
+$minDelayMs = $platformFloorMs
+$maxDelayMs = 20000
+$currentDelayMs = [Math]::Max($minDelayMs,[int]$DelayMs)
+$successStreak = 0
+$consecutiveRateLimits = 0
 $total = @($Candidates).Count
 $done = 0
 $consecutiveErrors = 0
@@ -2612,13 +2747,25 @@ try {
                 $consecutiveProtocolErrors = 0
             }
             if ($httpStatus -eq 429) {
+                $consecutiveRateLimits++
+                $successStreak = 0
+                # Сброс обязателен: иначе значение Retry-After от прошлого ника
+                # переиспользовалось бы для текущего.
+                $retryAfter = 0
                 try { if ($null -ne $r -and $r.Headers['Retry-After']) { $retryAfter = [int]$r.Headers['Retry-After'] } } catch { }
-                if ($retryAfter -lt 1) { $retryAfter = 15 }
+                if ($retryAfter -lt 0) { $retryAfter = 0 }
                 if ($retryAfter -gt 120) { $retryAfter = 120 }
-                $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=("HTTP 429 для {0} ({1}). Пауза Retry-After: {2} сек." -f $name,$Platform,$retryAfter)})
-                $waitUntil = [DateTime]::UtcNow.AddSeconds($retryAfter)
-                while ([DateTime]::UtcNow -lt $waitUntil -and -not $Cancellation.IsCancellationRequested) { Start-Sleep -Milliseconds 100 }
-                $status = 'Ошибка сети'; $reason = "HTTP 429 — ограничение частоты запросов $Platform; повторите позже"; $stopReason = "$Platform продолжает ограничивать частоту запросов"
+                # Мультипликативный рост паузы; Retry-After служит нижним порогом.
+                $currentDelayMs = [Math]::Min($maxDelayMs,[Math]::Max($currentDelayMs * 2, $retryAfter * 1000))
+                $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=("HTTP 429 для {0} ({1}). Пауза увеличена до {2} мс; ограничение подряд: {3} из 3." -f $name,$Platform,$currentDelayMs,$consecutiveRateLimits)})
+                if ($retryAfter -gt 0) {
+                    $waitUntil = [DateTime]::UtcNow.AddSeconds($retryAfter)
+                    while ([DateTime]::UtcNow -lt $waitUntil -and -not $Cancellation.IsCancellationRequested) { Start-Sleep -Milliseconds 100 }
+                }
+                $status = 'Ошибка сети'; $reason = "HTTP 429 — ограничение частоты запросов $Platform; пауза увеличена"
+                # Единичный 429 больше не обрывает прогон: воркер откатывает темп и
+                # продолжает. Остановка — только если платформа упорно ограничивает.
+                if ($consecutiveRateLimits -ge 3) { $stopReason = "$Platform ограничил частоту запросов три раза подряд (HTTP 429); прогон остановлен" }
             } elseif ($httpStatus -eq 403 -and $Platform -eq 'GitHub') {
                 $status = 'Ошибка сети'; $reason = 'GitHub HTTP 403: возможен лимит анонимного API'; $stopReason = 'GitHub ограничил запросы; проверка остановлена'
             } elseif ($httpStatus -ge 500) {
@@ -2645,9 +2792,19 @@ try {
             $consecutiveErrors++
         }
         if ($Cancellation.IsCancellationRequested) { break }
+        # Аддитивное снижение паузы: после серии ответов без ограничения частоты темп
+        # постепенно возвращается к стартовому, но не ниже пола профиля платформы.
+        if ($httpStatus -gt 0 -and $httpStatus -ne 429 -and $status -ne 'Ошибка сети') {
+            $successStreak++
+            $consecutiveRateLimits = 0
+            if ($successStreak -ge 5 -and $currentDelayMs -gt $minDelayMs) {
+                $currentDelayMs = [Math]::Max($minDelayMs,[int]($currentDelayMs * 0.8))
+                $successStreak = 0
+            }
+        }
         $done++
         $now = (Get-Date).ToString('HH:mm:ss')
-        $null = $Queue.Enqueue([pscustomobject]@{Type='Progress'; Item=[pscustomobject]@{Name=$name; Platform=$Platform; Category=[string]$item.Category; Meaning=[string]$item.Meaning; Status=$status; Reason=$reason; ErrorDetail=$errorDetail; Time=$now; Index=$done; Total=$total}})
+        $null = $Queue.Enqueue([pscustomobject]@{Type='Progress'; Item=[pscustomobject]@{Name=$name; Platform=$Platform; Category=[string]$item.Category; Structure=[string]$item.Structure; Meaning=[string]$item.Meaning; Status=$status; Reason=$reason; ErrorDetail=$errorDetail; Time=$now; Index=$done; Total=$total}})
         if ($errorDetail) { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=("{0} ({1}): {2}" -f $name,$Platform,$errorDetail)}) }
         if (-not $stopReason -and $consecutiveProtocolErrors -ge 3) {
             $stopReason = "Три запроса подряд к $Platform отклонены на уровне протокола/антибот-защиты; проверка остановлена. Endpoint мог измениться."
@@ -2658,8 +2815,8 @@ try {
         }
         if ($done -lt $total) {
             $elapsed = 0
-            while ($elapsed -lt $DelayMs -and -not $Cancellation.IsCancellationRequested) {
-                $step = [Math]::Min(100,($DelayMs - $elapsed))
+            while ($elapsed -lt $currentDelayMs -and -not $Cancellation.IsCancellationRequested) {
+                $step = [Math]::Min(100,($currentDelayMs - $elapsed))
                 Start-Sleep -Milliseconds $step
                 $elapsed += $step
             }
@@ -2810,20 +2967,43 @@ $script:GenerateButton.Add_Click({
     if ($customWords -eq 'Pixel, Void, Storm') { $customWords = '' }
     $customTheme = $script:ThemeBox.Text
     $excludeTokens = @($script:ExcludeBox.Text -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    $candidates = @(New-AdvancedCandidatePool -SelectedWordCategories $categories -CustomWords $customWords -CustomTheme $customTheme -Style ([string]$script:StyleBox.SelectedItem) -Platform $platform -Prefix $script:PrefixBox.Text -Suffix $script:SuffixBox.Text -MinLength ([int]$script:MinLengthBox.Value) -MaxLength ([int]$script:MaxLengthBox.Value) -Count ([int]$script:CountBox.Value) -UseNumbers ([bool]$script:NumbersCheck.Checked) -UseUnderscore ([bool]$script:UnderscoreCheck.Checked) -OneWord ([bool]$script:OneWordCheck.Checked) -TwoWords ([bool]$script:TwoWordsCheck.Checked) -OnlyShort ([bool]$script:ShortOnlyCheck.Checked) -ExcludeTokens $excludeTokens)
+    $seen = @{}
+    foreach ($existing in $script:Candidates) { $existingPlatform = [string]$existing.Platform; if (-not $existingPlatform) { $existingPlatform = 'Roblox' }; $seen[(($existingPlatform + '|' + [string]$existing.Name).ToLowerInvariant())] = $true }
+    # Исключения собираются ДО генерации и передаются в генератор: он отсеивает занятые
+    # и уже проверенные ники сам и добирает замену, поэтому запрошенное количество
+    # совпадает с результатом. Раньше отсев шёл после получения списка без добора,
+    # и вместо 40 ников в таблицу попадало 37, а вместо 200 — 187.
+    $excludeKeys = @{}
+    foreach ($existingKey in $seen.Keys) { $excludeKeys[[string]$existingKey] = $true }
+    foreach ($retiredKey in $script:RetiredNames.Keys) { $excludeKeys[[string]$retiredKey] = $true }
+    if ($script:ExcludeCheckedCheck.Checked) {
+        foreach ($checkedKey in $script:CheckedNames.Keys) { $excludeKeys[[string]$checkedKey] = $true }
+    }
+    $requestedCount = [int]$script:CountBox.Value
+    $candidates = @(New-AdvancedCandidatePool -SelectedWordCategories $categories -CustomWords $customWords -CustomTheme $customTheme -Style ([string]$script:StyleBox.SelectedItem) -Platform $platform -Prefix $script:PrefixBox.Text -Suffix $script:SuffixBox.Text -MinLength ([int]$script:MinLengthBox.Value) -MaxLength ([int]$script:MaxLengthBox.Value) -Count $requestedCount -UseNumbers ([bool]$script:NumbersCheck.Checked) -UseUnderscore ([bool]$script:UnderscoreCheck.Checked) -OneWord ([bool]$script:OneWordCheck.Checked) -TwoWords ([bool]$script:TwoWordsCheck.Checked) -OnlyShort ([bool]$script:ShortOnlyCheck.Checked) -ExcludeTokens $excludeTokens -ExcludeKeys $excludeKeys)
+    $poolStats = $script:GenerationStats
+    if ($null -eq $poolStats) { $poolStats = @{} }
+    if ($candidates.Count -lt $requestedCount) {
+        Add-Diagnostic ("Создано {0} из {1}: пространство имён исчерпано при текущих фильтрах. Отсеяно — по длине {2}, по формату платформы {3}, по словам-исключениям {4}, повторов {5}, уже проверено/занято {6}." -f $candidates.Count, $requestedCount, $poolStats['ByLength'], $poolStats['ByFormat'], $poolStats['ByExcludedToken'], $poolStats['ByDuplicate'], $poolStats['ByAlreadyUsed'])
+    }
     if ($candidates.Count -eq 0 -and [string]::IsNullOrWhiteSpace($script:ManualNickBox.Text)) {
         [System.Windows.Forms.MessageBox]::Show('Не удалось создать ники. Выбери хотя бы одну категорию или введи свои слова. Проверь длину и фильтры исключения.','Нет вариантов','OK','Warning') | Out-Null
         return
     }
-    $seen = @{}
-    foreach ($existing in $script:Candidates) { $existingPlatform = [string]$existing.Platform; if (-not $existingPlatform) { $existingPlatform = 'Roblox' }; $seen[(($existingPlatform + '|' + [string]$existing.Name).ToLowerInvariant())] = $true }
     $added = 0
+    $dropped = 0
     foreach ($candidate in $candidates) {
         $key = (($platform + '|' + [string]$candidate.Name).ToLowerInvariant())
-        if ($script:RetiredNames.ContainsKey($key)) { continue }
-        if ($script:ExcludeCheckedCheck.Checked -and $script:CheckedNames.ContainsKey($key)) { continue }
-        if (-not $seen.ContainsKey($key)) { [void]$script:Candidates.Add($candidate); Register-Candidate $candidate; $seen[$key]=$true; $added++ }
+        # Страховка: генератор уже отсек эти ключи, но список мог измениться за время работы.
+        if ($script:RetiredNames.ContainsKey($key)) { $dropped++; continue }
+        if ($script:ExcludeCheckedCheck.Checked -and $script:CheckedNames.ContainsKey($key)) { $dropped++; continue }
+        if ($seen.ContainsKey($key)) { $dropped++; continue }
+        [void]$script:Candidates.Add($candidate)
+        Register-Candidate $candidate
+        $seen[$key] = $true
+        $added++
     }
+    if ($dropped -gt 0) { Add-Diagnostic ("Отброшено после генерации: {0} (совпали с уже проверенными или занятыми)." -f $dropped) }
     foreach ($nickRaw in ($script:ManualNickBox.Text -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
         $nick = $nickRaw.Trim()
         $key = (($platform + '|' + $nick).ToLowerInvariant())
@@ -2832,14 +3012,21 @@ $script:GenerateButton.Add_Click({
         if (-not (Test-UsernameFormat -Username $nick -Platform $platform)) { $status = 'Недопустимый'; $reason = "Неверный формат имени для платформы $platform" }
         $manualTime = ''
         if ($status -eq 'Недопустимый') { $manualTime = (Get-Date).ToString('HH:mm:ss') }
-        $manualCandidate = [pscustomobject]@{Name=$nick; Platform=$platform; Meaning='Введён вручную'; Category='Ручной ввод'; Status=$status; Time=$manualTime; Reason=$reason; Checked=($status -eq 'Недопустимый')}
+        $manualCandidate = [pscustomobject]@{Name=$nick; Platform=$platform; Meaning='Введён вручную'; Category='Ручной ввод'; Structure=(Get-NickStructure -Name $nick); Status=$status; Time=$manualTime; Reason=$reason; Checked=($status -eq 'Недопустимый')}
         [void]$script:Candidates.Add($manualCandidate)
         Register-Candidate $manualCandidate
         $seen[$key]=$true; $added++
     }
-    if ($script:Candidates.Count -gt 2000) { [System.Windows.Forms.MessageBox]::Show('В списке слишком много записей. Экспортируй результаты или очисти список перед новой генерацией.','Лимит списка','OK','Information') | Out-Null }
+    # Порог поднят до 5000: максимум количества за одну генерацию теперь 2000, и прежний
+    # порог 2000 срабатывал бы сразу после запрошенного большого прогона.
+    # Это предупреждение, а не запрет — работа не прерывается.
+    if ($script:Candidates.Count -gt 5000) { [System.Windows.Forms.MessageBox]::Show('В списке больше 5000 записей: таблица может перерисовываться медленнее. Экспортируй результаты или очисти список.','Размер списка','OK','Information') | Out-Null }
     Update-ResultGrid
-    Add-Diagnostic "Для платформы $platform сгенерировано новых кандидатов: $added. Всего в таблице: $($script:Candidates.Count)."
+    if ($added -eq $requestedCount) {
+        Add-Diagnostic ("Для платформы {0} создано ровно {1} ников. Всего в таблице: {2}." -f $platform, $added, $script:Candidates.Count)
+    } else {
+        Add-Diagnostic ("Для платформы {0} добавлено новых ников: {1} из запрошенных {2}. Всего в таблице: {3}." -f $platform, $added, $requestedCount, $script:Candidates.Count)
+    }
     $script:SummaryLabel.Text = "Сгенерировано: $added · автоматическая проверка запускается"
     if ($added -gt 0) { Start-Checking -RetryErrorsOnly $false }
 })
@@ -2874,7 +3061,7 @@ $script:CsvButton.Add_Click({
     $dialog.FileName = 'Universal_Usernames_All_' + (Get-Date -Format 'yyyy-MM-dd_HH-mm') + '.csv'
     $dialog.Title = 'Экспорт всех результатов'
     if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        $script:Candidates | Select-Object @{Name='Платформа';Expression={$_.Platform}},@{Name='Ник';Expression={$_.Name}},@{Name='Статус';Expression={$_.Status}},@{Name='Категория';Expression={$_.Category}},@{Name='Значение';Expression={$_.Meaning}},@{Name='Время';Expression={$_.Time}},@{Name='Причина';Expression={$_.Reason}} | Export-Csv -LiteralPath $dialog.FileName -NoTypeInformation -Encoding UTF8
+        $script:Candidates | Select-Object @{Name='Платформа';Expression={$_.Platform}},@{Name='Ник';Expression={$_.Name}},@{Name='Статус';Expression={$_.Status}},@{Name='Категория';Expression={$_.Category}},@{Name='Структура';Expression={$_.Structure}},@{Name='Значение';Expression={$_.Meaning}},@{Name='Время';Expression={$_.Time}},@{Name='Причина';Expression={$_.Reason}} | Export-Csv -LiteralPath $dialog.FileName -NoTypeInformation -Encoding UTF8
         Add-Diagnostic "CSV экспортировано записей: $($script:Candidates.Count) → $($dialog.FileName)"
     }
 })
