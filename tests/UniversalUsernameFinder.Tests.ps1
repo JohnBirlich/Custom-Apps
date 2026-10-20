@@ -960,12 +960,13 @@ Describe 'Платформы, домены и интерфейс версии 2.
         $global:UufMainText.Contains('$script:TwoWordsCheck = New-CheckBox ' + [char]39 + 'Два осмысленных слова' + [char]39 + ' 194 683 170 $false') | Should -BeTrue
         $global:UufMainText.Contains('$script:DelayBox = New-NumberBox 14 910 110 500 15000 700') | Should -BeTrue
     }
-    It 'интерфейс монохромный с кастомным заголовком и анимациями' {
+    It 'интерфейс монохромный с кастомным заголовком без анимаций' {
         $global:UufMainText.Contains('$script:Form.FormBorderStyle = ' + [char]39 + 'None' + [char]39) | Should -BeTrue
         $global:UufMainText.Contains('public sealed class UufResizeFrame : NativeWindow') | Should -BeTrue
-        $global:UufMainText.Contains('$script:SplashForm = New-Object System.Windows.Forms.Form') | Should -BeTrue
-        $global:UufMainText.Contains('function Start-ColorTransition') | Should -BeTrue
-        $global:UufMainText.Contains('$script:WireButtonAnimations = {') | Should -BeTrue
+        $global:UufMainText.Contains('$script:SplashForm') | Should -BeFalse
+        $global:UufMainText.Contains('Start-ColorTransition') | Should -BeFalse
+        $global:UufMainText.Contains('New-Object System.Drawing.Point($windowWidth -') | Should -BeFalse
+        $global:UufMainText.Contains('$script:CaptionMin.Location = New-Object System.Drawing.Point($captionMinX, 8)') | Should -BeTrue
         $global:UufMainText.Contains('FromArgb(93,73,222)') | Should -BeFalse
     }
     It 'помощь стала полноценным разделом с вкладками' {

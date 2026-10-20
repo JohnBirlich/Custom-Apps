@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.6.1'
+$script:AppVersion = '2.6.2'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -1126,49 +1126,6 @@ function New-AdvancedCandidatePool {
     return @($shuffled | Select-Object -First $take)
 }
 
-$script:SplashForm = New-Object System.Windows.Forms.Form
-$splashLogo = New-Object System.Windows.Forms.PictureBox
-$splashTitle = New-Object System.Windows.Forms.Label
-$splashSub = New-Object System.Windows.Forms.Label
-$splashBar = New-Object System.Windows.Forms.Panel
-try {
-    $script:SplashForm.FormBorderStyle = 'None'
-    $script:SplashForm.StartPosition = 'CenterScreen'
-    $script:SplashForm.ShowInTaskbar = $false
-    $script:SplashForm.TopMost = $true
-    $script:SplashForm.Size = New-Object System.Drawing.Size(460,262)
-    $script:SplashForm.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
-    $splashLogo.Location = New-Object System.Drawing.Point(182,28)
-    $splashLogo.Size = New-Object System.Drawing.Size(96,96)
-    $splashLogo.SizeMode = 'Zoom'
-    $splashLogo.BackColor = [System.Drawing.Color]::Transparent
-    $splashTitle.Text = 'UUF'
-    $splashTitle.Location = New-Object System.Drawing.Point(0,132)
-    $splashTitle.Size = New-Object System.Drawing.Size(460,30)
-    $splashTitle.TextAlign = 'Center'
-    $splashTitle.Font = New-Object System.Drawing.Font('Segoe UI', 15, [System.Drawing.FontStyle]::Bold)
-    $splashTitle.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
-    $splashSub.Text = 'Universal Username Finder · загрузка'
-    $splashSub.Location = New-Object System.Drawing.Point(0,164)
-    $splashSub.Size = New-Object System.Drawing.Size(460,20)
-    $splashSub.TextAlign = 'Center'
-    $splashSub.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
-    $splashBar.Location = New-Object System.Drawing.Point(60,206)
-    $splashBar.Size = New-Object System.Drawing.Size(0,4)
-    $splashBar.BackColor = [System.Drawing.Color]::FromArgb(24,26,30)
-    $script:SplashForm.Controls.Add($splashLogo)
-    $script:SplashForm.Controls.Add($splashTitle)
-    $script:SplashForm.Controls.Add($splashSub)
-    $script:SplashForm.Controls.Add($splashBar)
-    $script:SplashLogoBox = $splashLogo
-    $script:SplashForm.Show()
-    for ($splashFrame = 1; $splashFrame -le 18; $splashFrame++) {
-        $splashBar.Width = [int](340 * $splashFrame / 18)
-        $script:SplashForm.Refresh()
-        Start-Sleep -Milliseconds 26
-    }
-} catch { }
-
 # --- Интерфейс: окно и заголовок
 $script:Form = New-Object System.Windows.Forms.Form
 $script:Form.Text = ('UUF v{0}' -f $script:AppVersion)
@@ -1258,9 +1215,12 @@ $script:CaptionTitle.Size = New-Object System.Drawing.Size(400,20)
 $script:CaptionTitle.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $script:CaptionTitle.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
 $script:CaptionBar.Controls.Add($script:CaptionTitle)
+$captionMinX = [int]$windowWidth - 146
+$captionMaxX = [int]$windowWidth - 100
+$captionCloseX = [int]$windowWidth - 54
 $script:CaptionMin = New-Object System.Windows.Forms.Button
 $script:CaptionMin.Text = '—'
-$script:CaptionMin.Location = New-Object System.Drawing.Point($windowWidth - 146, 8)
+$script:CaptionMin.Location = New-Object System.Drawing.Point($captionMinX, 8)
 $script:CaptionMin.Size = New-Object System.Drawing.Size(46,28)
 $script:CaptionMin.Anchor = 'Top, Right'
 $script:CaptionMin.FlatStyle = 'Flat'
@@ -1270,7 +1230,7 @@ $script:CaptionMin.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $script:CaptionBar.Controls.Add($script:CaptionMin)
 $script:CaptionMax = New-Object System.Windows.Forms.Button
 $script:CaptionMax.Text = '□'
-$script:CaptionMax.Location = New-Object System.Drawing.Point($windowWidth - 100, 8)
+$script:CaptionMax.Location = New-Object System.Drawing.Point($captionMaxX, 8)
 $script:CaptionMax.Size = New-Object System.Drawing.Size(46,28)
 $script:CaptionMax.Anchor = 'Top, Right'
 $script:CaptionMax.FlatStyle = 'Flat'
@@ -1280,7 +1240,7 @@ $script:CaptionMax.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $script:CaptionBar.Controls.Add($script:CaptionMax)
 $script:CaptionClose = New-Object System.Windows.Forms.Button
 $script:CaptionClose.Text = '✕'
-$script:CaptionClose.Location = New-Object System.Drawing.Point($windowWidth - 54, 8)
+$script:CaptionClose.Location = New-Object System.Drawing.Point($captionCloseX, 8)
 $script:CaptionClose.Size = New-Object System.Drawing.Size(46,28)
 $script:CaptionClose.Anchor = 'Top, Right'
 $script:CaptionClose.FlatStyle = 'Flat'
@@ -1312,46 +1272,10 @@ try {
     if ([System.IO.File]::Exists($logoPngPath)) {
         $logoImage = [System.Drawing.Image]::FromFile($logoPngPath)
         $script:CaptionIcon.Image = $logoImage
-        if ($null -ne $script:SplashLogoBox) { $script:SplashLogoBox.Image = $logoImage }
     }
     $uufIcoPath = [System.IO.Path]::Combine($assetsDirectory, 'uuf.ico')
     if ([System.IO.File]::Exists($uufIcoPath)) { $script:Form.Icon = New-Object System.Drawing.Icon($uufIcoPath) }
 } catch { }
-
-function Start-ColorTransition {
-    param([System.Windows.Forms.Control]$Control, [System.Drawing.Color]$Target)
-    if ($null -eq $Control) { return }
-    $from = $Control.BackColor
-    if ($from -eq $Target) { return }
-    $timer = New-Object System.Windows.Forms.Timer
-    $timer.Interval = 22
-    $step = 0
-    $timer.Add_Tick({
-        $step++
-        $k = [Math]::Min(1, $step / 4)
-        $r = [int]($from.R + ($Target.R - $from.R) * $k)
-        $g = [int]($from.G + ($Target.G - $from.G) * $k)
-        $b = [int]($from.B + ($Target.B - $from.B) * $k)
-        try { $Control.BackColor = [System.Drawing.Color]::FromArgb($r, $g, $b) } catch { }
-        if ($step -ge 4) { $timer.Stop(); $timer.Dispose() }
-    })
-    $timer.Start()
-}
-
-$script:WireButtonAnimations = {
-    param([System.Windows.Forms.Control]$Root)
-    if ($null -eq $Root) { return }
-    foreach ($child in @($Root.Controls)) {
-        if ($child -is [System.Windows.Forms.Button]) {
-            $baseColor = $child.BackColor
-            $hoverColor = [System.Drawing.Color]::FromArgb(238,239,242)
-            if ($baseColor.R -lt 70 -and $baseColor.G -lt 70) { $hoverColor = [System.Drawing.Color]::FromArgb(52,55,62) }
-            $child.Add_MouseEnter({ Start-ColorTransition -Control $child -Target $hoverColor })
-            $child.Add_MouseLeave({ Start-ColorTransition -Control $child -Target $baseColor })
-        }
-        if ($child.Controls.Count -gt 0) { & $script:WireButtonAnimations $child }
-    }
-}
 
 $header = New-Object System.Windows.Forms.Panel
 $header.Location = New-Object System.Drawing.Point(0, 50)
@@ -2377,7 +2301,6 @@ function Open-AccountTools {
         Write-AppLog ('Ошибка открытия инструментов аккаунта: ' + $_.Exception.ToString())
     }
     Update-AccountPlatformUi
-    & $script:WireButtonAnimations $script:AccountForm
     [void]$script:AccountForm.ShowDialog($script:Form)
 }
 
@@ -2842,7 +2765,6 @@ function Open-CheckedNamesWindow {
     })
     Refresh-CheckedNamesList
     $checkedForm.Add_Shown({ $checkedForm.Activate() })
-    & $script:WireButtonAnimations $checkedForm
     [void]$checkedForm.ShowDialog($script:Form)
 }
 
@@ -2947,7 +2869,6 @@ function Open-FreeHistoryWindow {
     })
     Refresh-FreeHistoryList
     $script:HistoryForm.Add_Shown({ $script:HistoryForm.Activate() })
-    & $script:WireButtonAnimations $script:HistoryForm
     [void]$script:HistoryForm.ShowDialog($script:Form)
 }
 
@@ -3071,7 +2992,6 @@ function Show-UsernameFinderHelp {
         $helpTabs.TabPages.Add($tabPage) | Out-Null
     }
     $helpForm.Controls.Add($helpTabs)
-    & $script:WireButtonAnimations $helpForm
     [void]$helpForm.ShowDialog($script:Form)
 }
 
@@ -3303,7 +3223,7 @@ param($InputQueue, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform, $AppV
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.6.1' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.6.2' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -4183,13 +4103,9 @@ $script:Form.Add_FormClosing({
 })
 
 try {
-    & $script:WireButtonAnimations $script:Form
     try {
         $script:ResizeFrame = New-Object UufResizeFrame
         $script:ResizeFrame.AssignHandle($script:Form.Handle)
-    } catch { }
-    try {
-        if ($null -ne $script:SplashForm) { $script:SplashForm.Close(); $script:SplashForm.Dispose() }
     } catch { }
     [void]$script:Form.ShowDialog()
 } catch {
