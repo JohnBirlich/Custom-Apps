@@ -852,7 +852,8 @@ Describe 'Новые источники генерации' {
 
 Describe 'Интерфейс и поведение версии 2.5.5' {
     It 'список категорий строится из того же массива, которым пользуется генератор' {
-        $global:UufMainText.Contains('AddRange([object[]]@($script:WordCategories))') | Should -BeTrue
+        # v2.8.3: список тот же, но отсортирован по алфавиту
+        $global:UufMainText.Contains('AddRange([object[]]@($script:WordCategories | Sort-Object))') | Should -BeTrue
         $global:UufMainText.Contains('$script:WordCategories = @(') | Should -BeTrue
     }
 
@@ -1031,7 +1032,7 @@ Describe 'Изменения версии 2.8.0' {
 Describe 'Изменения версии 2.8.1' {
     It 'логотип в шапке прижат к левому краю к слову Universal' {
         $global:UufMainText.Contains('$headerLogo.Anchor = ' + [char]39 + 'Top, Left' + [char]39) | Should -BeTrue
-        $global:UufMainText.Contains('$headerLogo.Location = New-Object System.Drawing.Point(16, 40)') | Should -BeTrue
+        $global:UufMainText.Contains('$headerLogo.Location = New-Object System.Drawing.Point(14, 22)') | Should -BeTrue
     }
     It 'фильтр истории показывает все платформы, а не только встреченные' {
         $global:UufMainText.Contains('$historyOrderedPlatforms = @($script:SupportedPlatforms)') | Should -BeTrue
@@ -1069,11 +1070,11 @@ Describe 'Изменения версии 2.8.2' {
     }
     It 'нижняя полоса журнала прижата к низу и живёт вместе с окном' {
         $global:UufMainText.Contains('$diagnosticHeader.Anchor = ' + [char]39 + 'Bottom, Left' + [char]39) | Should -BeTrue
-        $global:UufMainText.Contains('$script:CopyLogButton = Add-UiButton ' + [char]39 + 'Копировать журнал' + [char]39 + ' 14 830 180 $false 28 $right') | Should -BeTrue
+        $global:UufMainText.Contains('$script:CopyLogButton = Add-UiButton ' + [char]39 + 'Копировать журнал' + [char]39 + ' 14 844 184 $false 28 $right') | Should -BeTrue
         $global:UufMainText.Contains('$script:CopyLogButton.Anchor = ' + [char]39 + 'Bottom, Left' + [char]39) | Should -BeTrue
         $global:UufMainText.Contains('$script:ClearLogButton.Anchor = ' + [char]39 + 'Bottom, Left' + [char]39) | Should -BeTrue
-        $global:UufMainText.Contains('$script:Grid.Size = New-Object System.Drawing.Size(1008,554)') | Should -BeTrue
-        $global:UufMainText.Contains('$script:DiagnosticBox.Location = New-Object System.Drawing.Point(14,728)') | Should -BeTrue
+        $global:UufMainText.Contains('$script:Grid.Size = New-Object System.Drawing.Size(1008,568)') | Should -BeTrue
+        $global:UufMainText.Contains('$script:DiagnosticBox.Location = New-Object System.Drawing.Point(14,742)') | Should -BeTrue
     }
     It 'правила VK и YouTube запрещают повторные точки и точки по краям' {
         Test-UsernameFormat -Username 'good_nick' -Platform 'VK' | Should -BeTrue
@@ -1081,5 +1082,90 @@ Describe 'Изменения версии 2.8.2' {
         Test-UsernameFormat -Username 'a..b' -Platform 'YouTube' | Should -BeFalse
         Test-UsernameFormat -Username '.start' -Platform 'YouTube' | Should -BeFalse
         Test-UsernameFormat -Username 'cool.handle' -Platform 'YouTube' | Should -BeTrue
+    }
+}
+
+Describe 'Изменения версии 2.8.3' {
+    It 'шапка стала компактнее, кнопки в две выверенные линии' {
+        $global:UufMainText.Contains('$header.Size = New-Object System.Drawing.Size(1480, 92)') | Should -BeTrue
+        $global:UufMainText.Contains('$title.Location = New-Object System.Drawing.Point(66, 14)') | Should -BeTrue
+        $global:UufMainText.Contains('$subtitle.Location = New-Object System.Drawing.Point(66, 50)') | Should -BeTrue
+        $global:UufMainText.Contains('$script:AccountButton.Location = New-Object System.Drawing.Point(1307, 34)') | Should -BeTrue
+        $global:UufMainText.Contains('$script:ApiDocsButton.Location = New-Object System.Drawing.Point(1037, 34)') | Should -BeTrue
+        $global:UufMainText.Contains('$script:HistoryButton.Location = New-Object System.Drawing.Point(1147, 34)') | Should -BeTrue
+        $global:UufMainText.Contains('$script:AccountButton.Size = New-Object System.Drawing.Size(167, 38)') | Should -BeTrue
+        $global:UufMainText.Contains('$captionButton.Size = New-Object System.Drawing.Size(46, 26)') | Should -BeTrue
+        $global:UufMainText.Contains('$script:MinimizeButton = New-UufCaptionButton ''MinimizeButton'' 0xE921 1336') | Should -BeTrue
+        $global:UufMainText.Contains('$script:CloseButton = New-UufCaptionButton ''CloseButton'' 0xE8BB 1428') | Should -BeTrue
+    }
+    It 'панели и нижняя полоса выровнены под уменьшенную шапку' {
+        $global:UufMainText.Contains('$left.Location = New-Object System.Drawing.Point(14, 104)') | Should -BeTrue
+        $global:UufMainText.Contains('$left.Size = New-Object System.Drawing.Size(390, 926)') | Should -BeTrue
+        $global:UufMainText.Contains('$right.Location = New-Object System.Drawing.Point(418, 104)') | Should -BeTrue
+        $global:UufMainText.Contains('$right.Size = New-Object System.Drawing.Size(1040, 926)') | Should -BeTrue
+        $global:UufMainText.Contains('$diagnosticHeader.Location = New-Object System.Drawing.Point(14,720)') | Should -BeTrue
+        $global:UufMainText.Contains('$script:CopyLogButton = Add-UiButton ''Копировать журнал'' 14 844 184 $false 28 $right') | Should -BeTrue
+        $global:UufMainText.Contains('$script:ClearLogButton = Add-UiButton ''Очистить журнал'' 208 844 184 $false 28 $right') | Should -BeTrue
+        $global:UufMainText.Contains('$script:SummaryLabel.Location = New-Object System.Drawing.Point(402,844)') | Should -BeTrue
+        $global:UufMainText.Contains('$footer.Location = New-Object System.Drawing.Point(14,878)') | Should -BeTrue
+    }
+    It 'разнобой гарантирован на выдаче пула и перемешивание крипто-индексами' {
+        $global:UufMainText.Contains('try { $j = Get-CryptoRandomIndex ($i + 1) } catch { $j = Get-Random -Minimum 0 -Maximum ($i + 1) }') | Should -BeTrue
+    }
+    It 'новые категории и алфавитный список' {
+        $global:UufMainText.Contains('''Имя, Фамилия'' = @(''John'',''Birlich'',''Mark'',''Cukerberk'',''Mask'',''Ilon''') | Should -BeTrue
+        $global:UufMainText.Contains('''Русские слова латиницей'' = @(''Privet'',''Phizik'',''Shizik'',''Cloun'',''Debil''') | Should -BeTrue
+        $global:UufMainText.Contains('[void]$script:CategoryList.Items.AddRange([object[]]@($script:WordCategories | Sort-Object))') | Should -BeTrue
+        $global:UufMainText.Contains('''Имя, Фамилия'',''Русские слова латиницей''') | Should -BeTrue
+    }
+    It 'пароль Mail.ru необязателен при сохранении' {
+        $global:UufMainText.Contains('$passwordOptionalPlatform = ([string]$script:AccountPlatform -eq ''Mail.ru'')') | Should -BeTrue
+    }
+    It 'подсказки статуса в таблице' {
+        $global:UufMainText.Contains('function Get-StatusTooltip') | Should -BeTrue
+        $global:UufMainText.Contains('$script:Grid.ToolTip = $script:GridToolTip') | Should -BeTrue
+        $global:UufMainText.Contains('$script:Grid.Rows[$row].Cells[''Status''].ToolTipText = $cellTip') | Should -BeTrue
+        $global:UufMainText.Contains('$script:Grid.Rows[$row].Cells[''Reason''].ToolTipText = $cellTip') | Should -BeTrue
+    }
+    It 'стиль переименован и расширен' {
+        $global:UufMainText.Contains('Add-UiLabel ''Стиль слова'' 14 372 150 22') | Should -BeTrue
+        $global:UufMainText.Contains('''Хардкорный'' = @(''Reaper'',''Havoc'',''Mayhem'',''Brutal'',''Onslaught'',''Torment'',''Raze'')') | Should -BeTrue
+        $global:UufMainText.Contains('''Скандинавский'' = @(''Rune'',''Skald'',''Fenrir'',''Torvald'',''Bjorn'',''Halvard'',''Stig'')') | Should -BeTrue
+        $global:UufMainText.Contains('''Готический'' = @(''Raven'',''Crypt'',''Gargoyle'',''Nocturne'',''Obsidian'',''Veil'',''Shade'',''Mourne'')') | Should -BeTrue
+    }
+    It 'поле прокси в интерфейсе и в настройках' {
+        $global:UufMainText.Contains('$script:ProxyBox = New-Object System.Windows.Forms.TextBox') | Should -BeTrue
+        $global:UufMainText.Contains('Add-SettingValue $settings ''ProxyUrl'' { [string]$script:ProxyBox.Text.Trim() }') | Should -BeTrue
+        $global:UufMainText.Contains('if ($script:ProxyBox) { $script:ProxyBox.Enabled = $true }') | Should -BeTrue
+    }
+    It 'очередь проверки идёт вразнобой при выключенном порядке' {
+        $global:UufWorkerText.Contains('$feedOrder = @(Get-ShuffledArray -Items $feedOrder)') | Should -BeTrue
+        $global:UufWorkerText.Contains('if (-not $script:OrderedCheck.Checked -and @($candidates).Count -gt 1) { $candidates = @(Get-ShuffledArray -Items @($candidates)) }') | Should -BeTrue
+    }
+    It 'Google: безтокенный эндпоинт доступности и терпимый парсинг' {
+        $global:UufWorkerText.Contains('https://accounts.google.com/_/signup/webusernameavailability') | Should -BeTrue
+        $global:UufWorkerText.Contains('f.req=[['' + ($googleCells -join '','') + '']]') | Should -BeTrue
+        $global:UufWorkerText.Contains('\[\[\s*null\s*,\s*\[\s*([12])\s*(?:,|\])') | Should -BeTrue
+    }
+    It 'Outlook: честный парсинг IfExistsResult (0 — существует, 1 — не найден)' {
+        $global:UufWorkerText.Contains('https://login.microsoftonline.com/common/GetCredentialType') | Should -BeTrue
+        $global:UufWorkerText.Contains('$existsMatch = [regex]::Match($gctText, ''(?i)"IfExistsResult"\s*:\s*(-?[0-9]+)'')') | Should -BeTrue
+        $global:UufWorkerText.Contains('IfExistsResult=0 — Microsoft сообщает, что пользователь с таким адресом существует') | Should -BeTrue
+        $global:UufWorkerText.Contains('IfExistsResult=1 — адрес не найден') | Should -BeTrue
+    }
+    It 'YouTube: cookie согласия и дополнительные маркеры канала' {
+        $global:UufWorkerText.Contains('''Cookie''=''CONSENT=YES+cb; SOCS=CAI; GPS=1''') | Should -BeTrue
+        $global:UufWorkerText.Contains('property="og:url"[^>]+content="https?://www\.youtube\.com/@') | Should -BeTrue
+    }
+    It 'Telegram: og:title-контакт и зарезервированные имена' {
+        $global:UufWorkerText.Contains('$ogContactMatch -or') | Should -BeTrue
+        $global:UufWorkerText.Contains('elseif ($httpStatus -eq 200 -and $reservedPage)') | Should -BeTrue
+    }
+    It 'региональные блокировки подсказывают прокси, воркер умеет прокси' {
+        $global:UufWorkerText.Contains('сайты t.me и YouTube могут быть недоступны из региона') | Should -BeTrue
+        $global:UufWorkerText.Contains('$script:WorkerProxy') | Should -BeTrue
+        $global:UufWorkerText.Contains('if ($script:WorkerProxy) { $requestArgs.Proxy = $script:WorkerProxy }') | Should -BeTrue
+        $global:UufWorkerText.Contains('$script:ProxyBox.Enabled = $false') | Should -BeTrue
+        $global:UufWorkerText.Contains('.AddArgument([string]$script:ProxyBox.Text.Trim())') | Should -BeTrue
     }
 }
