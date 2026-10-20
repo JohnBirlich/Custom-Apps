@@ -975,9 +975,10 @@ Describe 'Платформы, домены и интерфейс версии 2.
         $global:UufMainText.Contains('[System.Drawing.Image]::FromFile($logoPngPath)') | Should -BeTrue
         $global:UufMainText.Contains('$Window.Icon = $script:AppIconCached') | Should -BeTrue
     }
-    It 'сортировка свободных ников идёт по платформе и дате' {
-        $global:UufMainText.Contains('$script:HistorySortBox.SelectedItem = ' + [char]39 + 'По платформе и дате' + [char]39) | Should -BeTrue
-        $global:UufMainText.Contains('@($historyItems | Sort-Object @{Expression={ if ($platformOrder.ContainsKey') | Should -BeTrue
+    It 'история свободных ников показывается в порядке генерации без выбора сортировки' {
+        $global:UufMainText.Contains('HistorySortBox') | Should -BeFalse
+        $global:UufMainText.Contains('По платформе и дате') | Should -BeFalse
+        $global:UufMainText.Contains('$historyItems = @($script:FreeHistory)') | Should -BeTrue
     }
     It 'помощь стала полноценным разделом с вкладками' {
         $global:UufMainText.Contains('$helpForm.Text = ' + [char]39 + 'UUF — помощь' + [char]39) | Should -BeTrue
@@ -1006,7 +1007,6 @@ Describe 'Изменения версии 2.8.0' {
     It 'история свободных ников фильтруется по выбранным платформам' {
         $global:UufMainText.Contains('$script:HistoryPlatformList = New-Object System.Windows.Forms.CheckedListBox') | Should -BeTrue
         $global:UufMainText.Contains('$platformFilter -contains [string]$_.Platform') | Should -BeTrue
-        $global:UufMainText.Contains('По дате генерации') | Should -BeTrue
     }
     It 'правила формата почты соответствуют официальным требованиям' {
         Test-UsernameFormat -Username '2move_x' -Platform 'Mail.ru' | Should -BeTrue
@@ -1025,5 +1025,29 @@ Describe 'Изменения версии 2.8.0' {
         $global:UufMainText.Contains('$script:CountBox = New-NumberBox 14 624 90 5 2000 40') | Should -BeTrue
         $global:UufMainText.Contains('$designWindowSize = New-Object System.Drawing.Size(1480, 1040)') | Should -BeTrue
         $global:UufMainText.Contains('$script:CategoryList.Size = New-Object System.Drawing.Size(350, 306)') | Should -BeTrue
+    }
+}
+
+Describe 'Изменения версии 2.8.1' {
+    It 'логотип в шапке прижат к левому краю к слову Universal' {
+        $global:UufMainText.Contains('$headerLogo.Anchor = ' + [char]39 + 'Top, Left' + [char]39) | Should -BeTrue
+        $global:UufMainText.Contains('$headerLogo.Location = New-Object System.Drawing.Point(16, 14)') | Should -BeTrue
+    }
+    It 'фильтр истории показывает все платформы, а не только встреченные' {
+        $global:UufMainText.Contains('$historyOrderedPlatforms = @($script:SupportedPlatforms)') | Should -BeTrue
+        $global:UufMainText.Contains('$script:HistoryPlatformList.SetItemChecked($historyPlatformIndex, ($historyPlatforms -contains $historyItemPlatform))') | Should -BeTrue
+    }
+    It 'перерисовка истории совместима с Windows PowerShell 5.1' {
+        $global:UufMainText.Contains('BeginInvoke([System.Action]{ Refresh-FreeHistoryList })') | Should -BeTrue
+        $global:UufMainText.Contains('BeginInvoke({ Refresh-FreeHistoryList })') | Should -BeFalse
+    }
+    It 'помощь выровнена висячими отступами без плашек' {
+        $global:UufMainText.Contains('$pageBox.SelectionHangingIndent = 14') | Should -BeTrue
+        $global:UufMainText.Contains('$pageBox.SelectionHangingIndent = 12') | Should -BeTrue
+        $global:UufMainText.Contains('$pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(32,41,56)') | Should -BeFalse
+    }
+    It 'в интерфейсе не осталось перенесённых якорей и мусора сортировки' {
+        $global:UufMainText.Contains('$historySort') | Should -BeFalse
+        $global:UufMainText.Contains('По времени') | Should -BeFalse
     }
 }

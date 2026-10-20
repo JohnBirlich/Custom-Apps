@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.8.0'
+$script:AppVersion = '2.8.1'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -1283,8 +1283,9 @@ if ($script:AppLogoImage) {
     $headerLogo.Size = New-Object System.Drawing.Size(48, 48)
     $headerLogo.SizeMode = 'Zoom'
     $headerLogo.BackColor = [System.Drawing.Color]::Transparent
-    $headerLogo.Anchor = 'Top, Right'
+    $headerLogo.Anchor = 'Top, Left'
     $headerLogo.Image = $script:AppLogoImage
+    $headerLogo.Anchor = 'Top, Left'
     $header.Controls.Add($headerLogo)
 }
 $script:HistoryButton = New-Object System.Windows.Forms.Button
@@ -2566,18 +2567,6 @@ function Refresh-FreeHistoryList {
         $platformFilter = @($script:HistoryPlatformList.CheckedItems | ForEach-Object { [string]$_ })
         if ($platformFilter.Count -gt 0) { $historyItems = @($historyItems | Where-Object { $platformFilter -contains [string]$_.Platform }) }
     }
-    $historySort = 'По платформе и дате'
-    if ($script:HistorySortBox -and $script:HistorySortBox.SelectedItem) { $historySort = [string]$script:HistorySortBox.SelectedItem }
-    switch ($historySort) {
-        'По нику' { $historyItems = @($historyItems | Sort-Object Name, Platform) }
-        'По дате генерации' { $historyItems = @($historyItems | Sort-Object Time -Descending) }
-        default {
-            $platformOrder = @{}
-            $orderIndex = 0
-            foreach ($supportedPlatform in $script:SupportedPlatforms) { $platformOrder[[string]$supportedPlatform] = $orderIndex; $orderIndex++ }
-            $historyItems = @($historyItems | Sort-Object @{Expression={ if ($platformOrder.ContainsKey([string]$_.Platform)) { $platformOrder[[string]$_.Platform] } else { $orderIndex } }}, @{Expression='Time'; Descending=$true}, @{Expression='Name'})
-        }
-    }
     foreach ($item in $historyItems) {
         $display = '{0} — {1}' -f (Get-DisplayNick -Platform ([string]$item.Platform) -Name ([string]$item.Name)), [string]$item.Platform
         [void]$script:HistoryListBox.Items.Add([pscustomobject]@{Display=$display; Name=[string]$item.Name; Platform=[string]$item.Platform; Status=[string]$item.Status})
@@ -2782,16 +2771,10 @@ function Open-FreeHistoryWindow {
     $script:HistoryDescription.Size = New-Object System.Drawing.Size(650,40)
     $script:HistoryDescription.ForeColor = [System.Drawing.Color]::FromArgb(190,202,221)
     $script:HistoryForm.Controls.Add($script:HistoryDescription)
-    $historySortLabel = New-Object System.Windows.Forms.Label
-    $historySortLabel.Text = 'Сортировка:'
-    $historySortLabel.Location = New-Object System.Drawing.Point(356,70)
-    $historySortLabel.Size = New-Object System.Drawing.Size(126,20)
-    $historySortLabel.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
-    $script:HistoryForm.Controls.Add($historySortLabel)
     $historyPlatformLabel = New-Object System.Windows.Forms.Label
-    $historyPlatformLabel.Text = 'Платформы (пусто = все)'
+    $historyPlatformLabel.Text = 'Показывать платформы (пусто = все)'
     $historyPlatformLabel.Location = New-Object System.Drawing.Point(16,66)
-    $historyPlatformLabel.Size = New-Object System.Drawing.Size(180,20)
+    $historyPlatformLabel.Size = New-Object System.Drawing.Size(360,20)
     $historyPlatformLabel.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
     $script:HistoryForm.Controls.Add($historyPlatformLabel)
     $script:HistoryPlatformList = New-Object System.Windows.Forms.CheckedListBox
@@ -2803,16 +2786,8 @@ function Open-FreeHistoryWindow {
     $script:HistoryPlatformList.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
     $script:HistoryPlatformList.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
     $script:HistoryPlatformList.BorderStyle = 'FixedSingle'
-    $script:HistoryPlatformList.Add_ItemCheck({ if ($script:HistoryFilterReady -and $script:HistoryForm -and -not $script:HistoryForm.IsDisposed -and $script:HistoryForm.IsHandleCreated) { $script:HistoryForm.BeginInvoke({ Refresh-FreeHistoryList }) } })
+    $script:HistoryPlatformList.Add_ItemCheck({ if ($script:HistoryFilterReady -and $script:HistoryForm -and -not $script:HistoryForm.IsDisposed -and $script:HistoryForm.IsHandleCreated) { $script:HistoryForm.BeginInvoke([System.Action]{ Refresh-FreeHistoryList }) } })
     $script:HistoryForm.Controls.Add($script:HistoryPlatformList)
-    $script:HistorySortBox = New-Object System.Windows.Forms.ComboBox
-    $script:HistorySortBox.Location = New-Object System.Drawing.Point(490,66)
-    $script:HistorySortBox.Size = New-Object System.Drawing.Size(180,27)
-    $script:HistorySortBox.DropDownStyle = 'DropDownList'
-    [void]$script:HistorySortBox.Items.AddRange([object[]]@('По платформе и дате','По дате генерации','По нику'))
-    $script:HistorySortBox.SelectedItem = 'По платформе и дате'
-    $script:HistorySortBox.Add_SelectedIndexChanged({ Refresh-FreeHistoryList })
-    $script:HistoryForm.Controls.Add($script:HistorySortBox)
     $script:HistoryListBox = New-Object System.Windows.Forms.ListBox
     $script:HistoryListBox.Location = New-Object System.Drawing.Point(188,90)
     $script:HistoryListBox.Size = New-Object System.Drawing.Size(480,360)
@@ -2891,20 +2866,25 @@ function Open-FreeHistoryWindow {
         Start-Checking -RetryErrorsOnly $false
     })
     Set-ButtonEdgeStyle -Root $script:HistoryForm
+    $historyOrderedPlatforms = @($script:SupportedPlatforms)
     $historyPlatforms = @($script:FreeHistory | ForEach-Object { [string]$_.Platform } | Sort-Object -Unique)
-    $historyOrderedPlatforms = @()
-    foreach ($supportedPlatform in $script:SupportedPlatforms) { if ($historyPlatforms -contains $supportedPlatform) { $historyOrderedPlatforms += $supportedPlatform } }
     foreach ($orphanPlatform in $historyPlatforms) { if ($historyOrderedPlatforms -notcontains $orphanPlatform) { $historyOrderedPlatforms += $orphanPlatform } }
     $script:HistoryFilterReady = $false
     $script:HistoryPlatformList.Items.Clear()
-    if ($historyOrderedPlatforms.Count -gt 0) {
-        [void]$script:HistoryPlatformList.Items.AddRange([object[]]@($historyOrderedPlatforms))
-        for ($historyPlatformIndex = 0; $historyPlatformIndex -lt $script:HistoryPlatformList.Items.Count; $historyPlatformIndex++) {
-            $script:HistoryPlatformList.SetItemChecked($historyPlatformIndex, $true)
-        }
+    [void]$script:HistoryPlatformList.Items.AddRange([object[]]@($historyOrderedPlatforms))
+    for ($historyPlatformIndex = 0; $historyPlatformIndex -lt $script:HistoryPlatformList.Items.Count; $historyPlatformIndex++) {
+        $historyItemPlatform = [string]$script:HistoryPlatformList.Items[$historyPlatformIndex]
+        $script:HistoryPlatformList.SetItemChecked($historyPlatformIndex, ($historyPlatforms -contains $historyItemPlatform))
     }
     $script:HistoryFilterReady = $true
     Refresh-FreeHistoryList
+    $script:HistoryForm.Add_FormClosed({
+        $script:HistoryListBox = $null
+        $script:HistoryPlatformList = $null
+        $script:HistoryDescription = $null
+        $script:HistoryFilterReady = $false
+        $script:HistoryForm = $null
+    })
     $script:HistoryForm.Add_Shown({ $script:HistoryForm.Activate() })
     [void]$script:HistoryForm.ShowDialog($script:Form)
 }
@@ -3027,51 +3007,49 @@ function Show-UsernameFinderHelp {
         $pageBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
         $pageBox.ForeColor = [System.Drawing.Color]::FromArgb(208,216,230)
         $pageBox.Font = $helpBodyFont
-        $pageBox.RightMargin = 860
+        $pageBox.RightMargin = 820
+        $pageBox.SelectionBullet = $false
         foreach ($helpLine in (([string]$page[1]) -split "`n")) {
             $helpLine = $helpLine.TrimEnd([char]13)
             $pageBox.SelectionStart = $pageBox.TextLength
             $pageBox.SelectionLength = 0
+            $pageBox.SelectionIndent = 14
+            $pageBox.SelectionHangingIndent = 0
+            $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+            $pageBox.SelectionFont = $helpBodyFont
+            $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(208,216,230)
             if ($helpLine.Trim() -eq '') {
-                $pageBox.SelectionFont = $helpBodyFont
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(208,216,230)
                 $pageBox.SelectionIndent = 0
                 $pageBox.AppendText("`n")
             } elseif ($helpLine -match '^[A-ZА-ЯЁ0-9][A-ZА-ЯЁ0-9 ,.:;«»()—…\-]+$') {
                 $pageBox.SelectionIndent = 0
                 $pageBox.SelectionFont = $helpHeadingFont
                 $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(147,189,255)
-                $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(32,41,56)
-                $pageBox.AppendText('  ' + $helpLine.Trim() + '  ')
-                $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+                $pageBox.AppendText($helpLine.Trim())
                 $pageBox.AppendText("`n")
+            } elseif ($helpLine -match '^\d+\. ') {
+                $pageBox.SelectionIndent = 30
+                $pageBox.SelectionHangingIndent = 14
+                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(222,228,238)
+                $pageBox.AppendText($helpLine + "`n")
+            } elseif ($helpLine.StartsWith('• ')) {
+                $pageBox.SelectionIndent = 26
+                $pageBox.SelectionHangingIndent = 12
+                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(186,194,207)
+                $pageBox.AppendText($helpLine + "`n")
+            } elseif ($helpLine.StartsWith('  ')) {
+                $pageBox.SelectionIndent = 38
+                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(168,178,196)
+                $pageBox.AppendText($helpLine.Trim() + "`n")
             } elseif ($helpLine -match '^([А-ЯЁA-Z][\w\-]{2,20}\.)\s') {
                 $leadWord = [string]$matches[1]
-                $pageBox.SelectionIndent = 14
-                $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(17,23,32)
                 $pageBox.SelectionFont = $helpLeadFont
                 $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(235,240,248)
                 $pageBox.AppendText($leadWord)
                 $pageBox.SelectionFont = $helpBodyFont
                 $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(208,216,230)
                 $pageBox.AppendText($helpLine.Substring($leadWord.Length) + "`n")
-            } elseif ($helpLine -match '^\d+\. ') {
-                $pageBox.SelectionIndent = 22
-                $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-                $pageBox.SelectionFont = $helpBodyFont
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(222,228,238)
-                $pageBox.AppendText($helpLine + "`n")
-            } elseif ($helpLine.StartsWith('• ')) {
-                $pageBox.SelectionIndent = 34
-                $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-                $pageBox.SelectionFont = $helpBodyFont
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(186,194,207)
-                $pageBox.AppendText($helpLine + "`n")
             } else {
-                $pageBox.SelectionIndent = 14
-                $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-                $pageBox.SelectionFont = $helpBodyFont
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(208,216,230)
                 $pageBox.AppendText($helpLine + "`n")
             }
         }
@@ -3311,7 +3289,7 @@ param($InputQueue, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform, $AppV
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.0' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.1' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
