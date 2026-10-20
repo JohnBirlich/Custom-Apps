@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.8.4'
+$script:AppVersion = '2.8.5'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -1737,7 +1737,7 @@ $script:ProxyBox.Text = ''
 $right.Controls.Add($script:ProxyBox)
 $script:ProxyBox.Add_TextChanged({ Save-AppSettings })
 $proxyTooltip = New-Object System.Windows.Forms.ToolTip
-$proxyTooltip.SetToolTip($proxyLabel, 'Необязательный прокси для всех проверок (например http://127.0.0.1:8080 или socks5://127.0.0.1:1080). Помогает, когда сайт платформы недоступен из региона: t.me и YouTube в РФ блокируются без обхода.')
+$proxyTooltip.SetToolTip($proxyLabel, 'Необязательный HTTP-прокси для всех проверок (например http://127.0.0.1:8080). Помогает, когда сайт платформы недоступен из региона: t.me и YouTube в РФ блокируются без обхода.')
 $proxyTooltip.SetToolTip($script:ProxyBox, 'Необязательный прокси для всех проверок. Пусто — напрямую.')
 
 $script:Grid = New-Object System.Windows.Forms.DataGridView
@@ -1792,12 +1792,15 @@ $script:Grid.add_CellDoubleClick({
         }
     }
 })
-$script:GridToolTip = New-Object System.Windows.Forms.ToolTip
-$script:GridToolTip.InitialDelay = 250
-$script:GridToolTip.ReselectionDelay = 250
-$script:GridToolTip.AutoPopDelay = 12000
-try { $script:GridToolTip.UseFading = $true } catch { }
-$script:Grid.ToolTip = $script:GridToolTip
+# --- Подсказки статуса: оформление не должно уметь ронять запуск
+try {
+    $script:GridToolTip = New-Object System.Windows.Forms.ToolTip
+    $script:GridToolTip.InitialDelay = 250
+    $script:GridToolTip.ReshowDelay = 250
+    $script:GridToolTip.AutoPopDelay = 12000
+    $script:GridToolTip.UseFading = $true
+    $script:Grid.ToolTip = $script:GridToolTip
+} catch { $script:GridToolTip = $null }
 function Get-StatusTooltip {
     param($Item)
     $st = [string]$Item.Status
@@ -3494,7 +3497,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.4' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.5' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {

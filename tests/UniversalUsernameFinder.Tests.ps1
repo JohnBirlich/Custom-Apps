@@ -1110,7 +1110,7 @@ Describe 'Изменения версии 2.8.3' {
         $global:UufMainText.Contains('$footer.Location = New-Object System.Drawing.Point(14,878)') | Should -BeTrue
     }
     It 'разнобой гарантирован на выдаче пула и перемешивание крипто-индексами' {
-        $global:UufMainText.Contains('try { $j = Get-CryptoRandomIndex ($i + 1) } catch { $j = Get-Random -Minimum 0 -Maximum ($i + 1) }') | Should -BeTrue
+        $global:UufMainText.Contains('try { $j = Get-CryptoRandomIndex ($i + 1) }') | Should -BeTrue  # v2.8.4: форма с резервом по диапазону проверяется в блоке 2.8.4
     }
     It 'новые категории и алфавитный список' {
         $global:UufMainText.Contains('''Имя, Фамилия'' = @(''John'',''Birlich'',''Mark'',''Cukerberk'',''Mask'',''Ilon''') | Should -BeTrue
@@ -1171,8 +1171,8 @@ Describe 'Изменения версии 2.8.3' {
 }
 
 Describe 'Доработка версии 2.8.4' {
-    It 'версия 2.8.4 в скрипте' {
-        $global:UufMainText.Contains('$script:AppVersion = ' + [char]39 + '2.8.4' + [char]39) | Should -BeTrue
+    It 'версия не ниже 2.8.4 в скрипте' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.8\.[4-9]'''
     }
     It 'журнал печатает режим очереди проверки' {
         $global:UufMainText.Contains('Порядок проверки: вразнобой') | Should -BeTrue
@@ -1181,5 +1181,17 @@ Describe 'Доработка версии 2.8.4' {
     It 'перемешивание не спотыкается о диапазон 256' {
         $global:UufMainText.Contains('if ($i -lt 256) { try { $j = Get-CryptoRandomIndex ($i + 1) } catch { $j = -1 } }') | Should -BeTrue
         $global:UufMainText.Contains('if ($j -lt 0) { $j = Get-Random -Minimum 0 -Maximum ($i + 1) }') | Should -BeTrue
+    }
+}
+
+Describe 'Исправление версии 2.8.5' {
+    It 'подсказки грида не используют несуществующее свойство ToolTip (краш запуска в 2.8.3/2.8.4)' {
+        $global:UufMainText.Contains('ReselectionDelay') | Should -BeFalse
+        $global:UufMainText.Contains('$script:GridToolTip.ReshowDelay = 250') | Should -BeTrue
+        $global:UufMainText.Contains('# --- Подсказки статуса: оформление не должно уметь ронять запуск') | Should -BeTrue
+    }
+    It 'поле прокси честно обещает только HTTP-прокси' {
+        $global:UufMainText.Contains('socks5://127.0.0.1:1080') | Should -BeFalse
+        $global:UufMainText.Contains('Необязательный HTTP-прокси для всех проверок') | Should -BeTrue
     }
 }
