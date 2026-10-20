@@ -1169,3 +1169,17 @@ Describe 'Изменения версии 2.8.3' {
         $global:UufWorkerText.Contains('.AddArgument([string]$script:ProxyBox.Text.Trim())') | Should -BeTrue
     }
 }
+
+Describe 'Доработка версии 2.8.4' {
+    It 'версия 2.8.4 в скрипте' {
+        $global:UufMainText.Contains('$script:AppVersion = ' + [char]39 + '2.8.4' + [char]39) | Should -BeTrue
+    }
+    It 'журнал печатает режим очереди проверки' {
+        $global:UufMainText.Contains('Порядок проверки: вразнобой') | Should -BeTrue
+        $global:UufMainText.Contains('Порядок проверки: по порядку') | Should -BeTrue
+    }
+    It 'перемешивание не спотыкается о диапазон 256' {
+        $global:UufMainText.Contains('if ($i -lt 256) { try { $j = Get-CryptoRandomIndex ($i + 1) } catch { $j = -1 } }') | Should -BeTrue
+        $global:UufMainText.Contains('if ($j -lt 0) { $j = Get-Random -Minimum 0 -Maximum ($i + 1) }') | Should -BeTrue
+    }
+}
