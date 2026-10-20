@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.8.3'
+$script:AppVersion = '2.8.4'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -600,7 +600,9 @@ function Get-ShuffledArray {
     param([object[]]$Items)
     $array = @($Items).Clone()
     for ($i = $array.Length - 1; $i -gt 0; $i--) {
-        try { $j = Get-CryptoRandomIndex ($i + 1) } catch { $j = Get-Random -Minimum 0 -Maximum ($i + 1) }
+        $j = -1
+        if ($i -lt 256) { try { $j = Get-CryptoRandomIndex ($i + 1) } catch { $j = -1 } }
+        if ($j -lt 0) { $j = Get-Random -Minimum 0 -Maximum ($i + 1) }
         $temp = $array[$i]
         $array[$i] = $array[$j]
         $array[$j] = $temp
@@ -3473,6 +3475,8 @@ function Start-Checking {
     if ($threadCount -gt $validCandidates.Count) { $threadCount = [Math]::Max(1,$validCandidates.Count) }
     $script:WorkerThreadCount = $threadCount
     Add-Diagnostic ("Начата проверка: {0} ников; пауза {1} мс; тайм-аут {2} мс; потоков {3}; платформа {4}." -f $validCandidates.Count,[int]$script:DelayBox.Value,[int]$script:TimeoutBox.Value,$threadCount,$selectedPlatform)
+    if ($script:OrderedCheck.Checked) { Add-Diagnostic 'Порядок проверки: по порядку — галочка «Генерация по порядку» включена, строки и очередь идут сверху вниз.' }
+    else { Add-Diagnostic 'Порядок проверки: вразнобой — и порядок строк, и очередь проверки перемешаны; статусы появятся в случайных строках.' }
     if ($threadCount -gt 4) {
         Add-Diagnostic ("Потоков {0}: это выше рекомендованных 2–4. При HTTP 429 каждый поток сам увеличит паузу, но общий темп может быть ограничен платформой." -f $threadCount)
     }
@@ -3490,7 +3494,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.3' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.4' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
