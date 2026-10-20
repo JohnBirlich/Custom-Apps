@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.8.1'
+$script:AppVersion = '2.8.2'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -469,7 +469,7 @@ function Convert-ToNickToken {
 function Test-RobloxUsernameFormat {
     param([string]$Username)
     if ([string]::IsNullOrWhiteSpace($Username)) { return $false }
-    return ($Username.Length -ge 3 -and $Username.Length -le 20 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9_]*$' -and $Username -notmatch '__|_$' -and ([regex]::Matches($Username, '_').Count -le 1))
+    return ($Username.Length -ge 3 -and $Username.Length -le 20 -and $Username -match '^[A-Za-z0-9_]+$' -and $Username -match '[A-Za-z0-9]' -and $Username -notmatch '^_|_$|__')
 }
 
 # --- Платформы и правила длины
@@ -505,7 +505,7 @@ function Get-PlatformLengthRule {
 }
 
 $script:PlatformFormatHints = @{
-    'Roblox'   = '3–20 символов: латиница, цифры и «_», без «_» в начале и конце'
+    'Roblox'   = '3–20 символов: латиница, цифры и «_»; «_» не в начале, не в конце и не идут подряд'
     'Google'   = '6–30 символов: латиница, цифры и точки; точка не в начале, не в конце и не подряд — Gmail игнорирует точки, «a.b» и «ab» это один адрес'
     'Mail.ru'  = '5–31 символ: латиница, цифры и «. _ -»; спецсимволы не в начале, не в конце и не идут подряд'
     'VK'       = '5–32 символа: латиница, цифры, точка и «_», без повторов подряд'
@@ -549,7 +549,7 @@ function Test-UsernameFormat {
         'Roblox' { return (Test-RobloxUsernameFormat $Username) }
         'Google' { return ($Username.Length -ge 6 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9.]+$' -and $Username -notmatch '(^\.|\.$|\.\.)') }
         'Mail.ru' { return ($Username.Length -ge 5 -and $Username.Length -le 31 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]$' -and $Username -notmatch '[._-]{2}') }
-        'VK' { return ($Username.Length -ge 5 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9._]+$' -and $Username -notmatch '(^[._]|[._]$|\.\.)' -and $Username -notmatch '^\d+$') }
+        'VK' { return ($Username.Length -ge 5 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9._]+$' -and $Username -notmatch '(^[._]|[._]$|\.\.|__)' -and $Username -notmatch '^\d+$') }
         'Outlook' { return ($Username.Length -ge 3 -and $Username.Length -le 64 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]?$' -and $Username -notmatch '([._-]$|[._-]{2})') }
         'GitHub' { return ($Username.Length -ge 1 -and $Username.Length -le 39 -and $Username -match '^(?!-)(?!.*--)[A-Za-z0-9-]+(?<!-)$') }
 # --- Discord Api
@@ -557,7 +557,7 @@ function Test-UsernameFormat {
             $discordNameForFormat = $Username.ToLowerInvariant()
             return ($Username.Length -ge 2 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_.]+$' -and $Username -notmatch '(^\.|\.$|\.\.)' -and $discordNameForFormat -notin @('discord','clyde','nitro','here','everyone','system'))
         }
-        'YouTube' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9._-]+$' -and $Username -notmatch '\.\.$') }
+        'YouTube' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9._-]+$' -and $Username -notmatch '(^\.|\.$|\.\.)') }
         'Telegram' { return ($Username.Length -ge 5 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z][A-Za-z0-9_]*$') }
         'Steam' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9_-]*$') }
         default { return ($Username.Length -ge 3 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_.-]+$') }
@@ -1173,6 +1173,9 @@ $script:Form.Size = New-Object System.Drawing.Size($windowWidth, $windowHeight)
 $script:Form.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
 $script:Form.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $script:Form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$script:Form.FormBorderStyle = 'None'
+$script:Form.MinimizeBox = $true
+$script:Form.MaximizeBox = $true
 $script:AppLogoImage = $null
 $script:AppIconCached = $null
 $script:AppLogoB64 = 'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAMAAADVRocKAAABgFBMVEWbnaNX2vckNFgatOWmtsai2uMDLsM/RVQhXugo4flFXoBCX8hAl9YHBw8OERsRFiIMR8sJZ80Id84JVc8KhtIFOckLR5EIRrUKOYoIWK0QJ1EFNrMJKW0PN3ECK7YPZLbq/P4RVZUTlNjV9/0Kh+grZ9YtmeQqZa0odtIrh9UGKIorV5APWOYoWK0qVtGt1fK05PkaJTQRRXgOZ+0OdugOl+wxdeNuqewCHFEsR21GSVJOeNJPtOrF6fpWXGhQpOtueIklKDArmdovotxMaY5GatBqa3JutOt0x/GRyvLHxcjO2+YaNlEmNUgqR4g5VHZTdq9Nled0dHpmidpsmNAOcrokS8wqZuYzhuU3qOVPhLOSq8iX2ParxusDG2cKSu8LpN0ydrZEe+ZQg9VPiuN6lLO2tbgKqeUZyvc4OD0mSKUyZJJTZXxW5v9ui6+KipGVreuBuO2pq7DW1dfr6OgADSMBPuQZ0/YvxPNRUllBaqBYcY5Mq9x+g45to81o2Ph0Y3ojAAAAgHRSTlP//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////xUHpOoAAAZbSURBVHja7Zj3U9tKFIVFyuvWalf2aiVLkeRecAODMcb03nsnLwRI773nX393ZZOYyWAL8TLvh+c7ZsAz6Hw65+6uViv4fnIJbUAb0Ab8zwBiY/3rgDOSF4AIbu8cfqE+TdN1XdOQ2GDnsoC6ioh0pijZytra2lFl4oEODHd5Ce7kNVCXpGz2z4nK2vqzg4NnE0xz1xHBTVMRkyUpAHXDqeDmxNqz400DuSEILvS1TLQykQ2c1i8cEtjczCpuTAit9Y1MZf2opv/mb6g3dSsBKeiCILSMx4gel27zgKSt25XK8vJypbcTvgV5VkBALQhCqzlFEyul3k4J5NeWl67ofJiWPxxtBSTHRWuC0FQfiQZx9KWtyniZBWEkQSnMiN/u7JQcAmpBEJrraxj0sST1ZhYfZLObUq2yGUY5IQg5pUSELgr4ro/U7aljrASjdHEiC8qyLDvDVZJYKtrtEHhIzTwIzforGompIYKDGZaZcG5dlmqEYFAKpqKdnbzXPCR0EUCDPjKHppNEiS5morVsQN6ZcQACwm/dMmdp3gFGcjrmVxPpB1EpGu2VA1zd0ce9CaykWHe3BCmxphkJ5+sjpA4N+Im6yyD+rTqAVwBHMU5Iyk0ZCGCh0MzCuQC4RiNjoyE1sahAMNwBT4d/JIyDSkJRGFiAqJq3uRmgyz866lcPU9Jp4ePS89I2gJRapXCxW1aCBnfrAYDs0NgoNheDdXm5VA1X81Wruu3MNkWRU0qxKMtBilADoQXgTAvGxkbVQ70efeeM9TwBwyeZs2KS40JWUpEilikteADABQVzZ8wvx1MBZ3TKM9a2VP8rjGHGYSLLqWKEYACIngCaOTYKl6f4/JWlIWtF6s2Fq6XcCg5PcQB8GIlEALAgnm9BODchAPyVxBzACd35nFysWjM5yyrJM3ksY3CAGe6JEErnPQLUJADYDafB29aQNAU/MnRAngoTTDCWCY33RDDz4oD/v0YToMJg3QELK1YE53n2M1ZELgEA9LEDMJl9FiC6dsBME5M6YChcJOEcxJ4H8Zk8B0AxAKjMLiBvAJ2aakIJOk0esiLFMETvD+8TUp0mnGBiFu2J0EsADFUtZoISjyNmxfC+NR3LW/meaStGCPET02SJHj+jNkLnT7UmgIKuU4XEHQAm1X0M6tb+tBW2YAn0wwebNBkhjHaJ7h00dhnpfYziBDyHYUziAWsAEz6sYgMxUA+FgGDGk9ACdV70FBEAbuqMJlXeY7Awbe2DcqwjRJzbh+pR15OEMrUguo/o7DjlBIJhV8oBZCAf5jXg5A/6d/3xA4K/tUB0F1HjWoGMm9AGWPg5gcvGBgZ2Qo44/Ny9p+49J6rRPKGmyzVY0JkeN2Hd5G2uVy0e/617oXgVEvphDInuH5mwqwYASyqNBK4fAv2375SDKT8YMETPAD6ZdarbEJKqOmMVsqnd/923j9UnuQjpsn8wILrdVTiXGQalumo6AH77cO/+UCh09ffHZnwu5re7zPnmBppuW3hIi0baNuyMopqngFDo1r2Or2p6bqdno8vuaqHfAsBDMjKwE02DBacD/tCtd4+vf6Ifcjt+Qm2K0IUBDVt3fqFOaTpNafzQUR+72tHx9ZNKT3I7ZMMGfbF5B1oDYHun2EAw0rujsVCoB6aBGT+B8bNhUttc8rUy0HR3fUpQqWEYumY83F1f/7K+t3fty5Fpgyl7+Ynv7KPGE4A/2qihaVpfX59mlMvlLihbNQ8fFsbHF5DoAXDmUMIZSzpjDDxwRp9uUBOeNw8fId+v6eVx5OEF5Oyph3OHSGMqX1NNmA5FglUDjUyuXklvpIW91yLy/o72vRGcYVAVCuJyvvY/2iC7Lz+/OPFd7i2zkVE/FKmtU4921aVVYe799WEfujTgW8O/lYg+fhzu943Mzg7OLdUJ3l7EzykglIXBEbH/pbA6N++7+Jt+SwQQhmeBMDm7KuSQz8NZhQvC59l+ET29M3hnzxOgFQIIwuyC7/7w0/7ZYZ8nQMtOaNfujPjuTw73z5V9ohdAK4Jv4eULaPTq5OQc8nwo2JxQfvUUof7h/hfnheTu1PF8im/81SoaeT+49MflD2ZP53H9DLV+tPn6yatJVLg/rv2ko2XRh07uTA4Oln/i2TVaGh+cF9un721AG9AGtAFtQBvQBrQB/zHgH3+DfXu0Vi7vAAAAAElFTkSuQmCC'
@@ -1191,6 +1194,23 @@ public static class UufDwmCorners {
         int preference = 2;
         DwmSetWindowAttribute(hwnd, 33, ref preference, 4);
     }
+}
+
+public static class UufUser32 {
+    [DllImport("user32.dll")]
+    public static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll")]
+    public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int newLong);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint flags);
 }
 '@
     $script:UufDwmAvailable = $true
@@ -1246,7 +1266,7 @@ Set-WindowChrome -Window $script:Form
 
 $header = New-Object System.Windows.Forms.Panel
 $header.Location = New-Object System.Drawing.Point(0, 0)
-$header.Size = New-Object System.Drawing.Size(1480, 76)
+$header.Size = New-Object System.Drawing.Size(1480, 106)
 $header.Anchor = 'Top, Left, Right'
 $header.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
 $script:Form.Controls.Add($header)
@@ -1256,7 +1276,7 @@ $title.Text = ('UNIVERSAL USERNAME FINDER  •  v{0}' -f $script:AppVersion)
 $title.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 19, [System.Drawing.FontStyle]::Bold)
 $title.ForeColor = [System.Drawing.Color]::FromArgb(112,164,255)
 $title.AutoSize = $true
-$title.Location = New-Object System.Drawing.Point(78, 12)
+$title.Location = New-Object System.Drawing.Point(78, 36)
 $header.Controls.Add($title)
 
 $subtitle = New-Object System.Windows.Forms.Label
@@ -1264,12 +1284,12 @@ $subtitle.Text = 'Автоматическая генерация и прове�
 $subtitle.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $subtitle.ForeColor = [System.Drawing.Color]::FromArgb(177,188,207)
 $subtitle.AutoSize = $true
-$subtitle.Location = New-Object System.Drawing.Point(78, 48)
+$subtitle.Location = New-Object System.Drawing.Point(78, 72)
 $header.Controls.Add($subtitle)
 
 $script:ApiDocsButton = New-Object System.Windows.Forms.Button
 $script:ApiDocsButton.Text = 'Помощь'
-$script:ApiDocsButton.Location = New-Object System.Drawing.Point(1000, 19)
+$script:ApiDocsButton.Location = New-Object System.Drawing.Point(1000, 36)
 $script:ApiDocsButton.Size = New-Object System.Drawing.Size(100, 38)
 $script:ApiDocsButton.Anchor = 'Top, Right'
 $script:ApiDocsButton.FlatStyle = 'Flat'
@@ -1279,18 +1299,17 @@ $script:ApiDocsButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $header.Controls.Add($script:ApiDocsButton)
 if ($script:AppLogoImage) {
     $headerLogo = New-Object System.Windows.Forms.PictureBox
-    $headerLogo.Location = New-Object System.Drawing.Point(16, 14)
+    $headerLogo.Location = New-Object System.Drawing.Point(16, 40)
     $headerLogo.Size = New-Object System.Drawing.Size(48, 48)
     $headerLogo.SizeMode = 'Zoom'
     $headerLogo.BackColor = [System.Drawing.Color]::Transparent
     $headerLogo.Anchor = 'Top, Left'
     $headerLogo.Image = $script:AppLogoImage
-    $headerLogo.Anchor = 'Top, Left'
     $header.Controls.Add($headerLogo)
 }
 $script:HistoryButton = New-Object System.Windows.Forms.Button
 $script:HistoryButton.Text = 'Свободные ники'
-$script:HistoryButton.Location = New-Object System.Drawing.Point(1110, 19)
+$script:HistoryButton.Location = New-Object System.Drawing.Point(1110, 36)
 $script:HistoryButton.Size = New-Object System.Drawing.Size(150, 38)
 $script:HistoryButton.Anchor = 'Top, Right'
 $script:HistoryButton.FlatStyle = 'Flat'
@@ -1300,7 +1319,7 @@ $script:HistoryButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $header.Controls.Add($script:HistoryButton)
 $script:AccountButton = New-Object System.Windows.Forms.Button
 $script:AccountButton.Text = 'Пароль / регистрация'
-$script:AccountButton.Location = New-Object System.Drawing.Point(1270, 17)
+$script:AccountButton.Location = New-Object System.Drawing.Point(1270, 34)
 $script:AccountButton.Size = New-Object System.Drawing.Size(167, 42)
 $script:AccountButton.Anchor = 'Top, Right'
 $script:AccountButton.FlatStyle = 'Flat'
@@ -1311,10 +1330,90 @@ $script:AccountButton.Font = New-Object System.Drawing.Font('Segoe UI Semibold',
 $script:AccountButton.Cursor = [System.Windows.Forms.Cursors]::Hand
 $header.Controls.Add($script:AccountButton)
 
+# --- Интерфейс: кастомная строка заголовка
+$script:UufEdgeColor = [System.Drawing.Color]::FromArgb(15,19,27)
+$uufCaptionMouseDown = {
+    param($sender,$e)
+    if ($e.Button -ne [System.Windows.Forms.MouseButtons]::Left) { return }
+    try {
+        [void][UufUser32]::ReleaseCapture()
+        [void][UufUser32]::SendMessage($script:Form.Handle, 0x00A1, [IntPtr]2, [IntPtr]::Zero)
+    } catch { }
+}
+$uufResizeEdgeMouseDown = {
+    param($sender,$e)
+    if ($e.Button -ne [System.Windows.Forms.MouseButtons]::Left) { return }
+    $hit = [int]$sender.Tag
+    if ($sender.Name -eq 'ResizeEdgeLeft' -and $sender.Height - $e.Y -le 18) { $hit = 16 }
+    if ($sender.Name -eq 'ResizeEdgeRight' -and $sender.Height - $e.Y -le 18) { $hit = 17 }
+    if ($sender.Name -eq 'ResizeEdgeBottom') {
+        if ($e.X -le 18) { $hit = 16 }
+        if ($sender.Width - $e.X -le 18) { $hit = 17 }
+    }
+    try {
+        [void][UufUser32]::ReleaseCapture()
+        [void][UufUser32]::SendMessage($script:Form.Handle, 0x00A1, [IntPtr]$hit, [IntPtr]::Zero)
+    } catch { }
+}
+function New-UufCaptionButton {
+    param([string]$Name, [int]$CodePoint, [int]$X)
+    $captionButton = New-Object System.Windows.Forms.Button
+    $captionButton.Name = $Name
+    $captionButton.Text = [string][char]$CodePoint
+    $captionButton.Font = New-Object System.Drawing.Font('Segoe MDL2 Assets', 10)
+    $captionButton.Location = New-Object System.Drawing.Point($X, 1)
+    $captionButton.Size = New-Object System.Drawing.Size(60, 30)
+    $captionButton.Anchor = 'Top, Right'
+    $captionButton.FlatStyle = 'Flat'
+    $captionButton.FlatAppearance.BorderSize = 0
+    $captionButton.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(38,48,68)
+    $captionButton.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
+    $captionButton.ForeColor = [System.Drawing.Color]::FromArgb(196,206,224)
+    $captionButton.TabStop = $false
+    $header.Controls.Add($captionButton)
+    return $captionButton
+}
+function New-UufResizeEdge {
+    param([string]$Name,[int]$X,[int]$Y,[int]$W,[int]$H,[string]$EdgeAnchor,[object]$EdgeCursor,[int]$HitTest)
+    $edge = New-Object System.Windows.Forms.Panel
+    $edge.Name = $Name
+    $edge.Location = New-Object System.Drawing.Point($X,$Y)
+    $edge.Size = New-Object System.Drawing.Size($W,$H)
+    $edge.Anchor = $EdgeAnchor
+    $edge.Cursor = $EdgeCursor
+    $edge.BackColor = $script:UufEdgeColor
+    $edge.Tag = $HitTest
+    $edge.Add_MouseDown($uufResizeEdgeMouseDown)
+    $script:Form.Controls.Add($edge)
+    $script:Form.Controls.SetChildIndex($edge, 0)
+    return $edge
+}
+$script:MinimizeButton = New-UufCaptionButton 'MinimizeButton' 0xE921 1294
+$script:MaximizeButton = New-UufCaptionButton 'MaximizeButton' 0xE922 1354
+$script:CloseButton = New-UufCaptionButton 'CloseButton' 0xE8BB 1414
+$script:CloseButton.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(196,43,28)
+$script:CloseButton.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(179,37,24)
+$script:MinimizeButton.Add_Click({ $script:Form.WindowState = 'Minimized' })
+$script:MaximizeButton.Add_Click({ if ($script:Form.WindowState -eq 'Maximized') { $script:Form.WindowState = 'Normal' } else { $script:Form.WindowState = 'Maximized' } })
+$script:CloseButton.Add_Click({ $script:Form.Close() })
+$script:Form.Add_Resize({ if ($script:MaximizeButton) { if ($script:Form.WindowState -eq 'Maximized') { $script:MaximizeButton.Text = [string][char]0xE923 } else { $script:MaximizeButton.Text = [string][char]0xE922 } } })
+$script:Form.Add_Load({
+    try { $script:Form.MaximizedBounds = [System.Windows.Forms.Screen]::FromHandle($script:Form.Handle).WorkingArea } catch { }
+    try {
+        $windowStyle = [UufUser32]::GetWindowLong($script:Form.Handle, -16)
+        [void][UufUser32]::SetWindowLong($script:Form.Handle, -16, ($windowStyle -bor 0x00040000 -bor 0x00020000 -bor 0x00010000 -bor 0x00080000))
+        [void][UufUser32]::SetWindowPos($script:Form.Handle, [IntPtr]::Zero, 0, 0, 0, 0, 0x0027)
+    } catch { }
+})
+$header.Add_MouseDown($uufCaptionMouseDown)
+$title.Add_MouseDown($uufCaptionMouseDown)
+$subtitle.Add_MouseDown($uufCaptionMouseDown)
+if ($headerLogo) { $headerLogo.Add_MouseDown($uufCaptionMouseDown) }
+
 # --- Интерфейс: левая панель
 $left = New-Object System.Windows.Forms.Panel
-$left.Location = New-Object System.Drawing.Point(14, 88)
-$left.Size = New-Object System.Drawing.Size(390, 902)
+$left.Location = New-Object System.Drawing.Point(14, 118)
+$left.Size = New-Object System.Drawing.Size(390, 912)
 $left.Anchor = 'Top, Bottom, Left'
 $left.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
 $left.AutoScroll = $true
@@ -1505,8 +1604,8 @@ $script:CopyButton = Add-UiButton '⧉  Копировать доступные/
 $script:CheckedNamesButton = Add-UiButton '≡  Проверенные ники (0)' 14 1197 350 $false 33
 
 $right = New-Object System.Windows.Forms.Panel
-$right.Location = New-Object System.Drawing.Point(418, 88)
-$right.Size = New-Object System.Drawing.Size(1040, 902)
+$right.Location = New-Object System.Drawing.Point(418, 118)
+$right.Size = New-Object System.Drawing.Size(1040, 912)
 $right.Anchor = 'Top, Bottom, Left, Right'
 $right.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
 $script:Form.Controls.Add($right)
@@ -1608,7 +1707,7 @@ $right.Controls.Add($platformNote)
 
 $script:Grid = New-Object System.Windows.Forms.DataGridView
 $script:Grid.Location = New-Object System.Drawing.Point(14,146)
-$script:Grid.Size = New-Object System.Drawing.Size(1008,431)
+$script:Grid.Size = New-Object System.Drawing.Size(1008,554)
 $script:Grid.Anchor = 'Top, Bottom, Left, Right'
 $script:Grid.BackgroundColor = [System.Drawing.Color]::FromArgb(17,23,32)
 $script:Grid.BorderStyle = 'None'
@@ -1662,13 +1761,14 @@ $right.Controls.Add($script:Grid)
 
 $diagnosticHeader = New-Object System.Windows.Forms.Label
 $diagnosticHeader.Text = 'ДИАГНОСТИКА И ЖУРНАЛ'
-$diagnosticHeader.Location = New-Object System.Drawing.Point(14,584)
+$diagnosticHeader.Location = New-Object System.Drawing.Point(14,706)
+$diagnosticHeader.Anchor = 'Bottom, Left'
 $diagnosticHeader.Size = New-Object System.Drawing.Size(250,20)
 $diagnosticHeader.Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
 $diagnosticHeader.ForeColor = [System.Drawing.Color]::FromArgb(194,207,226)
 $right.Controls.Add($diagnosticHeader)
 $script:DiagnosticBox = New-Object System.Windows.Forms.TextBox
-$script:DiagnosticBox.Location = New-Object System.Drawing.Point(14,606)
+$script:DiagnosticBox.Location = New-Object System.Drawing.Point(14,728)
 $script:DiagnosticBox.Size = New-Object System.Drawing.Size(1008,96)
 $script:DiagnosticBox.Anchor = 'Bottom, Left, Right'
 $script:DiagnosticBox.Multiline = $true
@@ -1680,11 +1780,13 @@ $script:DiagnosticBox.ForeColor = [System.Drawing.Color]::FromArgb(255,198,112)
 $script:DiagnosticBox.Font = New-Object System.Drawing.Font('Consolas',8.5)
 $script:DiagnosticBox.Text = 'Готово. Здесь отображаются события, ошибки сети и ответы API.'
 $right.Controls.Add($script:DiagnosticBox)
-$script:CopyLogButton = Add-UiButton 'Копировать журнал' 14 708 180 $false 28 $right
-$script:ClearLogButton = Add-UiButton 'Очистить журнал' 202 708 170 $false 28 $right
+$script:CopyLogButton = Add-UiButton 'Копировать журнал' 14 830 180 $false 28 $right
+$script:CopyLogButton.Anchor = 'Bottom, Left'
+$script:ClearLogButton = Add-UiButton 'Очистить журнал' 202 830 170 $false 28 $right
+$script:ClearLogButton.Anchor = 'Bottom, Left'
 $script:SummaryLabel = New-Object System.Windows.Forms.Label
 $script:SummaryLabel.Text = 'Готово к генерации'
-$script:SummaryLabel.Location = New-Object System.Drawing.Point(390,708)
+$script:SummaryLabel.Location = New-Object System.Drawing.Point(390,830)
 $script:SummaryLabel.Size = New-Object System.Drawing.Size(632,28)
 $script:SummaryLabel.Anchor = 'Bottom, Left, Right'
 $script:SummaryLabel.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
@@ -1692,7 +1794,7 @@ $script:SummaryLabel.TextAlign = 'MiddleRight'
 $right.Controls.Add($script:SummaryLabel)
 $footer = New-Object System.Windows.Forms.Label
 $footer.Text = '!  Доступность имени зависит от платформы. «Вероятно свободен» означает, что профиль не найден, но регистрация должна подтвердить доступность.'
-$footer.Location = New-Object System.Drawing.Point(14,744)
+$footer.Location = New-Object System.Drawing.Point(14,864)
 $footer.Size = New-Object System.Drawing.Size(1008,34)
 $footer.Anchor = 'Bottom, Left, Right'
 $footer.ForeColor = [System.Drawing.Color]::FromArgb(20,20,24)
@@ -3289,7 +3391,7 @@ param($InputQueue, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform, $AppV
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.1' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.2' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -4173,6 +4275,15 @@ $script:Form.Add_FormClosing({
         }
     } catch { }
 })
+
+$uufClientSize = $script:Form.ClientSize
+$uufClientWidth = [int]$uufClientSize.Width
+$uufClientHeight = [int]$uufClientSize.Height
+$uufEdgeRightX = $uufClientWidth - 6
+$uufEdgeBottomY = $uufClientHeight - 6
+$uufResizeEdgeLeft = New-UufResizeEdge 'ResizeEdgeLeft' 0 0 6 $uufClientHeight 'Top, Bottom, Left' ([System.Windows.Forms.Cursors]::SizeWE) 10
+$uufResizeEdgeRight = New-UufResizeEdge 'ResizeEdgeRight' $uufEdgeRightX 0 6 $uufClientHeight 'Top, Bottom, Right' ([System.Windows.Forms.Cursors]::SizeWE) 11
+$uufResizeEdgeBottom = New-UufResizeEdge 'ResizeEdgeBottom' 0 $uufEdgeBottomY $uufClientWidth 6 'Bottom, Left, Right' ([System.Windows.Forms.Cursors]::SizeNS) 15
 
 try {
     Set-ButtonEdgeStyle -Root $script:Form
