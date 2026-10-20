@@ -222,7 +222,7 @@ Describe 'Структура скрипта' {
     }
 
     It 'лимит количества ников за генерацию поднят до 2000' {
-        $global:UufMainText.Contains('$script:CountBox = New-NumberBox 14 624 90 5 2000 40') | Should -BeTrue
+        $global:UufMainText.Contains('$script:CountBox = New-NumberBox 14 714 90 5 2000 40') | Should -BeTrue
     }
 
     It 'колонка «СТРУКТУРА» убрана из таблицы, но свойство Structure сохранено' {
@@ -341,7 +341,9 @@ Describe 'Test-SupportedPlatform' {
     }
 
     It 'отклоняет платформы без реализации проверки' {
-        Test-SupportedPlatform -Platform 'Steam' | Should -BeFalse
+        Test-SupportedPlatform -Platform 'Steam' | Should -BeTrue
+        Test-UsernameFormat -Username 'ab' -Platform 'Steam' | Should -BeFalse
+        Test-UsernameFormat -Username 'goodNick-1' -Platform 'Steam' | Should -BeTrue
         Test-SupportedPlatform -Platform 'Reddit' | Should -BeFalse
         Test-SupportedPlatform -Platform 'Instagram' | Should -BeFalse
     }
@@ -762,7 +764,8 @@ Describe 'Get-PlatformLengthRule' {
         $roblox.Min | Should -Be 3
         $roblox.Max | Should -Be 20
         (Get-PlatformLengthRule -Platform 'Google').Min | Should -Be 6
-        (Get-PlatformLengthRule -Platform 'Telegram Channel').Max | Should -Be 32
+        (Get-PlatformLengthRule -Platform 'Steam').Max | Should -Be 30
+        (Get-PlatformLengthRule -Platform 'Steam').Min | Should -Be 3
         (Get-PlatformLengthRule -Platform 'GitHub').Min | Should -Be 1
     }
 
@@ -877,7 +880,7 @@ Describe 'Интерфейс и поведение версии 2.5.5' {
     }
 
     It 'число потоков задаётся в интерфейсе и ограничено восемью' {
-        $global:UufMainText.Contains('$script:ThreadsBox = New-NumberBox 254 910 110 1 8 2') | Should -BeTrue
+        $global:UufMainText.Contains('$script:ThreadsBox = New-NumberBox 254 1000 110 1 8 2') | Should -BeTrue
         $global:UufMainText.Contains('Рекомендуется 2–4 потока') | Should -BeTrue
         $global:UufMainText.Contains('if ($threadCount -gt 8) { $threadCount = 8 }') | Should -BeTrue
     }
@@ -933,13 +936,13 @@ Describe 'Платформы, домены и интерфейс версии 2.
         Get-DisplayNick -Platform 'Google' -Name 'voidstorm' | Should -Be 'voidstorm@gmail.com'
         Get-DisplayNick -Platform 'GitHub' -Name 'voidstorm' | Should -Be 'voidstorm'
     }
-    It 'удалённые платформы исчезли, Telegram Channel добавлен' {
+    It 'Telegram Channel убрана, Steam добавлена' {
         $global:SupportedPlatforms -contains 'TikTok' | Should -BeFalse
         $global:SupportedPlatforms -contains 'Apple' | Should -BeFalse
         $global:SupportedPlatforms -contains 'Microsoft' | Should -BeFalse
-        $global:SupportedPlatforms -contains 'Telegram Channel' | Should -BeTrue
-        Test-UsernameFormat -Username '+RMHfPxr3hVBkMGE6' -Platform 'Telegram Channel' | Should -BeTrue
-        Test-UsernameFormat -Username 'ab' -Platform 'Telegram Channel' | Should -BeFalse
+        $global:SupportedPlatforms -contains 'Telegram Channel' | Should -BeFalse
+        $global:SupportedPlatforms -contains 'Steam' | Should -BeTrue
+        $global:UufWorkerText.Contains('# --- Steam Api') | Should -BeTrue
     }
     It 'источник случайных символов работает автономно' {
         $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @() -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 4 -MaxLength 12 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $false -OnlyShort $false -ExcludeTokens @() -RandomChars $true)
@@ -955,19 +958,26 @@ Describe 'Платформы, домены и интерфейс версии 2.
     }
     It 'стандартный набор выставлен при запуске' {
         $global:UufMainText.Contains('$script:StyleBox.SelectedItem = ' + [char]39 + '— без стиля —' + [char]39) | Should -BeTrue
-        $global:UufMainText.Contains('$script:MaxLengthBox = New-NumberBox 216 624 80 1 64 25') | Should -BeTrue
+        $global:UufMainText.Contains('$script:MaxLengthBox = New-NumberBox 216 714 80 1 64 25') | Should -BeTrue
         $global:UufMainText.Contains('$script:RandomCharsCheck = New-CheckBox ' + [char]39 + 'Случайные символы' + [char]39 + ' 14 803 180 $true') | Should -BeTrue
         $global:UufMainText.Contains('$script:TwoWordsCheck = New-CheckBox ' + [char]39 + 'Два осмысленных слова' + [char]39 + ' 194 683 170 $false') | Should -BeTrue
-        $global:UufMainText.Contains('$script:DelayBox = New-NumberBox 14 910 110 500 15000 700') | Should -BeTrue
+        $global:UufMainText.Contains('$script:DelayBox = New-NumberBox 14 1000 110 500 15000 700') | Should -BeTrue
     }
-    It 'интерфейс монохромный с кастомным заголовком без анимаций' {
-        $global:UufMainText.Contains('$script:Form.FormBorderStyle = ' + [char]39 + 'None' + [char]39) | Should -BeTrue
-        $global:UufMainText.Contains('public sealed class UufResizeFrame : NativeWindow') | Should -BeTrue
+    It 'интерфейс тёмный v2.5.5, стандартная рамка, без анимаций и кастомного заголовка' {
+        $global:UufMainText.Contains('$script:Form.FormBorderStyle') | Should -BeFalse
+        $global:UufMainText.Contains('UufResizeFrame') | Should -BeFalse
+        $global:UufMainText.Contains('CaptionBar') | Should -BeFalse
         $global:UufMainText.Contains('$script:SplashForm') | Should -BeFalse
         $global:UufMainText.Contains('Start-ColorTransition') | Should -BeFalse
         $global:UufMainText.Contains('New-Object System.Drawing.Point($windowWidth -') | Should -BeFalse
-        $global:UufMainText.Contains('$script:CaptionMin.Location = New-Object System.Drawing.Point($captionMinX, 8)') | Should -BeTrue
-        $global:UufMainText.Contains('FromArgb(93,73,222)') | Should -BeFalse
+        $global:UufMainText.Contains('$script:Form.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)') | Should -BeTrue
+        $global:UufMainText.Contains('[System.Drawing.Color]::FromArgb(93,73,222)') | Should -BeTrue
+        $global:UufMainText.Contains('[System.Drawing.Image]::FromFile($logoPngPath)') | Should -BeTrue
+        $global:UufMainText.Contains('$Window.Icon = $script:AppIconCached') | Should -BeTrue
+    }
+    It 'сортировка свободных ников идёт по платформе и дате' {
+        $global:UufMainText.Contains('$script:HistorySortBox.SelectedItem = ' + [char]39 + 'По платформе и дате' + [char]39) | Should -BeTrue
+        $global:UufMainText.Contains('@($historyItems | Sort-Object @{Expression={ if ($platformOrder.ContainsKey') | Should -BeTrue
     }
     It 'помощь стала полноценным разделом с вкладками' {
         $global:UufMainText.Contains('$helpForm.Text = ' + [char]39 + 'UUF — помощь' + [char]39) | Should -BeTrue
