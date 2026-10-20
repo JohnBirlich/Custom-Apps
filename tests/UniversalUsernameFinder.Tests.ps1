@@ -1059,7 +1059,7 @@ Describe 'Изменения версии 2.8.2' {
         $global:UufMainText.Contains('$script:CloseButton = New-UufCaptionButton ') | Should -BeTrue
         $global:UufMainText.Contains('public static class UufUser32') | Should -BeTrue
         $global:UufMainText.Contains('$script:Form.Add_Resize({ if ($script:MaximizeButton)') | Should -BeTrue
-        $global:UufMainText.Contains("$header.Add_MouseDown($uufCaptionMouseDown)") | Should -BeTrue
+        $global:UufMainText.Contains('$header.Add_MouseDown($uufCaptionMouseDown)') | Should -BeTrue
     }
     It 'безрамочное окно сохраняет нативные изменение размера, максимальный размер и меню панели задач' {
         $global:UufMainText.Contains('$script:Form.MaximizedBounds') | Should -BeTrue
