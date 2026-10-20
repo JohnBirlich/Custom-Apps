@@ -1110,7 +1110,7 @@ Describe 'Изменения версии 2.8.3' {
         $global:UufMainText.Contains('$footer.Location = New-Object System.Drawing.Point(14,878)') | Should -BeTrue
     }
     It 'разнобой гарантирован на выдаче пула и перемешивание крипто-индексами' {
-        $global:UufMainText.Contains('try { $j = Get-CryptoRandomIndex ($i + 1) } catch { $j = Get-Random -Minimum 0 -Maximum ($i + 1) }') | Should -BeTrue
+        $global:UufMainText.Contains('try { $j = Get-CryptoRandomIndex ($i + 1) }') | Should -BeTrue  # v2.8.4: форма с резервом по диапазону проверяется в блоке 2.8.4
     }
     It 'новые категории и алфавитный список' {
         $global:UufMainText.Contains('''Имя, Фамилия'' = @(''John'',''Birlich'',''Mark'',''Cukerberk'',''Mask'',''Ilon''') | Should -BeTrue
