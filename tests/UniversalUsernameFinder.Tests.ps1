@@ -101,11 +101,27 @@ BeforeAll {
     $rulesNeedle = '$script:PlatformLengthRules = @{'
     $rulesStart = $global:UufMainText.IndexOf($rulesNeedle)
     if ($rulesStart -lt 0) { throw 'Не найдена таблица правил длины платформ' }
-    $rulesEnd = $global:UufMainText.IndexOf(([string][char]10 + '}'), $rulesStart)
+    # Конец таблицы ищем подсчётом вложенности фигурных скобок, а не по «}\n» в начале
+    # строки: вырезанный фрагмент обязан включать закрывающую скобку, иначе
+    # Invoke-Expression получит незакрытый хештейб и упадёт с ошибкой разбора.
+    $rulesBraceStart = $global:UufMainText.IndexOf('{', $rulesStart)
+    $rulesDepth = 0
+    $rulesEnd = -1
+    for ($rulesIndex = $rulesBraceStart; $rulesIndex -lt $global:UufMainText.Length; $rulesIndex++) {
+        $rulesChar = $global:UufMainText[$rulesIndex]
+        if ($rulesChar -eq '{') { $rulesDepth++ }
+        elseif ($rulesChar -eq '}') {
+            $rulesDepth--
+            if ($rulesDepth -eq 0) { $rulesEnd = $rulesIndex; break }
+        }
+    }
     if ($rulesEnd -lt 0) { throw 'Не найден конец таблицы правил длины платформ' }
     $rulesText = $global:UufMainText.Substring($rulesStart, $rulesEnd + 1 - $rulesStart)
     $rulesText = $rulesText -replace '\$script:', '$$global:'
     Invoke-Expression $rulesText
+    if (-not $global:PlatformLengthRules -or $global:PlatformLengthRules.Count -lt 1) {
+        throw 'Таблица правил длины платформ извлечена пустой'
+    }
 
     # Ветки switch в воркере: строки вида "                'Имя' {" (16 пробелов).
     $branchPrefix = '                ' + [char]39
