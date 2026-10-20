@@ -6,7 +6,7 @@
 #
 # Запуск из папки build:  .\Build-Exe.ps1
 # Запуск из любого места:  powershell -ExecutionPolicy Bypass -File build\Build-Exe.ps1
-# Результат:               ..\dist\UniversalUsernameFinder.exe
+# Результат:               ..\dist\UUF.exe
 
 [CmdletBinding()]
 param(
@@ -32,7 +32,7 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $repositoryRoot 'dist'
 }
 $null = [System.IO.Directory]::CreateDirectory($OutputDirectory)
-$outputPath = Join-Path $OutputDirectory 'UniversalUsernameFinder.exe'
+$outputPath = Join-Path $OutputDirectory 'UUF.exe'
 
 # Версия берётся из самого приложения, чтобы метаданные .exe не разъезжались с ним.
 $scriptText = [System.IO.File]::ReadAllText($scriptPath)
@@ -89,6 +89,7 @@ if ([System.IO.File]::Exists($outputPath)) {
 # и при масштабировании 125-150 % вместо растянутого, но целого окна можно получить
 # мелкую и обрезанную раскладку. Интерфейс размечен абсолютными координатами, поэтому
 # вопрос требует проверки на живой машине, а не в сборке.
+$iconPath = Join-Path $repositoryRoot 'assets\uuf.ico'
 $buildArguments = @{
     inputFile   = $scriptPath
     outputFile  = $outputPath
@@ -96,12 +97,13 @@ $buildArguments = @{
     STA         = $true
     noOutput    = $true
     noError     = $true
-    title       = 'Universal Username Finder'
-    product     = 'Universal Username Finder'
-    description = 'Генератор никнеймов и проверка доступности на 12 платформах'
+    title       = 'UUF'
+    product     = 'UUF'
+    description = 'Генератор никнеймов и проверка доступности на платформах и в Telegram-каналах'
     copyright   = 'GPL-3.0-or-later'
     version     = $fileVersion
 }
+if ([System.IO.File]::Exists($iconPath)) { $buildArguments['iconFile'] = $iconPath }
 
 Invoke-ps2exe @buildArguments
 

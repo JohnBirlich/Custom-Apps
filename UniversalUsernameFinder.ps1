@@ -1,10 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.5.5'
+$script:AppVersion = '2.6.0'
 
-# Каталог приложения. При запуске из .ps1 это каталог скрипта, а в скомпилированном
-# .exe переменная $PSScriptRoot пуста — ps2exe вместо неё задаёт $ScriptRoot. Если и он
-# недоступен, берётся каталог сборки процесса. Без этого журнал в .exe уезжал бы в
-# непредсказуемое место.
 function Get-AppDirectory {
     $candidate = ''
     try { $candidate = [string]$ScriptRoot } catch { }
@@ -16,9 +12,6 @@ function Get-AppDirectory {
     return $candidate
 }
 
-# Журнал: предпочитаем папку скрипта, но если она недоступна для записи
-# (например, программа распакована в Program Files), уходим в профиль пользователя.
-# Раньше запись молча глоталась catch-блоком, и диагностика пропадала.
 function Resolve-LogPath {
     $primary = Join-Path (Get-AppDirectory) 'UniversalUsernameFinder.log'
     try {
@@ -49,22 +42,15 @@ function Rotate-AppLog {
     } catch { }
 }
 
+# --- Журнал и стартовая диагностика
 $script:LogPath = Resolve-LogPath
 Rotate-AppLog
 
 Add-Type -AssemblyName System.Security
-# До версии 2.5.4 зашифрованное хранилище аккаунтов лежало в папке RobloxNickFinder:
-# приложение тогда работало только с Roblox. Теперь платформ 12, поэтому хранилище
-# переносится в общую папку приложения. Старый путь сохранён для миграции.
 $script:VaultDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
 $script:VaultPath = Join-Path $script:VaultDirectory 'accounts.dat'
 $script:LegacyVaultDirectory = Join-Path $env:LOCALAPPDATA 'RobloxNickFinder'
 $script:LegacyVaultPath = Join-Path $script:LegacyVaultDirectory 'accounts.dat'
-# Значение энтропии намеренно оставлено прежним: оно участвует в расшифровке уже
-# созданных хранилищ, и его смена сделала бы сохранённые аккаунты нечитаемыми.
-# Секретом эта строка не является (она лежит в открытом репозитории) — реальную
-# защиту даёт область DPAPI CurrentUser: данные расшифровывает только тот же
-# пользователь Windows на той же машине. Подробности в README.
 $script:VaultEntropy = [System.Text.Encoding]::UTF8.GetBytes('RobloxNickFinder:account-vault:v1')
 $script:PasswordRng = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
 Add-Type -AssemblyName System.Windows.Forms
@@ -73,9 +59,6 @@ Add-Type -AssemblyName System.Drawing
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
 
-# Два запущенных экземпляра одновременно пишут историю ников и хранилище аккаунтов,
-# поэтому второй экземпляр не запускаем. Ссылку на Mutex держим в переменной скрипта,
-# иначе сборщик мусора освободит её и защита перестанет работать.
 $script:SingleInstanceMutex = $null
 try {
     $createdNew = $false
@@ -85,7 +68,6 @@ try {
         exit 0
     }
 } catch {
-    # Если Mutex создать не удалось, не блокируем запуск: пишем причину в журнал.
     try {
         $line = '[{0}] {1}{2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ('Не удалось создать Mutex единственного экземпляра: ' + $_.Exception.Message), [Environment]::NewLine
         [System.IO.File]::AppendAllText($script:LogPath, $line, (New-Object System.Text.UTF8Encoding -ArgumentList $true))
@@ -103,11 +85,6 @@ function Write-StartupLog {
 }
 
 function Migrate-LegacyVault {
-    # Переносит зашифрованное хранилище из старой папки RobloxNickFinder в общую
-    # папку приложения. DPAPI привязан к пользователю Windows, а не к пути файла,
-    # поэтому перенос не мешает расшифровке. Старый файл не удаляется, а
-    # переименовывается в accounts.dat.migrated — это запасной вариант на случай,
-    # если что-то пойдёт не так.
     try {
         if (-not [System.IO.File]::Exists($script:LegacyVaultPath)) { return }
         if ([System.IO.File]::Exists($script:VaultPath)) { return }
@@ -126,9 +103,6 @@ function Show-FatalError {
     try { [System.Windows.Forms.MessageBox]::Show($Message, $Title, 'OK', 'Error') | Out-Null } catch { }
 }
 
-# Необработанные исключения больше не закрывают приложение молча: они пишутся в журнал
-# и показываются пользователю. Регистрация обёрнута в try/catch, чтобы сбой самого
-# механизма не мешал запуску.
 try {
     [System.Windows.Forms.Application]::SetUnhandledExceptionMode([System.Windows.Forms.UnhandledExceptionMode]::CatchException)
     [System.Windows.Forms.Application]::Add_ThreadException({
@@ -266,20 +240,19 @@ $script:Modifiers = @(
     @{Word='One'; Meaning='один, единственный'}, @{Word='X'; Meaning='загадочный символ'}
 )
 
-# Категории слов. Порядок массива $script:WordCategories задаёт порядок в списке
-# интерфейса; сами слова лежат в $script:MeaningGroups. Два массива сверяются тестом,
-# поэтому категория не может появиться в интерфейсе, не имея набора слов.
-#
-# Категории «Цельные слова» и «Короткие» из интерфейса убраны: они дублировали
-# настройки генерации («Однословные ники» и «Только короткие»). Их наборы слов
-# перераспределены: неологизмы стали категорией «Фэнтези-неологизмы», а короткие
-# редкие слова используются настройкой «Редкие (3-6)».
+# --- Словарь: категории и слова
 $script:WordCategories = @(
     'Космос','Свет и энергия','Природа','Мифология','Эмоции и характер','Скорость',
     'Абстрактное','Эстетика','Технологии и кибер','Игры и киберспорт','Животные',
     'Океан и вода','Огонь и пламя','Тьма и ночь','Музыка и звук','Драгоценности',
     'Цвета','Латинские корни','Северные саги','Восток и аниме','Растения и цветы',
-    'Горы и земли','Небо и погода','Фэнтези-неологизмы'
+    'Горы и земли','Небо и погода','Фэнтези-неологизмы',
+    'Кино и сериалы','Еда и напитки','Спорт и состязания','Транспорт и машины',
+    'Профессии и ремёсла','Инструменты и механизмы','Ткани и материалы',
+    'Камни и минералы','Сад и цветение','Птицы','Корабли и походы',
+    'Пустыня и дюны','Север и лёд','Вулканы и магма','Созвездия и звёзды',
+    'Средневековье и рыцари','Ретро и винтаж','Книги и предания',
+    'Роботы и механизмы','Игры и настольные игры'
 )
 
 $script:MeaningGroups = @{
@@ -307,14 +280,29 @@ $script:MeaningGroups = @{
     'Горы и земли' = @('Sierra','Tundra','Canyon','Summit','Ridge','Cliff','Valley','Plateau','Crater','Dune','Gorge','Mesa','Alpine','Basalt','Granite','Quarry','Steppe','Fjord','Volcano','Terrace','Highland','Badlands','Stone','Cairn')
     'Небо и погода' = @('Cloud','Storm','Rain','Breeze','Mist','Frost','Halo','Nimbus','Zephyr','Thunder','Lightning','Cyclone','Monsoon','Blizzard','Squall','Aurora','Sky','Fog','Gale','Tempest','Dew','Haze','Sirocco','Cirro')
     'Фэнтези-неологизмы' = @('Velora','Auralis','Nymera','Solara','Lunara','Lumora','Zephyra','Caelum','Vesper','Elara','Halcyon','Reverie','Meridian','Equinox','Astraea','Caldera','Ardent','Seraph','Evora','Virelia','Novara','Zyra','Aven','Orlune','Nyxen','Aetheris','Aurix','Elarion','Solune','Auralyn','Zephryn','Caelix','Faylen','Oryn','Saffron','Indigo','Sable','Glimmer','Celeste','Azure')
+    'Кино и сериалы' = @('Cinema','Film','Scene','Reel','Premier','Saga','Episode','Pilot','Trailer','Studio','Montage','Frame','Cut','Serial')
+    'Еда и напитки' = @('Honey','Cocoa','Mango','Peach','Cherry','Berry','Maple','Vanilla','Caramel','Espresso','Matcha','Citrus','Ginger','Saffron')
+    'Спорт и состязания' = @('Derby','Match','League','Team','Goal','Strike','Spar','Tackle','Dribble','Penalty','Champion','Marathon','Hurdle','Relay')
+    'Транспорт и машины' = @('Turbo','Rotor','Piston','Chassis','Motor','Gearbox','Cabin','Fuselage','Torque','Axle','Cargo','Voyage','Driver','Convoy')
+    'Профессии и ремёсла' = @('Smith','Baker','Miner','Pilot','Ranger','Scribe','Keeper','Hunter','Warden','Envoy','Artisan','Mason','Courier','Skipper')
+    'Инструменты и механизмы' = @('Anvil','Chisel','Lathe','Forge','Hammer','Compass','Caliper','Lever','Pulley','Winch','Gauge','Drill','Vise','Plane')
+    'Ткани и материалы' = @('Denim','Linen','Wool','Velour','Flannel','Canvas','Suede','Brocade','Damask','Cashmere','Tweed','Cord','Weave','Yarn')
+    'Камни и минералы' = @('Flint','Agate','Cornelian','Sardonyx','Aventurine','Labradorite','Charoite','Rodonite','Amazonite','Morion','Heliotrope','Uvarovite')
+    'Сад и цветение' = @('Bloom','Blossom','Peony','Tulip','Aster','Magnolia','Camellia','Wisteria','Hyacinth','Narcissus','Lavender','Azalea','Garden','Sprout')
+    'Птицы' = @('Kestrel','Condor','Ibis','Albatross','Pelican','Puffin','Grouse','Magpie','Stork','Crane','Swallow','Finch','Oriole','Bunting')
+    'Корабли и походы' = @('Corsair','Galleon','Brig','Schooner','Regatta','Sextant','Helm','Ballast','Frigate','Caravel','Armada','Skipper','Voyage','Anchor')
+    'Пустыня и дюны' = @('Dune','Oasis','Sirocco','Sahara','Caravan','Sand','Dusty','Bedouin','Mirage','Scorch','Argil','Khan','Steppe','Mirage')
+    'Север и лёд' = @('Blizzard','Polar','Igloo','Narwhal','Walrus','Snow','Sledge','Ice','Frostbite','Nord','Winter','Hoarfrost','Packice','Boreal')
+    'Вулканы и магма' = @('Lava','Geysir','Sulfur','Vesuvius','Etna','Krakatoa','Fumarole','Magma','Caldera','Basalt','Ignite','Cinder','Pyro','Tephra')
+    'Созвездия и звёзды' = @('Andromeda','Cassiopeia','Centaurus','Aquila','Cygnus','Cepheus','Aries','Taurus','Gemini','Libra','Orion','Polaris','Sirius','Rigel')
+    'Средневековье и рыцари' = @('Knight','Squire','Herald','Banner','Citadel','Moat','Tourney','Joust','Crown','Sovereign','Fief','Baron','Duke','Castellan')
+    'Ретро и винтаж' = @('Vinyl','Cassette','Polaroid','Retro','Vintage','Gramophone','Jukebox','Diner','Lounge','Cruiser','Sepia','Patina','Archive','Classic')
+    'Книги и предания' = @('Folio','Tome','Legend','Myth','Chronicle','Ballad','Epic','Sonnet','Chapter','Volume','Manuscript','Parchment','Saga','Verse')
+    'Роботы и механизмы' = @('Automaton','Droid','Actuator','Gizmo','Widget','Cog','Sprocket','Dynamo','Turbine','Mecha','Servo','Circuit','Android','Piston')
+    'Игры и настольные игры' = @('Dice','Pawn','Rook','Gambit','Checkmate','Board','Token','Shuffle','Dealer','Trump','Suit','Hand','Round','Turn')
 }
 
-# Слоги для выдуманных слов. Ник не обязан состоять из настоящих слов: пользователь
-# просил варианты вроде «dav» и «kronny». Слова собираются из согласного кластера,
-# гласного ядра и конечного слога, поэтому звучат читаемо, а не как случайный набор
-# букв. Пространство практически неисчерпаемо, что важно при постоянном исключении
-# уже проверенных ников: словарь из нескольких сотен слов со временем заканчивается,
-# а выдуманные слова — нет.
+# --- Слоги и редкие слова
 $script:InventedOnsets = @(
     'k','kr','v','vr','d','dr','t','tr','n','z','s','st','r','l','m','p','b','g','gr','f','fl',
     'th','sh','ch','x','qu','br','pr','sn','sl','sm','sk','c','h','j','w','y','kl','gl','bl',
@@ -328,8 +316,6 @@ $script:InventedCodas = @(
     'zar','lune','vire','neth','quis','mara','drel','thos','kin','zar','vyn','lok','ren','dal'
 )
 
-# Короткие редкие слова для настройки «Редкие (3-6)»: берутся из набора коротких слов,
-# который раньше был отдельной категорией «Короткие» в списке интерфейса.
 $script:RareShortWords = @($script:MinimalSeeds | ForEach-Object { [string]$_.Word })
 
 $script:StyleWords = @{
@@ -344,11 +330,7 @@ $script:StyleWords = @{
 }
 $script:CheckedNames = @{}
 $script:Candidates = New-Object 'System.Collections.Generic.List[object]'
-# Индекс «платформа|ник» → кандидат: без него каждый результат проверки искался
-# линейным перебором всего списка (O(n²) на прогон) и подтормаживал интерфейс.
 $script:CandidateIndex = @{}
-# Ревизия списка кандидатов и ревизия, до которой уже посчитаны свободные ники.
-# Пока они равны, Update-AvailableNames не пересчитывает списки заново.
 $script:CandidateRevision = 0
 $script:AvailableNamesRevision = -1
 $script:HistoryDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
@@ -360,23 +342,18 @@ $script:HistoryDirty = $false
 $script:HistoryDirtySince = $null
 $script:LastGridRefresh = [DateTime]::MinValue
 $script:GridRefreshPending = $false
-# Палитра статусов таблицы вынесена из цикла перерисовки: раньше switch с
-# FromArgb выполнялся для каждой строки при каждом обновлении сетки.
 $script:StatusColors = @{
-    'Свободен'            = [System.Drawing.Color]::FromArgb(99,222,151)
-    'Вероятно свободен'   = [System.Drawing.Color]::FromArgb(120,205,250)
-    'Занят'               = [System.Drawing.Color]::FromArgb(245,120,120)
-    'Недопустимый'        = [System.Drawing.Color]::FromArgb(180,188,203)
-    'Не подтверждено'      = [System.Drawing.Color]::FromArgb(207,185,255)
-    'Ошибка сети'         = [System.Drawing.Color]::FromArgb(255,190,92)
-    'Проверяется'         = [System.Drawing.Color]::FromArgb(105,185,255)
+    'Свободен'            = [System.Drawing.Color]::FromArgb(24,26,30)
+    'Вероятно свободен'   = [System.Drawing.Color]::FromArgb(70,74,80)
+    'Занят'               = [System.Drawing.Color]::FromArgb(150,153,158)
+    'Недопустимый'        = [System.Drawing.Color]::FromArgb(150,153,158)
+    'Не подтверждено'      = [System.Drawing.Color]::FromArgb(120,124,130)
+    'Ошибка сети'         = [System.Drawing.Color]::FromArgb(120,124,130)
+    'Проверяется'         = [System.Drawing.Color]::FromArgb(170,173,178)
+    'Ожидает'             = [System.Drawing.Color]::FromArgb(170,173,178)
 }
 try {
     if (Test-Path -LiteralPath $script:HistoryPath) {
-        # ReadAllText вместо Get-Content: в Windows PowerShell 5.1 Get-Content без
-        # -Encoding читает файл без BOM как ANSI. Файлы истории, созданные до версии
-        # 2.5.2, записывались без BOM, поэтому кириллические статусы («Свободен»)
-        # превращались в нечитаемые символы и сравнения переставали срабатывать.
         $historyJson = [System.IO.File]::ReadAllText($script:HistoryPath)
         if (-not [string]::IsNullOrWhiteSpace($historyJson)) {
             $historyData = $historyJson | ConvertFrom-Json -ErrorAction Stop
@@ -384,9 +361,6 @@ try {
             foreach ($retiredKey in @($historyData.RetiredNames)) {
                 if (-not [string]::IsNullOrWhiteSpace([string]$retiredKey)) { $script:RetiredNames[[string]$retiredKey] = $true }
             }
-            # CheckedNames — список уже проверенных имён в виде ключей «платформа|ник».
-            # Без сохранения он жил только до закрытия окна, и после перезапуска
-            # «Исключать проверенные» снова предлагал те же занятые варианты.
             foreach ($checkedKey in @($historyData.CheckedNames)) {
                 if (-not [string]::IsNullOrWhiteSpace([string]$checkedKey)) { $script:CheckedNames[[string]$checkedKey] = $true }
             }
@@ -399,10 +373,6 @@ try {
     Write-StartupLog ('Не удалось прочитать историю ников, начинаем с пустой: ' + $_.Exception.Message)
 }
 
-# Индекс «слово → значение» строится один раз за сеанс.
-# Раньше Get-SeedForWord на каждый вызов склеивал семь массивов (около 300 объектов)
-# и выполнял линейный поиск через Where-Object; вызовов за одну генерацию сотни,
-# поэтому сборка кандидатов была заметно медленнее самой проверки.
 $script:SeedIndex = $null
 
 function Initialize-SeedIndex {
@@ -428,28 +398,19 @@ function Get-SeedForWord {
         return [pscustomobject]@{ Word = $Word; Meaning = $FallbackMeaning }
     }
     Initialize-SeedIndex
-    # ContainsKey с пустым или null-ключом бросил бы исключение, поэтому проверка выше.
     if ($script:SeedIndex.ContainsKey($Word)) { return $script:SeedIndex[$Word] }
     return [pscustomobject]@{ Word = $Word; Meaning = $FallbackMeaning }
 }
 
-# Определяет, из скольких слов состоит ник. Для сгенерированных кандидатов структура
-# известна в момент создания и задаётся явно; функция нужна для ручного ввода и для
-# собственных слов пользователя, где состав заранее неизвестен.
 function Get-NickStructure {
     param([string]$Name)
     if ([string]::IsNullOrWhiteSpace($Name)) { return 'Одно слово' }
     $letters = [regex]::Replace($Name, '[^A-Za-z]', '')
     if ($letters.Length -lt 2) { return 'Одно слово' }
-    # Внутренняя заглавная буква — признак склейки: все словарные токены приложения
-    # начинаются с заглавной и внутренних не имеют (Nova, Aurora, Shadow).
-    # BoomSquare -> граница перед S, то есть два слова.
     for ($i = 1; $i -lt $letters.Length; $i++) {
         if ([char]::IsUpper($letters[$i])) { return 'Два слова' }
     }
-    # Разделитель тоже означает два слова: Boom_Square.
     if ($Name.IndexOf('_') -ge 0) { return 'Два слова' }
-    # Слитное написание без заглавных проверяем разбиением по словарю.
     Initialize-SeedIndex
     for ($i = 3; $i -le $letters.Length - 3; $i++) {
         $left = $letters.Substring(0, $i)
@@ -492,9 +453,8 @@ function Test-RobloxUsernameFormat {
     return ($Username.Length -ge 3 -and $Username.Length -le 20 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9_]*$' -and $Username -notmatch '__|_$' -and ([regex]::Matches($Username, '_').Count -le 1))
 }
 
-# Единый источник правды: платформы, для которых в воркере реализована реальная проверка.
-# Список используется и для заполнения ComboBox, и для валидации, чтобы они не расходились.
-$script:SupportedPlatforms = @('Roblox','Google','Mail.ru','VK','Discord','TikTok','Microsoft','Outlook','Telegram','GitHub','YouTube','Apple')
+# --- Платформы и правила длины
+$script:SupportedPlatforms = @('Roblox','Google','Mail.ru','VK','Discord','Outlook','Telegram','Telegram Channel','GitHub','YouTube')
 
 function Test-SupportedPlatform {
     param([string]$Platform)
@@ -502,23 +462,17 @@ function Test-SupportedPlatform {
     return ($script:SupportedPlatforms -contains $Platform)
 }
 
-# Ограничения длины имени для каждой платформы. Значения совпадают с Test-UsernameFormat:
-# там же заданы регулярные выражения, здесь — только числовые границы, чтобы их можно было
-# подставить в поля «Мин. длина» / «Макс. длина» при выборе платформы. Держим оба списка
-# рядом, иначе правило в интерфейсе разойдётся с правилом валидации.
 $script:PlatformLengthRules = @{
     'Roblox'    = @{ Min = 3; Max = 20 }
     'Google'    = @{ Min = 6; Max = 30 }
     'Mail.ru'   = @{ Min = 4; Max = 31 }
     'VK'        = @{ Min = 5; Max = 32 }
     'Discord'   = @{ Min = 2; Max = 32 }
-    'TikTok'    = @{ Min = 2; Max = 24 }
-    'Microsoft' = @{ Min = 3; Max = 64 }
     'Outlook'   = @{ Min = 3; Max = 64 }
     'Telegram'  = @{ Min = 5; Max = 32 }
     'GitHub'    = @{ Min = 1; Max = 39 }
     'YouTube'   = @{ Min = 3; Max = 30 }
-    'Apple'     = @{ Min = 3; Max = 64 }
+    'Telegram Channel' = @{ Min = 4; Max = 32 }
 }
 
 function Get-PlatformLengthRule {
@@ -528,8 +482,26 @@ function Get-PlatformLengthRule {
         $rule = $rules[$Platform]
         return [pscustomobject]@{ Min = [int]$rule['Min']; Max = [int]$rule['Max'] }
     }
-    # Неизвестная платформа — нейтральные границы, чтобы генерация не останавливалась.
     return [pscustomobject]@{ Min = 3; Max = 32 }
+}
+
+$script:PlatformDomains = @{
+    'Google'  = 'gmail.com'
+    'Mail.ru' = 'mail.ru'
+    'Outlook' = 'outlook.com'
+}
+
+function Get-PlatformDomain {
+    param([string]$Platform)
+    if ($script:PlatformDomains.ContainsKey($Platform)) { return [string]$script:PlatformDomains[$Platform] }
+    return ''
+}
+
+function Get-DisplayNick {
+    param([string]$Platform, [string]$Name)
+    $domain = Get-PlatformDomain -Platform $Platform
+    if ($domain) { return ($Name + '@' + $domain) }
+    return $Name
 }
 
 function Test-UsernameFormat {
@@ -540,17 +512,16 @@ function Test-UsernameFormat {
         'Google' { return ($Username.Length -ge 6 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9.]+$' -and $Username -notmatch '(^\.|\.$|\.\.)') }
         'Mail.ru' { return ($Username.Length -ge 4 -and $Username.Length -le 31 -and $Username -match '^[A-Za-z][A-Za-z0-9._-]*$' -and $Username -notmatch '([._-]$|\.\.)') }
         'VK' { return ($Username.Length -ge 5 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9._]+$' -and $Username -notmatch '(^[._]|[._]$|\.\.)' -and $Username -notmatch '^\d+$') }
-        'Microsoft' { return ($Username.Length -ge 3 -and $Username.Length -le 64 -and $Username -match '^[A-Za-z0-9._-]+$' -and $Username -notmatch '(^[._-]|[._-]$|\.\.)') }
         'Outlook' { return ($Username.Length -ge 3 -and $Username.Length -le 64 -and $Username -match '^[A-Za-z][A-Za-z0-9._-]*$' -and $Username -notmatch '([._-]$|\.\.)') }
-        'Apple' { return ($Username.Length -ge 3 -and $Username.Length -le 64 -and $Username -match '^[A-Za-z0-9._-]+$' -and $Username -notmatch '(^[._-]|[._-]$|\.\.)') }
         'GitHub' { return ($Username.Length -ge 1 -and $Username.Length -le 39 -and $Username -match '^(?!-)(?!.*--)[A-Za-z0-9-]+(?<!-)$') }
+# --- Discord Api
         'Discord' {
             $discordNameForFormat = $Username.ToLowerInvariant()
             return ($Username.Length -ge 2 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_.]+$' -and $Username -notmatch '(^\.|\.$|\.\.)' -and $discordNameForFormat -notin @('discord','clyde','nitro','here','everyone','system'))
         }
         'YouTube' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9._-]+$' -and $Username -notmatch '\.\.$') }
-        'TikTok' { return ($Username.Length -ge 2 -and $Username.Length -le 24 -and $Username -match '^[A-Za-z0-9_.]+$' -and $Username -notmatch '(^\.|\.$|\.\.)') }
         'Telegram' { return ($Username.Length -ge 5 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z][A-Za-z0-9_]*$') }
+        'Telegram Channel' { return ($Username.Length -ge 4 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_+]+$') }
         default { return ($Username.Length -ge 3 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_.-]+$') }
     }
 }
@@ -563,24 +534,18 @@ function Get-PlatformWebsiteUrl {
         'Google' { return 'https://accounts.google.com/signup' }
         'Mail.ru' { return 'https://account.mail.ru/signup' }
         'VK' { if ($Username) { return ('https://vk.com/' + $safeName) }; return 'https://vk.com/' }
-        'Microsoft' { return 'https://signup.live.com/' }
         'Outlook' { return 'https://signup.live.com/' }
-        'Apple' { return 'https://account.apple.com/' }
         'GitHub' { if ($Username) { return ('https://github.com/' + $safeName) }; return 'https://github.com/signup' }
         'Discord' { return 'https://discord.com/register' }
         'YouTube' { if ($Username) { return ('https://www.youtube.com/@' + $safeName) }; return 'https://www.youtube.com/' }
-        'TikTok' { if ($Username) { return ('https://www.tiktok.com/@' + $safeName) }; return 'https://www.tiktok.com/signup' }
         'Telegram' { if ($Username) { return ('https://t.me/' + $safeName) }; return 'https://telegram.org/' }
+        'Telegram Channel' { return ('https://t.me/' + ([string]$Username).Trim()) }
         default { return 'https://www.google.com/search?q=' + [uri]::EscapeDataString($Platform + ' username ' + $Username) }
     }
 }
 
-# Fisher–Yates вместо Sort-Object { Get-Random }: последний пересчитывает ключ сортировки
-# и даёт смещённую, нестабильную выборку, к тому же O(n log n) вместо O(n).
 function Get-ShuffledArray {
     param([object[]]$Items)
-    # Копия обязательна: @($Items) для уже готового object[] возвращает ту же ссылку,
-    # и перемешивание изменило бы массив вызывающего кода.
     $array = @($Items).Clone()
     for ($i = $array.Length - 1; $i -gt 0; $i--) {
         $j = Get-Random -Minimum 0 -Maximum ($i + 1)
@@ -591,11 +556,6 @@ function Get-ShuffledArray {
     return $array
 }
 
-# Собирает читаемое выдуманное слово из слогов: кластер согласных, гласное ядро и
-# конечный слог, иногда второй слог. Это не случайный набор букв — такие ники
-# произносятся («Kronny», «Dav», «Velkira»), но не привязаны к словарю, поэтому
-# пространство имён практически неисчерпаемо. Это важно при постоянном исключении
-# уже проверенных ников: словарь со временем заканчивается, а выдуманные слова нет.
 function New-InventedWord {
     param([int]$MinLength = 3, [int]$MaxLength = 9)
     if ($MinLength -lt 1) { $MinLength = 1 }
@@ -606,8 +566,6 @@ function New-InventedWord {
     $last = ''
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
         $word = [string]$onsets[(Get-Random -Minimum 0 -Maximum $onsets.Count)] + [string]$nuclei[(Get-Random -Minimum 0 -Maximum $nuclei.Count)] + [string]$codas[(Get-Random -Minimum 0 -Maximum $codas.Count)]
-        # Второй слог добавляется, если слово короче минимума, или случайно — так
-        # получаются и короткие варианты, и длинные.
         if ($word.Length -lt $MinLength -or (Get-Random -Minimum 0 -Maximum 3) -eq 0) {
             $word = $word + [string]$nuclei[(Get-Random -Minimum 0 -Maximum $nuclei.Count)] + [string]$codas[(Get-Random -Minimum 0 -Maximum $codas.Count)]
         }
@@ -618,12 +576,6 @@ function New-InventedWord {
     return ([string][char]::ToUpperInvariant($last[0]) + $last.Substring(1))
 }
 
-# Заменяет часть букв похожими цифрами: Void -> V0id, Kronny -> Kr0nny.
-# Первая буква не заменяется никогда: правила Mail.ru, Outlook и Telegram требуют
-# начинать имя с буквы, а VK отклоняет имя, состоящее только из цифр.
-# Заглавные буквы в середине слова тоже не заменяются: ими отмечается граница слов в
-# склейке (VoidStorm). Заменив её цифрой, получили бы Void5torm — ник терял бы вид
-# двух слов, и определённая по имени структура расходилась бы с заданной генератором.
 function Convert-ToLeetWord {
     param([string]$Word, [int]$MaxSubstitutions = 2)
     if ([string]::IsNullOrWhiteSpace($Word)) { return $Word }
@@ -646,15 +598,13 @@ function Convert-ToLeetWord {
     return (-join $chars)
 }
 
+# --- Генератор ников
 function New-AdvancedCandidatePool {
     param(
         [string[]]$SelectedWordCategories,
         [string]$CustomWords,
-        [string]$CustomTheme,
         [string]$Style,
         [string]$Platform,
-        [string]$Prefix,
-        [string]$Suffix,
         [int]$MinLength,
         [int]$MaxLength,
         [int]$Count,
@@ -669,18 +619,15 @@ function New-AdvancedCandidatePool {
         [bool]$InventedPairs,
         [bool]$LeetWords,
         [bool]$RareShort,
-        [bool]$Ordered
+        [bool]$Ordered,
+        [bool]$RandomChars
     )
-    # ExcludeKeys — уже проверенные, занятые и признанные свободными ники в формате
-    # «платформа|ник». Генератор отсеивает их сам и добирает замену, поэтому
-    # запрошенное количество совпадает с результатом.
     if ($null -eq $ExcludeKeys) { $ExcludeKeys = @{} }
     if ($Count -lt 1) { $Count = 1 }
     $stats = @{ Attempts = 0; ByLength = 0; ByFormat = 0; ByExcludedToken = 0; ByDuplicate = 0; ByAlreadyUsed = 0 }
 
     $anchors = New-Object System.Collections.ArrayList
     $categoryWords = New-Object System.Collections.ArrayList
-    $themeWords = New-Object System.Collections.ArrayList
     foreach ($group in $SelectedWordCategories) {
         if ($script:MeaningGroups.ContainsKey($group)) {
             foreach ($word in $script:MeaningGroups[$group]) {
@@ -689,15 +636,9 @@ function New-AdvancedCandidatePool {
             }
         }
     }
-    # Свои слова разбиваются и по разделителям, и по пробелам: «boom square» даёт два
-    # отдельных слова, а не склейку BoomSquare.
     foreach ($rawWord in ($CustomWords -split '[,;\s]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
         $word = Convert-ToNickToken $rawWord
         if ($word.Length -gt 0) { [void]$anchors.Add([pscustomobject]@{Word=$word; Meaning='ваше ключевое слово'; Category='Свои слова'}) }
-    }
-    foreach ($rawWord in ($CustomTheme -split '[,;\s]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
-        $word = Convert-ToNickToken $rawWord
-        if ($word.Length -gt 0) { [void]$themeWords.Add([pscustomobject]@{Word=$word; Meaning='ваша тематика'; Category='Своя тематика'}) }
     }
 
     $modifiers = @($script:Modifiers)
@@ -707,30 +648,21 @@ function New-AdvancedCandidatePool {
             $modifiers += [pscustomobject]@{Word=[string]$seed.Word; Meaning=[string]$seed.Meaning}
         }
     }
-    # Стиль «Двусловный» обязан давать два слова даже при снятой галочке.
     if ($Style -eq 'Двусловный') { $TwoWords = $true }
 
-    # Свои слова работают как якоря: если они заданы, каждый созданный ник содержит
-    # хотя бы одно из них, а слова категорий и стилей становятся второй частью.
-    # Раньше свои слова просто добавлялись в общий пул из сотен слов, поэтому слово
-    # Void встречалось в лучшем случае в одном нике из двадцати.
     $bases = New-Object System.Collections.ArrayList
     $secondParts = New-Object System.Collections.ArrayList
     if ($anchors.Count -gt 0) {
         foreach ($item in $anchors) { [void]$bases.Add($item) }
         foreach ($item in $modifiers) { [void]$secondParts.Add($item) }
         foreach ($item in $categoryWords) { [void]$secondParts.Add($item) }
-        foreach ($item in $themeWords) { [void]$secondParts.Add($item) }
     } else {
         foreach ($item in $categoryWords) { [void]$bases.Add($item) }
-        foreach ($item in $themeWords) { [void]$bases.Add($item) }
         foreach ($item in $modifiers) { [void]$secondParts.Add($item) }
     }
     $hasAnchors = $anchors.Count -gt 0
     $rareWords = @($script:RareShortWords)
 
-    $prefixClean = [regex]::Replace([string]$Prefix, '[^A-Za-z0-9_.-]', '')
-    $suffixClean = [regex]::Replace([string]$Suffix, '[^A-Za-z0-9_.-]', '')
     $maximum = $MaxLength
     if ($OnlyShort) { $maximum = [Math]::Min($maximum, 12) }
     $joiner = ''
@@ -738,29 +670,17 @@ function New-AdvancedCandidatePool {
 
     $result = New-Object System.Collections.ArrayList
     $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-    # Счётчики ведутся в hashtable, а не в обычных переменных: scriptblock видит
-    # переменные функции только на чтение, а hashtable — ссылочный тип, поэтому
-    # изменения внутри блоков заполнения сохраняются. Флаги исчерпания не дают
-    # финальному добору повторно запускать источник, который уже ничего не даст:
-    # повтор только раздувает счётчики отсева в диагностике.
     $counters = @{
-        Single = 0; Pair = 0; Invented = 0; InventedPair = 0; Leet = 0; Rare = 0; Number = 0
+        Single = 0; Pair = 0; Invented = 0; InventedPair = 0; Leet = 0; Rare = 0; Number = 0; Random = 0
         SingleExhausted = $false; PairExhausted = $false; InventedExhausted = $false
         InventedPairExhausted = $false; LeetExhausted = $false; RareExhausted = $false
-        NumberExhausted = $false; PairCursor = 0
+        NumberExhausted = $false; RandomExhausted = $false; PairCursor = 0
     }
 
-    # Единая точка приёма кандидата: все фильтры применяются здесь, поэтому статистика
-    # отсева и итоговое количество согласованы.
     $tryAccept = {
-        param([string]$RawName, [string]$Meaning, [string]$Category, [string]$Structure, [switch]$SkipAffixes)
+        param([string]$RawName, [string]$Meaning, [string]$Category, [string]$Structure)
         $stats['Attempts'] = $stats['Attempts'] + 1
         $name = $RawName
-        if (-not $SkipAffixes) {
-            if ($prefixClean) { $name = $prefixClean + $name }
-            if ($suffixClean) { $name = $name + $suffixClean }
-            $name = [regex]::Replace($name, '[^A-Za-z0-9_.-]', '')
-        }
         if ([string]::IsNullOrWhiteSpace($name)) { return $false }
         if ($name.Length -lt $MinLength -or $name.Length -gt $maximum) { $stats['ByLength'] = $stats['ByLength'] + 1; return $false }
         if (-not (Test-UsernameFormat -Username $name -Platform $Platform)) { $stats['ByFormat'] = $stats['ByFormat'] + 1; return $false }
@@ -789,9 +709,6 @@ function New-AdvancedCandidatePool {
         return $true
     }
 
-    # Одиночные слова. Набор баз конечен; если баз нет вовсе (не выбрана ни одна
-    # категория и не введены свои слова), источник строит ники из выдуманных слов,
-    # чтобы одна только эта галочка не приводила к пустому результату.
     $fillSingle = {
         param([int]$StopAtTotal)
         if ($result.Count -ge $StopAtTotal) { return }
@@ -823,9 +740,6 @@ function New-AdvancedCandidatePool {
         if ($result.Count -lt $StopAtTotal) { $counters['SingleExhausted'] = $true }
     }
 
-    # Пары слов. Комбинации не материализуются: в случайном режиме пара выбирается
-    # наугад, в режиме «по порядку» используется курсор, поэтому повторный вызов
-    # продолжает перебор, а не начинает его заново.
     $fillPair = {
         param([int]$StopAtTotal)
         if ($result.Count -ge $StopAtTotal) { return }
@@ -899,8 +813,6 @@ function New-AdvancedCandidatePool {
         if ($result.Count -lt $StopAtTotal) { $counters['PairExhausted'] = $true }
     }
 
-    # Выдуманные слова. Если задан якорь, выдуманное слово присоединяется к нему,
-    # чтобы ник по-прежнему содержал слово пользователя.
     $fillInvented = {
         param([int]$StopAtTotal)
         if ($result.Count -ge $StopAtTotal) { return }
@@ -921,10 +833,6 @@ function New-AdvancedCandidatePool {
                     $name = $word + $joiner + $anchorWord
                     $meaning = 'выдуманное слово + {0}' -f [string]$anchor.Meaning
                 }
-                # Со своим словом ник состоит из двух частей, поэтому и структура
-                # отмечается как «Два слова». Иначе свойство расходилось бы с тем, что
-                # для того же имени возвращает Get-NickStructure (внутренняя заглавная
-                # буква или подчёркивание означают два слова).
                 $structure = 'Два слова'
             } else {
                 $name = $word
@@ -938,8 +846,6 @@ function New-AdvancedCandidatePool {
         if ($result.Count -lt $StopAtTotal) { $counters['InventedExhausted'] = $true }
     }
 
-    # Выдуманные словосочетания: два выдуманных слова либо выдуманное слово и слово
-    # из выбранного набора.
     $fillInventedPair = {
         param([int]$StopAtTotal)
         if ($result.Count -ge $StopAtTotal) { return }
@@ -954,9 +860,6 @@ function New-AdvancedCandidatePool {
             $right = New-InventedWord -MinLength 3 -MaxLength 9
             $meaning = 'два выдуманных слова'
             if ($hasAnchors -and $baseArray.Count -ge 1) {
-                # Своё слово обязательно входит в ник: одна часть — якорь, вторая —
-                # выдуманное слово. Без этой ветки словосочетание теряло ключевое слово
-                # пользователя, и оно встречалось в лучшем случае в одном нике из двадцати.
                 $anchor = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
                 $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9]', '')
                 if ($anchorWord.Length -ge 1) {
@@ -979,8 +882,6 @@ function New-AdvancedCandidatePool {
         if ($result.Count -lt $StopAtTotal) { $counters['InventedPairExhausted'] = $true }
     }
 
-    # Замена части букв похожими цифрами. Базовое имя собирается так же, как в других
-    # источниках, поэтому якорь и префикс сохраняются.
     $fillLeet = {
         param([int]$StopAtTotal)
         if ($result.Count -ge $StopAtTotal) { return }
@@ -1015,9 +916,6 @@ function New-AdvancedCandidatePool {
             if ([string]::IsNullOrWhiteSpace($sourceName)) {
                 $inventedWord = New-InventedWord -MinLength ([Math]::Max(3, $MinLength)) -MaxLength $maximum
                 if ($hasAnchors -and $baseArray.Count -ge 1) {
-                    # Якорь сохраняется и здесь. Замена символами искажает само слово
-                    # (Void -> V01d) — это и есть смысл режима, но ключевое слово
-                    # пользователя остаётся основой каждого ника.
                     $anchor = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
                     $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9]', '')
                     if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) { $sourceName = $anchorWord + $joiner + $inventedWord } else { $sourceName = $inventedWord + $joiner + $anchorWord }
@@ -1031,9 +929,6 @@ function New-AdvancedCandidatePool {
             }
             $leet = Convert-ToLeetWord -Word $sourceName -MaxSubstitutions (Get-Random -Minimum 1 -Maximum 3)
             if ($leet -ceq $sourceName) { $failStreak++; continue }
-            # Структура определяется по готовому имени, а не по замыслу: замена символами
-            # меняет слово, и свойство обязано совпадать с тем, что для этого же имени
-            # возвращает Get-NickStructure.
             $structure = Get-NickStructure -Name $leet
             if (& $tryAccept $leet $meaning $category $structure) {
                 $counters['Leet'] = $counters['Leet'] + 1
@@ -1043,7 +938,6 @@ function New-AdvancedCandidatePool {
         if ($result.Count -lt $StopAtTotal) { $counters['LeetExhausted'] = $true }
     }
 
-    # Редкие короткие ники длиной 3-6.
     $fillRare = {
         param([int]$StopAtTotal)
         if ($result.Count -ge $StopAtTotal) { return }
@@ -1084,9 +978,6 @@ function New-AdvancedCandidatePool {
         if ($result.Count -lt $StopAtTotal) { $counters['RareExhausted'] = $true }
     }
 
-    # Цифры — такая же доля квоты, как и остальные источники, а не добор при нехватке.
-    # Варианты строятся из уже созданных ников, поэтому якорь и префикс сохраняются;
-    # если результатов ещё нет, базовое имя создаётся заново.
     $fillNumber = {
         param([int]$StopAtTotal)
         if ($result.Count -ge $StopAtTotal) { return }
@@ -1106,7 +997,6 @@ function New-AdvancedCandidatePool {
                 $meaning = '{0} + число' -f [string]$entry.Meaning
                 $category = [string]$entry.Category
                 $structure = [string]$entry.Structure
-                $skipAffixes = $true
             } else {
                 if ($baseArray.Count -ge 1) {
                     $item = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
@@ -1119,13 +1009,12 @@ function New-AdvancedCandidatePool {
                     $category = 'Выдуманные слова'
                 }
                 $structure = 'Одно слово'
-                $skipAffixes = $false
             }
             if ([string]::IsNullOrWhiteSpace($baseName)) { $failStreak++; continue }
             $number = Get-Random -Minimum 2 -Maximum 10000
             $withNumber = $baseName + $number
             if ($withNumber.Length -gt $maximum) { $failStreak++; continue }
-            if (& $tryAccept $withNumber $meaning $category $structure -SkipAffixes:$skipAffixes) {
+            if (& $tryAccept $withNumber $meaning $category $structure) {
                 $counters['Number'] = $counters['Number'] + 1
                 $failStreak = 0
             } else { $failStreak++ }
@@ -1133,11 +1022,39 @@ function New-AdvancedCandidatePool {
         if ($result.Count -lt $StopAtTotal) { $counters['NumberExhausted'] = $true }
     }
 
-    # Каждый включённый источник получает равную долю запрошенного количества.
-    # Раньше этапы шли строго последовательно и первый источник заполнял весь запрос:
-    # при отмеченной галочке «Два осмысленных слова» пары не создавались вовсе, а
-    # галочка «Использовать цифры» не давала ничего. Целевое значение накапливается,
-    # поэтому исчерпанный источник автоматически компенсируется следующим.
+    $fillRandom = {
+        param([int]$StopAtTotal)
+        if ($result.Count -ge $StopAtTotal) { return }
+        $budget = [Math]::Max(300, ($StopAtTotal - $result.Count) * 40)
+        $attempts = 0
+        $failStreak = 0
+        $letters = 'abcdefghijklmnopqrstuvwxyz'.ToCharArray()
+        while ($result.Count -lt $StopAtTotal -and $attempts -lt $budget -and $failStreak -lt 400) {
+            $attempts++
+            $partCount = 1
+            if ($joiner -and (Get-Random -Minimum 0 -Maximum 2) -eq 0) { $partCount = 2 }
+            $parts = @()
+            for ($partIndex = 0; $partIndex -lt $partCount; $partIndex++) {
+                $partLen = Get-Random -Minimum ([Math]::Max(2, $MinLength)) -Maximum ([Math]::Max(4, $maximum + 1))
+                $chars = New-Object System.Collections.ArrayList
+                for ($charIndex = 0; $charIndex -lt $partLen; $charIndex++) {
+                    [void]$chars.Add([string]$letters[(Get-Random -Minimum 0 -Maximum $letters.Length)])
+                }
+                $parts += (-join $chars.ToArray())
+            }
+            $name = $parts -join $joiner
+            if ($parts.Count -eq 1 -and -not $joiner -and $name.Length -gt 4 -and (Get-Random -Minimum 0 -Maximum 4) -eq 0) {
+                $name = $name.Insert((Get-Random -Minimum 2 -Maximum ($name.Length - 1)), '_')
+            }
+            $name = [char]::ToUpperInvariant($name[0]) + $name.Substring(1)
+            if (& $tryAccept $name 'случайный набор символов' 'Случайные символы' (Get-NickStructure -Name $name)) {
+                $counters['Random'] = $counters['Random'] + 1
+                $failStreak = 0
+            } else { $failStreak++ }
+        }
+        if ($result.Count -lt $StopAtTotal) { $counters['RandomExhausted'] = $true }
+    }
+
     $activeSources = New-Object System.Collections.ArrayList
     if ($OneWord) { [void]$activeSources.Add('Single') }
     if ($TwoWords) { [void]$activeSources.Add('Pair') }
@@ -1145,13 +1062,14 @@ function New-AdvancedCandidatePool {
     if ($InventedPairs) { [void]$activeSources.Add('InventedPair') }
     if ($LeetWords) { [void]$activeSources.Add('Leet') }
     if ($RareShort) { [void]$activeSources.Add('Rare') }
-    # Цифры всегда последними: они строятся из уже созданных ников.
+    if ($RandomChars) { [void]$activeSources.Add('Random') }
     if ($UseNumbers) { [void]$activeSources.Add('Number') }
     if ($activeSources.Count -eq 0) { [void]$activeSources.Add('Single') }
 
     $sourceBlocks = @{
         Single = $fillSingle; Pair = $fillPair; Invented = $fillInvented
         InventedPair = $fillInventedPair; Leet = $fillLeet; Rare = $fillRare; Number = $fillNumber
+        Random = $fillRandom
     }
 
     $perSource = [int][Math]::Ceiling($Count / $activeSources.Count)
@@ -1163,9 +1081,6 @@ function New-AdvancedCandidatePool {
         if ($target -gt $Count) { $target = $Count }
         & $sourceBlocks[[string]$sourceName] $target
     }
-    # Добор остатка: источники, которые ещё не исчерпаны, запускаются снова. Проходов
-    # несколько, потому что выдуманные слова и цифры практически неисчерпаемы, а
-    # словарные источники могут закончиться на первом же проходе.
     for ($pass = 0; $pass -lt 4 -and $result.Count -lt $Count; $pass++) {
         $progressed = $false
         $before = $result.Count
@@ -1178,14 +1093,11 @@ function New-AdvancedCandidatePool {
         if (-not $progressed) { break }
     }
 
-    foreach ($key in @('Single','Pair','Invented','InventedPair','Leet','Rare','Number')) {
+    foreach ($key in @('Single','Pair','Invented','InventedPair','Leet','Rare','Number','Random')) {
         $stats[$key] = $counters[$key]
     }
     $script:GenerationStats = $stats
     if ($result.Count -eq 0) { return @() }
-    # В режиме «по порядку» результат не перемешивается: пользователь явно просит
-    # последовательную выдачу. В случайном режиме порядок выравнивается, чтобы
-    # первые строки таблицы не занимал один и тот же источник.
     if ($Ordered) {
         $take = [Math]::Min($Count, $result.Count)
         return @($result | Select-Object -First $take)
@@ -1195,15 +1107,55 @@ function New-AdvancedCandidatePool {
     return @($shuffled | Select-Object -First $take)
 }
 
+$script:SplashForm = New-Object System.Windows.Forms.Form
+$splashLogo = New-Object System.Windows.Forms.PictureBox
+$splashTitle = New-Object System.Windows.Forms.Label
+$splashSub = New-Object System.Windows.Forms.Label
+$splashBar = New-Object System.Windows.Forms.Panel
+try {
+    $script:SplashForm.FormBorderStyle = 'None'
+    $script:SplashForm.StartPosition = 'CenterScreen'
+    $script:SplashForm.ShowInTaskbar = $false
+    $script:SplashForm.TopMost = $true
+    $script:SplashForm.Size = New-Object System.Drawing.Size(460,262)
+    $script:SplashForm.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+    $splashLogo.Location = New-Object System.Drawing.Point(182,28)
+    $splashLogo.Size = New-Object System.Drawing.Size(96,96)
+    $splashLogo.SizeMode = 'Zoom'
+    $splashLogo.BackColor = [System.Drawing.Color]::Transparent
+    $splashTitle.Text = 'UUF'
+    $splashTitle.Location = New-Object System.Drawing.Point(0,132)
+    $splashTitle.Size = New-Object System.Drawing.Size(460,30)
+    $splashTitle.TextAlign = 'Center'
+    $splashTitle.Font = New-Object System.Drawing.Font('Segoe UI', 15, [System.Drawing.FontStyle]::Bold)
+    $splashTitle.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $splashSub.Text = 'Universal Username Finder · загрузка'
+    $splashSub.Location = New-Object System.Drawing.Point(0,164)
+    $splashSub.Size = New-Object System.Drawing.Size(460,20)
+    $splashSub.TextAlign = 'Center'
+    $splashSub.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+    $splashBar.Location = New-Object System.Drawing.Point(60,206)
+    $splashBar.Size = New-Object System.Drawing.Size(0,4)
+    $splashBar.BackColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $script:SplashForm.Controls.Add($splashLogo)
+    $script:SplashForm.Controls.Add($splashTitle)
+    $script:SplashForm.Controls.Add($splashSub)
+    $script:SplashForm.Controls.Add($splashBar)
+    $script:SplashLogoBox = $splashLogo
+    $script:SplashForm.Show()
+    for ($splashFrame = 1; $splashFrame -le 18; $splashFrame++) {
+        $splashBar.Width = [int](340 * $splashFrame / 18)
+        $script:SplashForm.Refresh()
+        Start-Sleep -Milliseconds 26
+    }
+} catch { }
+
+# --- Интерфейс: окно и заголовок
 $script:Form = New-Object System.Windows.Forms.Form
-$script:Form.Text = ('Universal Username Finder v{0}' -f $script:AppVersion)
+$script:Form.Text = ('UUF v{0}' -f $script:AppVersion)
 $script:Form.StartPosition = 'CenterScreen'
-# Размер окна и его минимум подгоняются под рабочую область экрана.
-# Фиксированный минимум 1240x910 на ноутбуках с экраном 1366x768 не помещался по высоте:
-# нижняя часть интерфейса оказывалась за пределами экрана, а уменьшить окно было нельзя.
-# На больших экранах значения остаются прежними — меняется только поведение на тесных.
-$designWindowSize = New-Object System.Drawing.Size(1480, 960)
-$designMinimumSize = New-Object System.Drawing.Size(1240, 910)
+$designWindowSize = New-Object System.Drawing.Size(1480, 1010)
+$designMinimumSize = New-Object System.Drawing.Size(1240, 960)
 try {
     $workingArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     $minimumWidth = [Math]::Min($designMinimumSize.Width, [Math]::Max(760, $workingArea.Width - 32))
@@ -1211,24 +1163,171 @@ try {
     $windowWidth = [Math]::Max($minimumWidth, [Math]::Min($designWindowSize.Width, $workingArea.Width))
     $windowHeight = [Math]::Max($minimumHeight, [Math]::Min($designWindowSize.Height, $workingArea.Height))
 } catch {
-    # Если экран определить не удалось, остаются проектные значения.
     $minimumWidth = $designMinimumSize.Width
     $minimumHeight = $designMinimumSize.Height
     $windowWidth = $designWindowSize.Width
     $windowHeight = $designWindowSize.Height
 }
-# MinimumSize задаётся до Size: иначе WinForms поднимет размер окна обратно до минимума.
 $script:Form.MinimumSize = New-Object System.Drawing.Size($minimumWidth, $minimumHeight)
 $script:Form.Size = New-Object System.Drawing.Size($windowWidth, $windowHeight)
-$script:Form.BackColor = [System.Drawing.Color]::FromArgb(15, 19, 27)
-$script:Form.ForeColor = [System.Drawing.Color]::FromArgb(235, 240, 248)
+$script:Form.BackColor = [System.Drawing.Color]::FromArgb(245,246,248)
+$script:Form.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $script:Form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$script:Form.FormBorderStyle = 'None'
+Add-Type -TypeDefinition @'
+using System;
+using System.Drawing;
+using System.Windows.Forms;
+public sealed class UufResizeFrame : NativeWindow {
+    protected override void WndProc(ref Message m) {
+        if (m.Msg == 0x84) {
+            base.WndProc(ref m);
+            if ((int)m.Result == 1) {
+                Form f = Control.FromHandle(m.HWnd) as Form;
+                if (f != null) {
+                    int lp = m.LParam.ToInt32();
+                    int x = (short)(lp & 0xFFFF);
+                    int y = (short)((lp >> 16) & 0xFFFF);
+                    Point p = f.PointToClient(new Point(x, y));
+                    int g = 7;
+                    bool l = p.X < g, r = p.X >= f.ClientSize.Width - g, t = p.Y < g, b = p.Y >= f.ClientSize.Height - g;
+                    if (l && t) { m.Result = (IntPtr)13; } else if (r && t) { m.Result = (IntPtr)14; }
+                    else if (l && b) { m.Result = (IntPtr)16; } else if (r && b) { m.Result = (IntPtr)17; }
+                    else if (l) { m.Result = (IntPtr)10; } else if (r) { m.Result = (IntPtr)11; }
+                    else if (t) { m.Result = (IntPtr)12; } else if (b) { m.Result = (IntPtr)15; }
+                }
+            }
+            return;
+        }
+        base.WndProc(ref m);
+    }
+}
+public static class UufWin32 {
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    public static extern bool ReleaseCapture();
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
+}
+'@ -ReferencedAssemblies System.Windows.Forms, System.Drawing
+
+$script:CaptionBar = New-Object System.Windows.Forms.Panel
+$script:CaptionBar.Location = New-Object System.Drawing.Point(0, 6)
+$script:CaptionBar.Size = New-Object System.Drawing.Size($windowWidth, 44)
+$script:CaptionBar.Anchor = 'Top, Left, Right'
+$script:CaptionBar.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+$script:CaptionIcon = New-Object System.Windows.Forms.PictureBox
+$script:CaptionIcon.Location = New-Object System.Drawing.Point(14,10)
+$script:CaptionIcon.Size = New-Object System.Drawing.Size(24,24)
+$script:CaptionIcon.SizeMode = 'Zoom'
+$script:CaptionIcon.BackColor = [System.Drawing.Color]::Transparent
+$script:CaptionBar.Controls.Add($script:CaptionIcon)
+$script:CaptionTitle = New-Object System.Windows.Forms.Label
+$script:CaptionTitle.Text = 'UUF'
+$script:CaptionTitle.Location = New-Object System.Drawing.Point(46,13)
+$script:CaptionTitle.Size = New-Object System.Drawing.Size(400,20)
+$script:CaptionTitle.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:CaptionTitle.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+$script:CaptionBar.Controls.Add($script:CaptionTitle)
+$script:CaptionMin = New-Object System.Windows.Forms.Button
+$script:CaptionMin.Text = '—'
+$script:CaptionMin.Location = New-Object System.Drawing.Point($windowWidth - 146, 8)
+$script:CaptionMin.Size = New-Object System.Drawing.Size(46,28)
+$script:CaptionMin.Anchor = 'Top, Right'
+$script:CaptionMin.FlatStyle = 'Flat'
+$script:CaptionMin.FlatAppearance.BorderSize = 0
+$script:CaptionMin.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+$script:CaptionMin.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:CaptionBar.Controls.Add($script:CaptionMin)
+$script:CaptionMax = New-Object System.Windows.Forms.Button
+$script:CaptionMax.Text = '□'
+$script:CaptionMax.Location = New-Object System.Drawing.Point($windowWidth - 100, 8)
+$script:CaptionMax.Size = New-Object System.Drawing.Size(46,28)
+$script:CaptionMax.Anchor = 'Top, Right'
+$script:CaptionMax.FlatStyle = 'Flat'
+$script:CaptionMax.FlatAppearance.BorderSize = 0
+$script:CaptionMax.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+$script:CaptionMax.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:CaptionBar.Controls.Add($script:CaptionMax)
+$script:CaptionClose = New-Object System.Windows.Forms.Button
+$script:CaptionClose.Text = '✕'
+$script:CaptionClose.Location = New-Object System.Drawing.Point($windowWidth - 54, 8)
+$script:CaptionClose.Size = New-Object System.Drawing.Size(46,28)
+$script:CaptionClose.Anchor = 'Top, Right'
+$script:CaptionClose.FlatStyle = 'Flat'
+$script:CaptionClose.FlatAppearance.BorderSize = 0
+$script:CaptionClose.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+$script:CaptionClose.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:CaptionBar.Controls.Add($script:CaptionClose)
+$script:Form.Controls.Add($script:CaptionBar)
+$captionDrag = {
+    param($sender, $e)
+    if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
+        [void][UufWin32]::ReleaseCapture()
+        [void][UufWin32]::SendMessage($script:Form.Handle, 0xA1, [IntPtr]2, [IntPtr]::Zero)
+    }
+}
+$captionDblClick = {
+    if ($script:Form.WindowState -eq 'Maximized') { $script:Form.WindowState = 'Normal' } else { $script:Form.WindowState = 'Maximized' }
+}
+foreach ($captionPart in @($script:CaptionBar, $script:CaptionTitle, $script:CaptionIcon)) {
+    $captionPart.Add_MouseDown($captionDrag)
+    $captionPart.Add_MouseDoubleClick($captionDblClick)
+}
+$script:CaptionMin.Add_Click({ $script:Form.WindowState = 'Minimized' })
+$script:CaptionMax.Add_Click($captionDblClick)
+$script:CaptionClose.Add_Click({ $script:Form.Close() })
+try {
+    $assetsDirectory = [System.IO.Path]::Combine((Get-AppDirectory), 'assets')
+    $logoPngPath = [System.IO.Path]::Combine($assetsDirectory, 'logo.png')
+    if ([System.IO.File]::Exists($logoPngPath)) {
+        $logoImage = [System.Drawing.Image]::FromFile($logoPngPath)
+        $script:CaptionIcon.Image = $logoImage
+        if ($null -ne $script:SplashLogoBox) { $script:SplashLogoBox.Image = $logoImage }
+    }
+    $uufIcoPath = [System.IO.Path]::Combine($assetsDirectory, 'uuf.ico')
+    if ([System.IO.File]::Exists($uufIcoPath)) { $script:Form.Icon = New-Object System.Drawing.Icon($uufIcoPath) }
+} catch { }
+
+function Start-ColorTransition {
+    param([System.Windows.Forms.Control]$Control, [System.Drawing.Color]$Target)
+    if ($null -eq $Control) { return }
+    $from = $Control.BackColor
+    if ($from -eq $Target) { return }
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 22
+    $step = 0
+    $timer.Add_Tick({
+        $step++
+        $k = [Math]::Min(1, $step / 4)
+        $r = [int]($from.R + ($Target.R - $from.R) * $k)
+        $g = [int]($from.G + ($Target.G - $from.G) * $k)
+        $b = [int]($from.B + ($Target.B - $from.B) * $k)
+        try { $Control.BackColor = [System.Drawing.Color]::FromArgb($r, $g, $b) } catch { }
+        if ($step -ge 4) { $timer.Stop(); $timer.Dispose() }
+    })
+    $timer.Start()
+}
+
+$script:WireButtonAnimations = {
+    param([System.Windows.Forms.Control]$Root)
+    if ($null -eq $Root) { return }
+    foreach ($child in @($Root.Controls)) {
+        if ($child -is [System.Windows.Forms.Button]) {
+            $baseColor = $child.BackColor
+            $hoverColor = [System.Drawing.Color]::FromArgb(238,239,242)
+            if ($baseColor.R -lt 70 -and $baseColor.G -lt 70) { $hoverColor = [System.Drawing.Color]::FromArgb(52,55,62) }
+            $child.Add_MouseEnter({ Start-ColorTransition -Control $child -Target $hoverColor })
+            $child.Add_MouseLeave({ Start-ColorTransition -Control $child -Target $baseColor })
+        }
+        if ($child.Controls.Count -gt 0) { & $script:WireButtonAnimations $child }
+    }
+}
 
 $header = New-Object System.Windows.Forms.Panel
-$header.Location = New-Object System.Drawing.Point(0, 0)
+$header.Location = New-Object System.Drawing.Point(0, 50)
 $header.Size = New-Object System.Drawing.Size(1480, 76)
 $header.Anchor = 'Top, Left, Right'
-$header.BackColor = [System.Drawing.Color]::FromArgb(23, 30, 42)
+$header.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
 $script:Form.Controls.Add($header)
 
 $title = New-Object System.Windows.Forms.Label
@@ -1242,7 +1341,7 @@ $header.Controls.Add($title)
 $subtitle = New-Object System.Windows.Forms.Label
 $subtitle.Text = 'Автоматическая генерация и проверка имён для популярных платформ'
 $subtitle.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-$subtitle.ForeColor = [System.Drawing.Color]::FromArgb(177, 188, 207)
+$subtitle.ForeColor = [System.Drawing.Color]::FromArgb(140,145,153)
 $subtitle.AutoSize = $true
 $subtitle.Location = New-Object System.Drawing.Point(25, 48)
 $header.Controls.Add($subtitle)
@@ -1254,8 +1353,8 @@ $script:ApiDocsButton.Size = New-Object System.Drawing.Size(100, 38)
 $script:ApiDocsButton.Anchor = 'Top, Right'
 $script:ApiDocsButton.FlatStyle = 'Flat'
 $script:ApiDocsButton.FlatAppearance.BorderSize = 0
-$script:ApiDocsButton.BackColor = [System.Drawing.Color]::FromArgb(42, 52, 70)
-$script:ApiDocsButton.ForeColor = [System.Drawing.Color]::White
+$script:ApiDocsButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+$script:ApiDocsButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $header.Controls.Add($script:ApiDocsButton)
 $script:HistoryButton = New-Object System.Windows.Forms.Button
 $script:HistoryButton.Text = 'Свободные ники'
@@ -1264,8 +1363,8 @@ $script:HistoryButton.Size = New-Object System.Drawing.Size(150, 38)
 $script:HistoryButton.Anchor = 'Top, Right'
 $script:HistoryButton.FlatStyle = 'Flat'
 $script:HistoryButton.FlatAppearance.BorderSize = 0
-$script:HistoryButton.BackColor = [System.Drawing.Color]::FromArgb(42, 52, 70)
-$script:HistoryButton.ForeColor = [System.Drawing.Color]::White
+$script:HistoryButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+$script:HistoryButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $header.Controls.Add($script:HistoryButton)
 $script:AccountButton = New-Object System.Windows.Forms.Button
 $script:AccountButton.Text = 'Пароль / регистрация'
@@ -1275,16 +1374,17 @@ $script:AccountButton.Anchor = 'Top, Right'
 $script:AccountButton.FlatStyle = 'Flat'
 $script:AccountButton.FlatAppearance.BorderSize = 0
 $script:AccountButton.BackColor = [System.Drawing.Color]::FromArgb(67, 123, 235)
-$script:AccountButton.ForeColor = [System.Drawing.Color]::White
+$script:AccountButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $script:AccountButton.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 9.5, [System.Drawing.FontStyle]::Bold)
 $script:AccountButton.Cursor = [System.Windows.Forms.Cursors]::Hand
 $header.Controls.Add($script:AccountButton)
 
+# --- Интерфейс: левая панель
 $left = New-Object System.Windows.Forms.Panel
-$left.Location = New-Object System.Drawing.Point(14, 88)
+$left.Location = New-Object System.Drawing.Point(14, 94)
 $left.Size = New-Object System.Drawing.Size(390, 790)
 $left.Anchor = 'Top, Bottom, Left'
-$left.BackColor = [System.Drawing.Color]::FromArgb(23, 30, 42)
+$left.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
 $left.AutoScroll = $true
 $script:Form.Controls.Add($left)
 
@@ -1294,7 +1394,7 @@ function Add-UiLabel {
     $label.Text = $Text
     $label.Location = New-Object System.Drawing.Point($X, $Y)
     $label.Size = New-Object System.Drawing.Size($Width, $Height)
-    $label.ForeColor = [System.Drawing.Color]::FromArgb(203, 213, 228)
+    $label.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
     $Parent.Controls.Add($label)
     return $label
 }
@@ -1308,11 +1408,11 @@ function Add-UiButton {
     $button.FlatAppearance.BorderSize = 0
     $button.Cursor = [System.Windows.Forms.Cursors]::Hand
     if ($Primary) {
-        $button.BackColor = [System.Drawing.Color]::FromArgb(93, 73, 222)
-        $button.ForeColor = [System.Drawing.Color]::White
+        $button.BackColor = [System.Drawing.Color]::FromArgb(24, 26, 30)
+        $button.ForeColor = [System.Drawing.Color]::FromArgb(255, 255, 255)
     } else {
-        $button.BackColor = [System.Drawing.Color]::FromArgb(42, 52, 70)
-        $button.ForeColor = [System.Drawing.Color]::FromArgb(235, 240, 248)
+        $button.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+        $button.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     }
     $Parent.Controls.Add($button)
     return $button
@@ -1322,30 +1422,25 @@ function New-TextBox {
     $box = New-Object System.Windows.Forms.TextBox
     $box.Location = New-Object System.Drawing.Point($X,$Y)
     $box.Size = New-Object System.Drawing.Size($Width,$Height)
-    $box.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-    $box.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $box.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+    $box.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $box.BorderStyle = 'FixedSingle'
     if ($Placeholder) {
-        # Подсказка больше не считается значением поля: при получении фокуса она
-        # стирается, при потере фокуса и пустом поле возвращается. Раньше строка
-        # «Pixel, Void, Storm» просто лежала в .Text, и если пользователь дописывал
-        # свои слова вместо полной замены, Pixel и Void молча становились базовыми
-        # словами и участвовали в генерации.
         $box.Tag = $Placeholder
         $box.Text = $Placeholder
-        $box.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
+        $box.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
         $box.Add_GotFocus({
             $hint = [string]$this.Tag
             if ($hint -and $this.Text -eq $hint) {
                 $this.Text = ''
-                $this.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+                $this.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
             }
         })
         $box.Add_LostFocus({
             $hint = [string]$this.Tag
             if ($hint -and [string]::IsNullOrWhiteSpace($this.Text)) {
                 $this.Text = $hint
-                $this.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
+                $this.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
             }
         })
     }
@@ -1354,8 +1449,6 @@ function New-TextBox {
 }
 function Get-TextBoxValue {
     param($Box)
-    # Возвращает текст поля, но пустую строку, если в поле осталась подсказка.
-    # Заменяет сравнение с литералом «Pixel, Void, Storm» в обработчиках.
     if (-not $Box) { return '' }
     $value = [string]$Box.Text
     $hint = [string]$Box.Tag
@@ -1368,7 +1461,7 @@ function New-CheckBox {
     $box.Text = $Text
     $box.Location = New-Object System.Drawing.Point($X,$Y)
     $box.Size = New-Object System.Drawing.Size($Width,23)
-    $box.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
+    $box.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
     $box.Checked = $Checked
     $left.Controls.Add($box)
     return $box
@@ -1381,8 +1474,8 @@ function New-NumberBox {
     $box.Minimum = $Min
     $box.Maximum = $Max
     $box.Value = $Value
-    $box.BackColor = [System.Drawing.Color]::FromArgb(32,41,56)
-    $box.ForeColor = [System.Drawing.Color]::White
+    $box.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+    $box.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $left.Controls.Add($box)
     return $box
 }
@@ -1392,15 +1485,10 @@ $script:CategoryList = New-Object System.Windows.Forms.CheckedListBox
 $script:CategoryList.Location = New-Object System.Drawing.Point(14, 36)
 $script:CategoryList.Size = New-Object System.Drawing.Size(350, 300)
 $script:CategoryList.CheckOnClick = $true
-$script:CategoryList.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-$script:CategoryList.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
+$script:CategoryList.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+$script:CategoryList.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $script:CategoryList.BorderStyle = 'FixedSingle'
-# Список категорий берётся из $script:WordCategories — того же массива, которым пользуется
-# генератор. Раньше названия были зашиты здесь строками и расходились со словарём: теперь
-# новую категорию достаточно добавить в одном месте, и она появится в интерфейсе сама.
 [void]$script:CategoryList.Items.AddRange([object[]]@($script:WordCategories))
-# По умолчанию отмечены все категории: материала для генерации максимум, а сузить выбор
-# можно кликом. Кнопки ниже отмечают и снимают отметки сразу со всех пунктов.
 for ($categoryIndex = 0; $categoryIndex -lt $script:CategoryList.Items.Count; $categoryIndex++) {
     $script:CategoryList.SetItemChecked($categoryIndex, $true)
 }
@@ -1424,90 +1512,68 @@ $script:StyleBox = New-Object System.Windows.Forms.ComboBox
 $script:StyleBox.Location = New-Object System.Drawing.Point(14,396)
 $script:StyleBox.Size = New-Object System.Drawing.Size(350,27)
 $script:StyleBox.DropDownStyle = 'DropDownList'
-$script:StyleBox.BackColor = [System.Drawing.Color]::FromArgb(32,41,56)
-$script:StyleBox.ForeColor = [System.Drawing.Color]::White
+$script:StyleBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+$script:StyleBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 [void]$script:StyleBox.Items.AddRange([object[]]@('Минималистичный','Киберспортивный','Футуристический','Тёмный','Эстетичный','Редкий','Короткий','Двусловный','— без стиля —'))
-$script:StyleBox.SelectedItem = 'Футуристический'
+$script:StyleBox.SelectedItem = '— без стиля —'
 $left.Controls.Add($script:StyleBox)
 
 Add-UiLabel 'Свои слова через запятую' 14 431 350 22 | Out-Null
 $script:CustomBox = New-TextBox 14 454 350 27 'Pixel, Void, Storm'
-Add-UiLabel 'Своя тематика (например: океан, киберпанк)' 14 489 350 22 | Out-Null
-$script:ThemeBox = New-TextBox 14 512 350 27 ''
-Add-UiLabel 'Ручные ники для проверки (каждый с новой строки или через запятую)' 14 547 350 35 | Out-Null
-$script:ManualNickBox = New-TextBox 14 582 350 60 ''
+Add-UiLabel 'Ручные ники для проверки (каждый с новой строки или через запятую)' 14 489 350 35 | Out-Null
+$script:ManualNickBox = New-TextBox 14 512 350 60 ''
 $script:ManualNickBox.Multiline = $true
 $script:ManualNickBox.ScrollBars = 'Vertical'
 
-Add-UiLabel 'НАСТРОЙКИ ГЕНЕРАЦИИ' 14 651 350 22 | Out-Null
-Add-UiLabel 'Количество' 14 675 90 18 | Out-Null
-$script:CountBox = New-NumberBox 14 694 90 5 2000 40
-Add-UiLabel 'Мин. длина' 120 675 90 18 | Out-Null
-$script:MinLengthBox = New-NumberBox 120 694 80 1 64 3
-Add-UiLabel 'Макс. длина' 216 675 100 18 | Out-Null
-$script:MaxLengthBox = New-NumberBox 216 694 80 1 64 16
-Add-UiLabel 'Префикс' 14 727 155 18 | Out-Null
-$script:PrefixBox = New-TextBox 14 746 165 27 ''
-Add-UiLabel 'Суффикс' 194 727 155 18 | Out-Null
-$script:SuffixBox = New-TextBox 194 746 170 27 ''
+Add-UiLabel 'НАСТРОЙКИ ГЕНЕРАЦИИ' 14 581 350 22 | Out-Null
+Add-UiLabel 'Количество' 14 605 90 18 | Out-Null
+$script:CountBox = New-NumberBox 14 624 90 5 2000 40
+Add-UiLabel 'Мин. длина' 120 605 90 18 | Out-Null
+$script:MinLengthBox = New-NumberBox 120 624 80 1 64 3
+Add-UiLabel 'Макс. длина' 216 605 100 18 | Out-Null
+$script:MaxLengthBox = New-NumberBox 216 624 80 1 64 25
 
-# Галочки разбиты на шесть рядов по две. Первые четыре ряда описывают, из чего собирать
-# ник: структура (одно/два слова), выдуманные слова и словосочетания, замена букв
-# символами, редкие короткие формы. Последние два ряда — фильтрация и порядок выдачи.
-# Выдуманные слова включены по умолчанию: при «Исключать проверенные» словарный запас
-# конечен и без них генерация упирается в исчерпание пространства имён.
-$script:NumbersCheck = New-CheckBox 'Использовать цифры' 14 781 170 $false
-$script:UnderscoreCheck = New-CheckBox 'Разделитель _' 194 781 170 $false
-$script:OneWordCheck = New-CheckBox 'Однословные ники' 14 805 180 $true
-$script:TwoWordsCheck = New-CheckBox 'Два осмысленных слова' 194 805 170 $true
-$script:InventedWordsCheck = New-CheckBox 'Выдуманные слова' 14 829 180 $true
-$script:InventedPairsCheck = New-CheckBox 'Выдуманные сочетания' 194 829 170 $true
-$script:LeetCheck = New-CheckBox 'Замена символами' 14 853 180 $false
-$script:RareShortCheck = New-CheckBox 'Редкие короткие (3-6)' 194 853 170 $false
-$script:ShortOnlyCheck = New-CheckBox 'Только короткие (≤12)' 14 877 180 $false
-$script:ExcludeCheckedCheck = New-CheckBox 'Исключать проверенные' 194 877 170 $true
-$script:OnlyFreeCheck = New-CheckBox 'Показывать свободные' 14 901 180 $false
-$script:OrderedCheck = New-CheckBox 'Генерация по порядку' 194 901 170 $false
+$script:NumbersCheck = New-CheckBox 'Использовать цифры' 14 659 170 $false
+$script:UnderscoreCheck = New-CheckBox 'Разделитель _' 194 659 170 $false
+$script:OneWordCheck = New-CheckBox 'Однословные ники' 14 683 180 $true
+$script:TwoWordsCheck = New-CheckBox 'Два осмысленных слова' 194 683 170 $false
+$script:InventedWordsCheck = New-CheckBox 'Выдуманные слова' 14 707 180 $true
+$script:InventedPairsCheck = New-CheckBox 'Выдуманные сочетания' 194 707 170 $false
+$script:LeetCheck = New-CheckBox 'Замена символами' 14 731 180 $false
+$script:RareShortCheck = New-CheckBox 'Редкие короткие (3-6)' 194 731 170 $true
+$script:ShortOnlyCheck = New-CheckBox 'Только короткие (≤12)' 14 755 180 $true
+$script:ExcludeCheckedCheck = New-CheckBox 'Исключать проверенные' 194 755 170 $true
+$script:OnlyFreeCheck = New-CheckBox 'Показывать свободные' 14 779 180 $false
+$script:OrderedCheck = New-CheckBox 'Генерация по порядку' 194 779 170 $false
+$script:RandomCharsCheck = New-CheckBox 'Случайные символы' 14 803 180 $true
 
-Add-UiLabel 'Исключить слова/части ника (пример: xxx, test, 123)' 14 932 350 20 | Out-Null
-$script:ExcludeBox = New-TextBox 14 953 350 27 ''
-Add-UiLabel 'Пауза (мс)' 14 988 110 18 | Out-Null
-Add-UiLabel 'Тайм-аут (мс)' 134 988 110 18 | Out-Null
-Add-UiLabel 'Потоки' 254 988 110 18 | Out-Null
-# Минимальная пауза ограничена снизу (1200 мс): слишком частые последовательные запросы
-# к одной платформе приводят к HTTP 429, временным блокировкам по IP и нарушают правила
-# использования сервисов. Предел задан в самом контроле, поэтому он виден пользователю.
-# Пауза адаптивная: значение в этом поле — стартовая точка, а не жёсткая задержка.
-# Воркер увеличивает её при HTTP 429/403 (с учётом Retry-After) и постепенно снижает
-# после серии успешных ответов, поэтому средний темп выше прежнего фиксированного порога,
-# а защита от ограничения частоты и блокировки IP сохраняется.
-# Потоки — число одновременных проверок (до 8). Рекомендуемые значения 2–4: дальше рост
-# упирается в ограничение частоты на стороне платформы, а не в процессор.
-$script:DelayBox = New-NumberBox 14 1007 110 500 15000 700
-$script:TimeoutBox = New-NumberBox 134 1007 110 1000 30000 8000
-$script:ThreadsBox = New-NumberBox 254 1007 110 1 8 2
-$script:ThreadsLabel = Add-UiLabel 'Рекомендуется 2–4 потока. Пауза адаптивная: растёт при HTTP 429 и снижается после успехов.' 14 1040 350 40
+Add-UiLabel 'Исключить слова/части ника (пример: xxx, test, 123)' 14 835 350 20 | Out-Null
+$script:ExcludeBox = New-TextBox 14 856 350 27 ''
+Add-UiLabel 'Пауза (мс)' 14 891 110 18 | Out-Null
+Add-UiLabel 'Тайм-аут (мс)' 134 891 110 18 | Out-Null
+Add-UiLabel 'Потоки' 254 891 110 18 | Out-Null
+$script:DelayBox = New-NumberBox 14 910 110 500 15000 700
+$script:TimeoutBox = New-NumberBox 134 910 110 1000 30000 8000
+$script:ThreadsBox = New-NumberBox 254 910 110 1 8 2
+$script:ThreadsLabel = Add-UiLabel 'Рекомендуется 2–4 потока. Пауза адаптивная: растёт при HTTP 429 и снижается после успехов.' 14 943 350 40
 
-$script:GenerateButton = Add-UiButton '✨ Сгенерировать и проверить' 14 1088 350 $true 37
-$script:StartButton = Add-UiButton '▶ Найти свободные' 14 1131 350 $true 37
+$script:GenerateButton = Add-UiButton 'Сгенерировать и проверить' 14 991 350 $true 37
+$script:StartButton = Add-UiButton '▶  Найти свободные' 14 1034 350 $true 37
 $script:StartButton.Visible = $false
-$script:StopButton = Add-UiButton '■ Остановить проверку' 14 1131 350 $false 35
+$script:StopButton = Add-UiButton '■  Остановить проверку' 14 1034 350 $false 35
 $script:StopButton.Enabled = $false
-$script:RetryButton = Add-UiButton '↻ Повторить ошибки' 14 1174 170 $false 33
-$script:ClearButton = Add-UiButton 'Очистить результаты' 194 1174 170 $false 33
-$script:SaveButton = Add-UiButton '⬇ TXT доступные/возможные' 14 1214 170 $false 33
-$script:CsvButton = Add-UiButton '⬇ CSV все результаты' 194 1214 170 $false 33
-$script:CopyButton = Add-UiButton 'Копировать доступные/возможные' 14 1254 350 $false 33
-# Список проверенных имён постоянный: он переживает перезапуск программы и очищает
-# выдачу от уже проверенных вариантов. Здесь его можно посмотреть, проверить снова
-# или очистить — иначе снять исключение можно было бы только удалением файла истории.
-$script:CheckedNamesButton = Add-UiButton 'Проверенные ники (0)' 14 1294 350 $false 33
+$script:RetryButton = Add-UiButton '↻  Повторить ошибки' 14 1077 170 $false 33
+$script:ClearButton = Add-UiButton '✕  Очистить результаты' 194 1077 170 $false 33
+$script:SaveButton = Add-UiButton '↓  TXT доступные/возможные' 14 1117 170 $false 33
+$script:CsvButton = Add-UiButton '↓  CSV все результаты' 194 1117 170 $false 33
+$script:CopyButton = Add-UiButton '⧉  Копировать доступные/возможные' 14 1157 350 $false 33
+$script:CheckedNamesButton = Add-UiButton '≡  Проверенные ники (0)' 14 1197 350 $false 33
 
 $right = New-Object System.Windows.Forms.Panel
-$right.Location = New-Object System.Drawing.Point(418, 88)
+$right.Location = New-Object System.Drawing.Point(418, 94)
 $right.Size = New-Object System.Drawing.Size(1040, 790)
 $right.Anchor = 'Top, Bottom, Left, Right'
-$right.BackColor = [System.Drawing.Color]::FromArgb(23, 30, 42)
+$right.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
 $script:Form.Controls.Add($right)
 
 $script:StatTotal = New-Object System.Windows.Forms.Label
@@ -1518,7 +1584,7 @@ $script:StatErrors = New-Object System.Windows.Forms.Label
 $script:StatChecked = New-Object System.Windows.Forms.Label
 $statLabels = @($script:StatTotal,$script:StatChecked,$script:StatFree,$script:StatTaken,$script:StatInvalid,$script:StatErrors)
 $statTexts = @('Всего: 0','Проверено: 0','Свободно: 0','Занято: 0','Недопустимо: 0','Ошибки: 0')
-$statColors = @([System.Drawing.Color]::White,[System.Drawing.Color]::FromArgb(200,210,226),[System.Drawing.Color]::FromArgb(99,222,151),[System.Drawing.Color]::FromArgb(245,120,120),[System.Drawing.Color]::FromArgb(186,194,207),[System.Drawing.Color]::FromArgb(255,190,92))
+$statColors = @([System.Drawing.Color]::FromArgb(24,26,30),[System.Drawing.Color]::FromArgb(140,145,153),[System.Drawing.Color]::FromArgb(24,26,30),[System.Drawing.Color]::FromArgb(150,153,158),[System.Drawing.Color]::FromArgb(150,153,158),[System.Drawing.Color]::FromArgb(120,124,130))
 for ($i=0; $i -lt $statLabels.Count; $i++) {
     $statLabels[$i].Text = $statTexts[$i]
     $statLabels[$i].Location = New-Object System.Drawing.Point((12 + 168*$i), 10)
@@ -1534,7 +1600,7 @@ $script:ProgressCaption = New-Object System.Windows.Forms.Label
 $script:ProgressCaption.Text = 'Прогресс проверки'
 $script:ProgressCaption.Location = New-Object System.Drawing.Point(14,40)
 $script:ProgressCaption.Size = New-Object System.Drawing.Size(500,18)
-$script:ProgressCaption.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
+$script:ProgressCaption.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
 $right.Controls.Add($script:ProgressCaption)
 $script:ProgressBar = New-Object System.Windows.Forms.ProgressBar
 $script:ProgressBar.Location = New-Object System.Drawing.Point(14,59)
@@ -1548,8 +1614,8 @@ $script:StatusFilterBox = New-Object System.Windows.Forms.ComboBox
 $script:StatusFilterBox.Location = New-Object System.Drawing.Point(14,78)
 $script:StatusFilterBox.Size = New-Object System.Drawing.Size(160,27)
 $script:StatusFilterBox.DropDownStyle = 'DropDownList'
-$script:StatusFilterBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-$script:StatusFilterBox.ForeColor = [System.Drawing.Color]::White
+$script:StatusFilterBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+$script:StatusFilterBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 [void]$script:StatusFilterBox.Items.AddRange([object[]]@('Все статусы','Свободен','Вероятно свободен','Занят','Недопустимый','Не подтверждено','Ошибка сети','Ожидает','Проверяется'))
 $script:StatusFilterBox.SelectedIndex = 0
 $right.Controls.Add($script:StatusFilterBox)
@@ -1557,11 +1623,8 @@ $script:SortBox = New-Object System.Windows.Forms.ComboBox
 $script:SortBox.Location = New-Object System.Drawing.Point(184,78)
 $script:SortBox.Size = New-Object System.Drawing.Size(150,27)
 $script:SortBox.DropDownStyle = 'DropDownList'
-$script:SortBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-$script:SortBox.ForeColor = [System.Drawing.Color]::White
-# «Порядок генерации» стоит первым и выбран по умолчанию: выдача остаётся в том виде,
-# в каком её собрал генератор (случайный, если не включена галочка «Генерация по
-# порядку»). Сортировка «Структура» убрана вместе с одноимённой колонкой таблицы.
+$script:SortBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+$script:SortBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 [void]$script:SortBox.Items.AddRange([object[]]@('Порядок генерации','Ник','Статус','Категория','Короткие сначала','Свободные первыми'))
 $script:SortBox.SelectedIndex = 0
 $right.Controls.Add($script:SortBox)
@@ -1569,8 +1632,8 @@ $script:SearchBox = New-Object System.Windows.Forms.TextBox
 $script:SearchBox.Location = New-Object System.Drawing.Point(344,78)
 $script:SearchBox.Size = New-Object System.Drawing.Size(678,27)
 $script:SearchBox.Anchor = 'Top, Left, Right'
-$script:SearchBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-$script:SearchBox.ForeColor = [System.Drawing.Color]::White
+$script:SearchBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+$script:SearchBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $script:SearchBox.BorderStyle = 'FixedSingle'
 $script:SearchBox.Text = ''
 $right.Controls.Add($script:SearchBox)
@@ -1580,14 +1643,14 @@ $platformRowLabel.Text = 'Платформа проверки:'
 $platformRowLabel.Location = New-Object System.Drawing.Point(14, 112)
 $platformRowLabel.Size = New-Object System.Drawing.Size(125, 27)
 $platformRowLabel.TextAlign = 'MiddleLeft'
-$platformRowLabel.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
+$platformRowLabel.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
 $right.Controls.Add($platformRowLabel)
 $script:PlatformBox = New-Object System.Windows.Forms.ComboBox
 $script:PlatformBox.Location = New-Object System.Drawing.Point(140, 112)
 $script:PlatformBox.Size = New-Object System.Drawing.Size(220, 27)
 $script:PlatformBox.DropDownStyle = 'DropDownList'
-$script:PlatformBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-$script:PlatformBox.ForeColor = [System.Drawing.Color]::White
+$script:PlatformBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+$script:PlatformBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 [void]$script:PlatformBox.Items.AddRange([object[]]@($script:SupportedPlatforms))
 $script:PlatformBox.SelectedItem = 'Roblox'
 $right.Controls.Add($script:PlatformBox)
@@ -1597,14 +1660,14 @@ $script:OpenPlatformButton.Location = New-Object System.Drawing.Point(370, 112)
 $script:OpenPlatformButton.Size = New-Object System.Drawing.Size(170, 27)
 $script:OpenPlatformButton.FlatStyle = 'Flat'
 $script:OpenPlatformButton.FlatAppearance.BorderSize = 0
-$script:OpenPlatformButton.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
-$script:OpenPlatformButton.ForeColor = [System.Drawing.Color]::White
+$script:OpenPlatformButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+$script:OpenPlatformButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $right.Controls.Add($script:OpenPlatformButton)
 $platformNote = New-Object System.Windows.Forms.Label
 $platformNote.Text = 'Для каждой платформы используется отдельный способ проверки.'
 $platformNote.Location = New-Object System.Drawing.Point(550, 112)
 $platformNote.Size = New-Object System.Drawing.Size(470, 27)
-$platformNote.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
+$platformNote.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
 $platformNote.TextAlign = 'MiddleLeft'
 $right.Controls.Add($platformNote)
 
@@ -1612,17 +1675,17 @@ $script:Grid = New-Object System.Windows.Forms.DataGridView
 $script:Grid.Location = New-Object System.Drawing.Point(14,146)
 $script:Grid.Size = New-Object System.Drawing.Size(1008,431)
 $script:Grid.Anchor = 'Top, Bottom, Left, Right'
-$script:Grid.BackgroundColor = [System.Drawing.Color]::FromArgb(17,23,32)
+$script:Grid.BackgroundColor = [System.Drawing.Color]::FromArgb(255,255,255)
 $script:Grid.BorderStyle = 'None'
-$script:Grid.GridColor = [System.Drawing.Color]::FromArgb(42,52,70)
+$script:Grid.GridColor = [System.Drawing.Color]::FromArgb(250,250,251)
 $script:Grid.EnableHeadersVisualStyles = $false
 $script:Grid.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(35,46,63)
-$script:Grid.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::White
+$script:Grid.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $script:Grid.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
 $script:Grid.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(20,27,38)
-$script:Grid.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
+$script:Grid.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $script:Grid.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(50,75,112)
-$script:Grid.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::White
+$script:Grid.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $script:Grid.RowHeadersVisible = $false
 $script:Grid.AllowUserToAddRows = $false
 $script:Grid.AllowUserToDeleteRows = $false
@@ -1634,9 +1697,6 @@ $script:Grid.AutoSizeColumnsMode = 'Fill'
 [void]$script:Grid.Columns.Add('Platform','ПЛАТФОРМА')
 [void]$script:Grid.Columns.Add('Status','СТАТУС')
 [void]$script:Grid.Columns.Add('Category','КАТЕГОРИЯ')
-# Колонки «СТРУКТУРА» в таблице больше нет: она дублировала смысл категории и лишь
-# дробила и без того плотную строку. Свойство Structure у кандидата сохранено — его
-# используют генератор, поиск и экспорт CSV, где структура по-прежнему видна.
 [void]$script:Grid.Columns.Add('Meaning','ЗНАЧЕНИЕ')
 [void]$script:Grid.Columns.Add('Time','ВРЕМЯ')
 [void]$script:Grid.Columns.Add('Reason','ПРИЧИНА')
@@ -1648,8 +1708,6 @@ $script:Grid.Columns['Meaning'].FillWeight = 19
 $script:Grid.Columns['Time'].FillWeight = 8
 $script:Grid.Columns['Reason'].FillWeight = 22
 $script:Grid.RowTemplate.Height = 27
-# Двойная буферизация убирает мерцание при частой перерисовке таблицы.
-# Свойство защищённое, поэтому включаем его через отражение; сбой не критичен.
 try {
     $doubleBuffered = $script:Grid.GetType().GetProperty('DoubleBuffered', [System.Reflection.BindingFlags]'Instance,NonPublic')
     if ($doubleBuffered) { $doubleBuffered.SetValue($script:Grid, $true, $null) }
@@ -1682,7 +1740,7 @@ $script:DiagnosticBox.Multiline = $true
 $script:DiagnosticBox.ReadOnly = $true
 $script:DiagnosticBox.ScrollBars = 'Vertical'
 $script:DiagnosticBox.WordWrap = $true
-$script:DiagnosticBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+$script:DiagnosticBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
 $script:DiagnosticBox.ForeColor = [System.Drawing.Color]::FromArgb(255,198,112)
 $script:DiagnosticBox.Font = New-Object System.Drawing.Font('Consolas',8.5)
 $script:DiagnosticBox.Text = 'Готово. Здесь отображаются события, ошибки сети и ответы API.'
@@ -1694,7 +1752,7 @@ $script:SummaryLabel.Text = 'Готово к генерации'
 $script:SummaryLabel.Location = New-Object System.Drawing.Point(390,708)
 $script:SummaryLabel.Size = New-Object System.Drawing.Size(632,28)
 $script:SummaryLabel.Anchor = 'Bottom, Left, Right'
-$script:SummaryLabel.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
+$script:SummaryLabel.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
 $script:SummaryLabel.TextAlign = 'MiddleRight'
 $right.Controls.Add($script:SummaryLabel)
 $footer = New-Object System.Windows.Forms.Label
@@ -1710,19 +1768,14 @@ $footer.Padding = New-Object System.Windows.Forms.Padding(8,0,4,0)
 $right.Controls.Add($footer)
 
 $script:AvailableNames = New-Object System.Collections.Generic.List[string]
-$script:RobloxAvailableNames = New-Object System.Collections.Generic.List[string]
+$script:PlatformAvailableNames = New-Object System.Collections.Generic.List[string]
 $script:CheckQueue = $null
 $script:CheckInputQueue = $null
 $script:Cancellation = $null
-# Проверка идёт в несколько потоков: у каждого воркера свой runspace и свой экземпляр
-# PowerShell, а очередь кандидатов и очередь результатов у них общие. Массивы хранят все
-# экземпляры, чтобы их можно было остановить и освободить одним вызовом.
 $script:WorkerPowerShells = New-Object 'System.Collections.Generic.List[object]'
 $script:WorkerRunspaces = New-Object 'System.Collections.Generic.List[object]'
 $script:AsyncHandles = New-Object 'System.Collections.Generic.List[object]'
 $script:WorkerThreadCount = 1
-# Прогресс каждого потока учитывается отдельно: воркеры знают только свой счётчик,
-# а общий прогресс и оценка времени считаются на стороне интерфейса.
 $script:WorkerDonePerThread = @{}
 $script:CompletedWorkers = 0
 $script:CheckStartedAt = $null
@@ -1755,16 +1808,19 @@ function Get-CryptoRandomIndex {
     return [int]($value % $MaxExclusive)
 }
 
+# --- Пароль и регистрация
 function New-SecurePassword {
     param([ValidateRange(16,32)][int]$Length = 20)
     $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
     $lower = 'abcdefghjkmnpqrstuvwxyz'
     $digits = '23456789'
-    $all = $upper + $lower + $digits
+    $special = '!@#$%^&*-_=+?'
+    $all = $upper + $lower + $digits + $special
     $characters = New-Object 'System.Collections.Generic.List[char]'
     [void]$characters.Add([char]$upper[(Get-CryptoRandomIndex $upper.Length)])
     [void]$characters.Add([char]$lower[(Get-CryptoRandomIndex $lower.Length)])
     [void]$characters.Add([char]$digits[(Get-CryptoRandomIndex $digits.Length)])
+    [void]$characters.Add([char]$special[(Get-CryptoRandomIndex $special.Length)])
     while ($characters.Count -lt $Length) {
         [void]$characters.Add([char]$all[(Get-CryptoRandomIndex $all.Length)])
     }
@@ -1862,16 +1918,67 @@ function Refresh-SavedAccountList {
     }
 }
 
+function Get-RegistrationUrl {
+    param([string]$Platform)
+    switch ($Platform) {
+        'Roblox' { return 'https://www.roblox.com/' }
+        'Google' { return 'https://accounts.google.com/signup' }
+        'Mail.ru' { return 'https://account.mail.ru/signup' }
+        'VK' { return 'https://vk.com/' }
+        'Discord' { return 'https://discord.com/register' }
+        'Outlook' { return 'https://signup.live.com/' }
+        'Telegram' { return 'https://telegram.org/' }
+        'Telegram Channel' { return 'https://t.me/' }
+        'GitHub' { return 'https://github.com/signup' }
+        'YouTube' { return 'https://www.youtube.com/' }
+        default { return 'https://www.google.com/' }
+    }
+}
+
+function Open-UrlInIncognito {
+    param([string]$Url)
+    $candidates = @(
+        @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe", '--incognito'),
+        @("${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe", '--incognito'),
+        @("$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe", '--incognito'),
+        @("$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe", '--inprivate'),
+        @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", '--inprivate'),
+        @("$env:ProgramFiles\BraveSoftware\Brave-Browser\Application\brave.exe", '--incognito'),
+        @("$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\Application\brave.exe", '--incognito'),
+        @("$env:LOCALAPPDATA\Vivaldi\Application\vivaldi.exe", '--incognito')
+    )
+    foreach ($candidate in $candidates) {
+        if ([System.IO.File]::Exists([string]$candidate[0])) {
+            Start-Process -FilePath ([string]$candidate[0]) -ArgumentList @([string]$candidate[1], $Url) | Out-Null
+            return $true
+        }
+    }
+    Start-Process $Url | Out-Null
+    return $false
+}
+
+function Update-AccountPlatformUi {
+    $platform = [string]$script:PlatformBox.SelectedItem
+    if ([string]::IsNullOrWhiteSpace($platform)) { return }
+    $script:AccountPlatform = $platform
+    $domain = Get-PlatformDomain -Platform $platform
+    $suffix = ''
+    if ($domain) { $suffix = ' (регистрация как ник@' + $domain + ')' }
+    if ($script:AccountForm) { $script:AccountForm.Text = 'UUF — регистрация: ' + $platform }
+    if ($script:AccountUsernameLabel) { $script:AccountUsernameLabel.Text = 'Никнейм ' + $platform + $suffix }
+    if ($script:OpenRegisterButton) { $script:OpenRegisterButton.Text = 'Открыть ' + $platform + ' для регистрации' }
+}
+
 function Open-AccountTools {
     $script:AccountForm = New-Object System.Windows.Forms.Form
-    $script:AccountForm.Text = 'Universal Username Finder — регистрация Roblox'
+    $script:AccountForm.Text = 'UUF — регистрация'
     $script:AccountForm.StartPosition = 'CenterParent'
     $script:AccountForm.Size = New-Object System.Drawing.Size(780, 610)
     $script:AccountForm.MinimumSize = New-Object System.Drawing.Size(780, 610)
     $script:AccountForm.MaximizeBox = $false
     $script:AccountForm.MinimizeBox = $false
-    $script:AccountForm.BackColor = [System.Drawing.Color]::FromArgb(15, 19, 27)
-    $script:AccountForm.ForeColor = [System.Drawing.Color]::FromArgb(235, 240, 248)
+    $script:AccountForm.BackColor = [System.Drawing.Color]::FromArgb(245,246,248)
+    $script:AccountForm.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $script:AccountForm.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 
     $tabs = New-Object System.Windows.Forms.TabControl
@@ -1880,12 +1987,12 @@ function Open-AccountTools {
     $tabs.Anchor = 'Top, Bottom, Left, Right'
     $prepareTab = New-Object System.Windows.Forms.TabPage
     $prepareTab.Text = 'Пароль и регистрация'
-    $prepareTab.BackColor = [System.Drawing.Color]::FromArgb(23, 30, 42)
-    $prepareTab.ForeColor = [System.Drawing.Color]::FromArgb(235, 240, 248)
+    $prepareTab.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+    $prepareTab.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $vaultTab = New-Object System.Windows.Forms.TabPage
     $vaultTab.Text = 'Сохранённые аккаунты'
-    $vaultTab.BackColor = [System.Drawing.Color]::FromArgb(23, 30, 42)
-    $vaultTab.ForeColor = [System.Drawing.Color]::FromArgb(235, 240, 248)
+    $vaultTab.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+    $vaultTab.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     [void]$tabs.TabPages.Add($prepareTab)
     [void]$tabs.TabPages.Add($vaultTab)
     $script:AccountTabs = $tabs
@@ -1896,15 +2003,15 @@ function Open-AccountTools {
     $intro.Text = 'Выбери ник из списка или введи свой. Пароль генерируется локально; программа не отправляет его Roblox.'
     $intro.Location = New-Object System.Drawing.Point(18, 16)
     $intro.Size = New-Object System.Drawing.Size(680, 38)
-    $intro.ForeColor = [System.Drawing.Color]::FromArgb(203, 213, 228)
+    $intro.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
     $prepareTab.Controls.Add($intro)
 
-    $usernameLabel = New-Object System.Windows.Forms.Label
-    $usernameLabel.Text = 'Никнейм Roblox'
-    $usernameLabel.Location = New-Object System.Drawing.Point(18, 60)
-    $usernameLabel.Size = New-Object System.Drawing.Size(440, 22)
-    $usernameLabel.ForeColor = [System.Drawing.Color]::FromArgb(203, 213, 228)
-    $prepareTab.Controls.Add($usernameLabel)
+    $script:AccountUsernameLabel = New-Object System.Windows.Forms.Label
+    $script:AccountUsernameLabel.Text = 'Никнейм Roblox'
+    $script:AccountUsernameLabel.Location = New-Object System.Drawing.Point(18, 60)
+    $script:AccountUsernameLabel.Size = New-Object System.Drawing.Size(440, 22)
+    $script:AccountUsernameLabel.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
+    $prepareTab.Controls.Add($script:AccountUsernameLabel)
 
     $script:AccountUsernameBox = New-Object System.Windows.Forms.ComboBox
     $script:AccountUsernameBox.Location = New-Object System.Drawing.Point(18, 84)
@@ -1912,8 +2019,8 @@ function Open-AccountTools {
     $script:AccountUsernameBox.DropDownStyle = 'DropDown'
     $script:AccountUsernameBox.AutoCompleteMode = 'SuggestAppend'
     $script:AccountUsernameBox.AutoCompleteSource = 'ListItems'
-    $script:AccountUsernameBox.BackColor = [System.Drawing.Color]::FromArgb(32, 41, 56)
-    $script:AccountUsernameBox.ForeColor = [System.Drawing.Color]::White
+    $script:AccountUsernameBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+    $script:AccountUsernameBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $prepareTab.Controls.Add($script:AccountUsernameBox)
 
     $refreshNicks = New-Object System.Windows.Forms.Button
@@ -1922,15 +2029,15 @@ function Open-AccountTools {
     $refreshNicks.Size = New-Object System.Drawing.Size(220, 32)
     $refreshNicks.FlatStyle = 'Flat'
     $refreshNicks.FlatAppearance.BorderSize = 0
-    $refreshNicks.BackColor = [System.Drawing.Color]::FromArgb(42, 52, 70)
-    $refreshNicks.ForeColor = [System.Drawing.Color]::White
+    $refreshNicks.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+    $refreshNicks.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $prepareTab.Controls.Add($refreshNicks)
 
     $passwordLabel = New-Object System.Windows.Forms.Label
-    $passwordLabel.Text = 'Случайный пароль (латинские буквы и цифры)'
+    $passwordLabel.Text = 'Случайный пароль (буквы, цифры и спецсимволы)'
     $passwordLabel.Location = New-Object System.Drawing.Point(18, 129)
     $passwordLabel.Size = New-Object System.Drawing.Size(440, 22)
-    $passwordLabel.ForeColor = [System.Drawing.Color]::FromArgb(203, 213, 228)
+    $passwordLabel.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
     $prepareTab.Controls.Add($passwordLabel)
 
     $script:PasswordLengthBox = New-Object System.Windows.Forms.NumericUpDown
@@ -1939,8 +2046,8 @@ function Open-AccountTools {
     $script:PasswordLengthBox.Minimum = 16
     $script:PasswordLengthBox.Maximum = 32
     $script:PasswordLengthBox.Value = 20
-    $script:PasswordLengthBox.BackColor = [System.Drawing.Color]::FromArgb(32, 41, 56)
-    $script:PasswordLengthBox.ForeColor = [System.Drawing.Color]::White
+    $script:PasswordLengthBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+    $script:PasswordLengthBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $prepareTab.Controls.Add($script:PasswordLengthBox)
 
     $generateButton = New-Object System.Windows.Forms.Button
@@ -1950,13 +2057,13 @@ function Open-AccountTools {
     $generateButton.FlatStyle = 'Flat'
     $generateButton.FlatAppearance.BorderSize = 0
     $generateButton.BackColor = [System.Drawing.Color]::FromArgb(67, 123, 235)
-    $generateButton.ForeColor = [System.Drawing.Color]::White
+    $generateButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $prepareTab.Controls.Add($generateButton)
 
     $script:AccountPasswordBox = New-Object System.Windows.Forms.TextBox
     $script:AccountPasswordBox.Location = New-Object System.Drawing.Point(18, 198)
     $script:AccountPasswordBox.Size = New-Object System.Drawing.Size(677, 29)
-    $script:AccountPasswordBox.BackColor = [System.Drawing.Color]::FromArgb(17, 23, 32)
+    $script:AccountPasswordBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
     $script:AccountPasswordBox.ForeColor = [System.Drawing.Color]::FromArgb(149, 222, 176)
     $script:AccountPasswordBox.Font = New-Object System.Drawing.Font('Consolas', 11)
     $script:AccountPasswordBox.BorderStyle = 'FixedSingle'
@@ -1968,19 +2075,19 @@ function Open-AccountTools {
     $copyPassButton.Size = New-Object System.Drawing.Size(180, 36)
     $copyPassButton.FlatStyle = 'Flat'
     $copyPassButton.FlatAppearance.BorderSize = 0
-    $copyPassButton.BackColor = [System.Drawing.Color]::FromArgb(42, 52, 70)
-    $copyPassButton.ForeColor = [System.Drawing.Color]::White
+    $copyPassButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+    $copyPassButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $prepareTab.Controls.Add($copyPassButton)
 
-    $openRegisterButton = New-Object System.Windows.Forms.Button
-    $openRegisterButton.Text = 'Открыть Roblox для регистрации'
-    $openRegisterButton.Location = New-Object System.Drawing.Point(210, 240)
-    $openRegisterButton.Size = New-Object System.Drawing.Size(260, 36)
-    $openRegisterButton.FlatStyle = 'Flat'
-    $openRegisterButton.FlatAppearance.BorderSize = 0
-    $openRegisterButton.BackColor = [System.Drawing.Color]::FromArgb(42, 52, 70)
-    $openRegisterButton.ForeColor = [System.Drawing.Color]::White
-    $prepareTab.Controls.Add($openRegisterButton)
+    $script:OpenRegisterButton = New-Object System.Windows.Forms.Button
+    $script:OpenRegisterButton.Text = 'Открыть Roblox для регистрации'
+    $script:OpenRegisterButton.Location = New-Object System.Drawing.Point(210, 240)
+    $script:OpenRegisterButton.Size = New-Object System.Drawing.Size(260, 36)
+    $script:OpenRegisterButton.FlatStyle = 'Flat'
+    $script:OpenRegisterButton.FlatAppearance.BorderSize = 0
+    $script:OpenRegisterButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+    $script:OpenRegisterButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $prepareTab.Controls.Add($script:OpenRegisterButton)
 
     $copyNickButton = New-Object System.Windows.Forms.Button
     $copyNickButton.Text = 'Копировать ник'
@@ -1988,15 +2095,15 @@ function Open-AccountTools {
     $copyNickButton.Size = New-Object System.Drawing.Size(213, 36)
     $copyNickButton.FlatStyle = 'Flat'
     $copyNickButton.FlatAppearance.BorderSize = 0
-    $copyNickButton.BackColor = [System.Drawing.Color]::FromArgb(42, 52, 70)
-    $copyNickButton.ForeColor = [System.Drawing.Color]::White
+    $copyNickButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+    $copyNickButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $prepareTab.Controls.Add($copyNickButton)
 
     $script:RegistrationConfirmedCheck = New-Object System.Windows.Forms.CheckBox
     $script:RegistrationConfirmedCheck.Text = 'Я завершил регистрацию с этими данными'
     $script:RegistrationConfirmedCheck.Location = New-Object System.Drawing.Point(18, 294)
     $script:RegistrationConfirmedCheck.Size = New-Object System.Drawing.Size(677, 28)
-    $script:RegistrationConfirmedCheck.ForeColor = [System.Drawing.Color]::FromArgb(203, 213, 228)
+    $script:RegistrationConfirmedCheck.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
     $prepareTab.Controls.Add($script:RegistrationConfirmedCheck)
 
     $saveAccountButton = New-Object System.Windows.Forms.Button
@@ -2006,22 +2113,22 @@ function Open-AccountTools {
     $saveAccountButton.FlatStyle = 'Flat'
     $saveAccountButton.FlatAppearance.BorderSize = 0
     $saveAccountButton.BackColor = [System.Drawing.Color]::FromArgb(37, 125, 83)
-    $saveAccountButton.ForeColor = [System.Drawing.Color]::White
+    $saveAccountButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $prepareTab.Controls.Add($saveAccountButton)
 
     $safetyInfo = New-Object System.Windows.Forms.Label
     $safetyInfo.Text = "Порядок действий: скопируй ник и пароль → открой Roblox → заполни форму и пройди проверку → отметь галочку и сохрани данные.`r`nПароль хранится в DPAPI-шифровании Windows для текущего пользователя. Автоматический ввод или обход проверок не выполняется."
     $safetyInfo.Location = New-Object System.Drawing.Point(18, 390)
     $safetyInfo.Size = New-Object System.Drawing.Size(677, 70)
-    $safetyInfo.ForeColor = [System.Drawing.Color]::FromArgb(177, 188, 207)
-    $safetyInfo.BackColor = [System.Drawing.Color]::FromArgb(32, 41, 56)
+    $safetyInfo.ForeColor = [System.Drawing.Color]::FromArgb(140,145,153)
+    $safetyInfo.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
     $safetyInfo.Padding = New-Object System.Windows.Forms.Padding(8, 7, 8, 5)
     $prepareTab.Controls.Add($safetyInfo)
 
     $script:AccountListBox = New-Object System.Windows.Forms.ListBox
     $script:AccountListBox.Location = New-Object System.Drawing.Point(18, 18)
     $script:AccountListBox.Size = New-Object System.Drawing.Size(677, 275)
-    $script:AccountListBox.BackColor = [System.Drawing.Color]::FromArgb(17, 23, 32)
+    $script:AccountListBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
     $script:AccountListBox.ForeColor = [System.Drawing.Color]::FromArgb(225, 232, 242)
     $vaultTab.Controls.Add($script:AccountListBox)
 
@@ -2029,14 +2136,14 @@ function Open-AccountTools {
     $vaultPasswordLabel.Text = 'Пароль выбранной записи'
     $vaultPasswordLabel.Location = New-Object System.Drawing.Point(18, 304)
     $vaultPasswordLabel.Size = New-Object System.Drawing.Size(400, 22)
-    $vaultPasswordLabel.ForeColor = [System.Drawing.Color]::FromArgb(203, 213, 228)
+    $vaultPasswordLabel.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
     $vaultTab.Controls.Add($vaultPasswordLabel)
 
     $script:SavedPasswordBox = New-Object System.Windows.Forms.TextBox
     $script:SavedPasswordBox.Location = New-Object System.Drawing.Point(18, 330)
     $script:SavedPasswordBox.Size = New-Object System.Drawing.Size(677, 29)
     $script:SavedPasswordBox.ReadOnly = $true
-    $script:SavedPasswordBox.BackColor = [System.Drawing.Color]::FromArgb(17, 23, 32)
+    $script:SavedPasswordBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
     $script:SavedPasswordBox.ForeColor = [System.Drawing.Color]::FromArgb(149, 222, 176)
     $script:SavedPasswordBox.Font = New-Object System.Drawing.Font('Consolas', 10)
     $vaultTab.Controls.Add($script:SavedPasswordBox)
@@ -2047,8 +2154,8 @@ function Open-AccountTools {
     $copySavedPasswordButton.Size = New-Object System.Drawing.Size(180, 36)
     $copySavedPasswordButton.FlatStyle = 'Flat'
     $copySavedPasswordButton.FlatAppearance.BorderSize = 0
-    $copySavedPasswordButton.BackColor = [System.Drawing.Color]::FromArgb(42, 52, 70)
-    $copySavedPasswordButton.ForeColor = [System.Drawing.Color]::White
+    $copySavedPasswordButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+    $copySavedPasswordButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $vaultTab.Controls.Add($copySavedPasswordButton)
 
     $copySavedUsernameButton = New-Object System.Windows.Forms.Button
@@ -2057,8 +2164,8 @@ function Open-AccountTools {
     $copySavedUsernameButton.Size = New-Object System.Drawing.Size(180, 36)
     $copySavedUsernameButton.FlatStyle = 'Flat'
     $copySavedUsernameButton.FlatAppearance.BorderSize = 0
-    $copySavedUsernameButton.BackColor = [System.Drawing.Color]::FromArgb(42, 52, 70)
-    $copySavedUsernameButton.ForeColor = [System.Drawing.Color]::White
+    $copySavedUsernameButton.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+    $copySavedUsernameButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $vaultTab.Controls.Add($copySavedUsernameButton)
 
     $deleteAccountButton = New-Object System.Windows.Forms.Button
@@ -2068,13 +2175,13 @@ function Open-AccountTools {
     $deleteAccountButton.FlatStyle = 'Flat'
     $deleteAccountButton.FlatAppearance.BorderSize = 0
     $deleteAccountButton.BackColor = [System.Drawing.Color]::FromArgb(115, 47, 55)
-    $deleteAccountButton.ForeColor = [System.Drawing.Color]::White
+    $deleteAccountButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $vaultTab.Controls.Add($deleteAccountButton)
 
     $script:VaultStatusLabel = New-Object System.Windows.Forms.Label
     $script:VaultStatusLabel.Location = New-Object System.Drawing.Point(18, 425)
     $script:VaultStatusLabel.Size = New-Object System.Drawing.Size(677, 35)
-    $script:VaultStatusLabel.ForeColor = [System.Drawing.Color]::FromArgb(177, 188, 207)
+    $script:VaultStatusLabel.ForeColor = [System.Drawing.Color]::FromArgb(140,145,153)
     $vaultTab.Controls.Add($script:VaultStatusLabel)
 
     $script:AccountUsernameBox.Add_TextChanged({
@@ -2087,7 +2194,7 @@ function Open-AccountTools {
     $refreshNicks.Add_Click({
         $keep = $script:AccountUsernameBox.Text.Trim()
         $script:AccountUsernameBox.Items.Clear()
-        foreach ($availableNick in $script:RobloxAvailableNames) { [void]$script:AccountUsernameBox.Items.Add([string]$availableNick) }
+        foreach ($availableNick in $script:PlatformAvailableNames) { [void]$script:AccountUsernameBox.Items.Add([string]$availableNick) }
         $script:AccountUsernameBox.Text = $keep
         if ($script:AccountUsernameBox.Items.Count -eq 0) {
             [System.Windows.Forms.MessageBox]::Show('В основном окне пока нет найденных свободных ников. Можно ввести ник вручную, но его доступность не подтверждена.', 'Список ников', 'OK', 'Information') | Out-Null
@@ -2121,17 +2228,20 @@ function Open-AccountTools {
         [System.Windows.Forms.Clipboard]::SetText($nick)
     })
 
-    $openRegisterButton.Add_Click({
-        if (-not (Test-RobloxUsernameFormat $script:AccountUsernameBox.Text.Trim())) {
-            [System.Windows.Forms.MessageBox]::Show('Ник должен содержать 3–20 символов: латинские буквы, цифры и не более одного подчёркивания внутри. Нельзя начинать или заканчивать ник подчёркиванием.', 'Проверь ник', 'OK', 'Warning') | Out-Null
+    $script:OpenRegisterButton.Add_Click({
+        $registerNick = $script:AccountUsernameBox.Text.Trim()
+        $registerPlatform = [string]$script:AccountPlatform
+        if (-not (Test-UsernameFormat -Username $registerNick -Platform $registerPlatform)) {
+            [System.Windows.Forms.MessageBox]::Show(('Ник не подходит для платформы ' + $registerPlatform + '. Проверь длину и допустимые символы: у каждой платформы свои правила.'), 'Проверь ник', 'OK', 'Warning') | Out-Null
             return
         }
         if ([string]::IsNullOrWhiteSpace($script:AccountPasswordBox.Text)) {
             $script:AccountPasswordBox.Text = New-SecurePassword -Length ([int]$script:PasswordLengthBox.Value)
         }
         try {
-            Start-Process 'https://www.roblox.com/'
-            [System.Windows.Forms.MessageBox]::Show("Открыл официальную страницу Roblox.`r`n`r`nСкопируй ник и пароль в форму вручную и пройди все проверки. Roblox может потребовать CAPTCHA или дополнительное подтверждение.", 'Регистрация', 'OK', 'Information') | Out-Null
+            $openedIncognito = Open-UrlInIncognito -Url (Get-RegistrationUrl -Platform $registerPlatform)
+            if ($openedIncognito) { $modeNote = 'Открыл страницу регистрации ' + $registerPlatform + ' в окне инкогнито.' } else { $modeNote = 'Открыл страницу регистрации ' + $registerPlatform + ' в браузере по умолчанию.' }
+            [System.Windows.Forms.MessageBox]::Show(($modeNote + "`r`n`r`nСкопируй ник и пароль в форму вручную и пройди все проверки. Платформа может потребовать CAPTCHA или дополнительное подтверждение."), 'Регистрация', 'OK', 'Information') | Out-Null
         } catch {
             [System.Windows.Forms.MessageBox]::Show('Не удалось открыть сайт: ' + $_.Exception.Message, 'Ошибка', 'OK', 'Error') | Out-Null
         }
@@ -2140,8 +2250,8 @@ function Open-AccountTools {
     $saveAccountButton.Add_Click({
         $nick = $script:AccountUsernameBox.Text.Trim()
         $password = $script:AccountPasswordBox.Text
-        if (-not (Test-RobloxUsernameFormat $nick)) {
-            [System.Windows.Forms.MessageBox]::Show('Проверь ник: 3–20 символов, латинские буквы и цифры; одиночное подчёркивание допускается внутри.', 'Неверный ник', 'OK', 'Warning') | Out-Null
+        if (-not (Test-UsernameFormat -Username $nick -Platform ([string]$script:AccountPlatform))) {
+            [System.Windows.Forms.MessageBox]::Show(('Проверь ник: платформа ' + [string]$script:AccountPlatform + ' не примет такой формат или длину.'), 'Неверный ник', 'OK', 'Warning') | Out-Null
             return
         }
         if ([string]::IsNullOrWhiteSpace($password) -or $password.Length -lt 16) {
@@ -2149,7 +2259,7 @@ function Open-AccountTools {
             return
         }
         if (-not $script:RegistrationConfirmedCheck.Checked) {
-            [System.Windows.Forms.MessageBox]::Show('Сначала заверши регистрацию на сайте Roblox и отметь галочку подтверждения.', 'Регистрация не подтверждена', 'OK', 'Information') | Out-Null
+            [System.Windows.Forms.MessageBox]::Show(('Сначала заверши регистрацию на сайте ' + [string]$script:AccountPlatform + ' и отметь галочку подтверждения.'), 'Регистрация не подтверждена', 'OK', 'Information') | Out-Null
             return
         }
         try {
@@ -2160,7 +2270,7 @@ function Open-AccountTools {
                 if ($choice -ne [System.Windows.Forms.DialogResult]::Yes) { return }
                 $records = @($records | Where-Object { [string]$_.Username -ine $nick })
             }
-            $record = [pscustomobject]@{Username=$nick; Password=$password; CreatedAt=(Get-Date).ToString('o')}
+            $record = [pscustomobject]@{Username=$nick; Password=$password; Platform=([string]$script:AccountPlatform); CreatedAt=(Get-Date).ToString('o')}
             $records = @($records) + @($record)
             Save-EncryptedAccountRecords -Records $records
             $script:RegistrationConfirmedCheck.Checked = $false
@@ -2221,14 +2331,14 @@ function Open-AccountTools {
     })
 
     try {
-        foreach ($availableNick in $script:RobloxAvailableNames) { [void]$script:AccountUsernameBox.Items.Add([string]$availableNick) }
+        foreach ($availableNick in $script:PlatformAvailableNames) { [void]$script:AccountUsernameBox.Items.Add([string]$availableNick) }
         $preferredNick = ''
         if ($script:Grid.CurrentRow -and $script:Grid.CurrentRow.Index -ge 0) {
             $candidateNick = [string]$script:Grid.CurrentRow.Cells['Nick'].Value
             $candidateStatus = [string]$script:Grid.CurrentRow.Cells['Status'].Value
             if ($candidateStatus -eq 'Свободен') { $preferredNick = $candidateNick }
         }
-        if (-not $preferredNick -and $script:RobloxAvailableNames.Count -gt 0) { $preferredNick = [string]$script:RobloxAvailableNames[0] }
+        if (-not $preferredNick -and $script:PlatformAvailableNames.Count -gt 0) { $preferredNick = [string]$script:PlatformAvailableNames[0] }
         $script:AccountUsernameBox.Text = $preferredNick
         $script:AccountPasswordBox.Text = New-SecurePassword -Length ([int]$script:PasswordLengthBox.Value)
         Refresh-SavedAccountList
@@ -2236,6 +2346,8 @@ function Open-AccountTools {
         $script:VaultStatusLabel.Text = 'Не удалось прочитать хранилище: ' + $_.Exception.Message
         Write-AppLog ('Ошибка открытия инструментов аккаунта: ' + $_.Exception.ToString())
     }
+    Update-AccountPlatformUi
+    & $script:WireButtonAnimations $script:AccountForm
     [void]$script:AccountForm.ShowDialog($script:Form)
 }
 
@@ -2273,15 +2385,10 @@ function Clear-CandidateIndex {
     $script:CandidateIndex = @{}
 }
 function Touch-Candidates {
-    # Любое добавление кандидата, смена его статуса или очистка списка повышает
-    # ревизию. Update-AvailableNames сравнивает её с уже обработанной и не
-    # пересчитывает свободные ники, если ничего не изменилось.
     $script:CandidateRevision = $script:CandidateRevision + 1
 }
 
-# --- Атомарная запись файлов ----------------------------------------------------
-# Используется и для истории ников, и для настроек: оба файла содержат кириллицу и
-# пишутся во время работы, поэтому сбой посреди записи не должен их портить.
+# --- Атомарная запись файлов
 
 function Write-AtomicFile {
     param(
@@ -2302,11 +2409,6 @@ function Write-AtomicFile {
         try {
             [System.IO.File]::Replace($tempPath, $fullPath, $null)
         } catch {
-            # File.Replace требует того же тома и поддержки со стороны файловой системы,
-            # и в части окружений завершается ошибкой. Резервный путь — перезапись
-            # копированием: перегрузки Move с перезаписью в .NET Framework (Windows
-            # PowerShell 5.1) не существует, а Move поверх существующего файла бросает
-            # IOException «Cannot create a file when that file already exists».
             [System.IO.File]::Copy($tempPath, $fullPath, $true)
         }
     } finally {
@@ -2319,9 +2421,6 @@ function Write-AtomicJsonFile {
         [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Json
     )
-    # Encoding.GetBytes() не добавляет BOM — его возвращает только GetPreamble().
-    # Без BOM Windows PowerShell 5.1 читает файл как ANSI (Get-Content без -Encoding),
-    # и кириллица в сохранённых настройках и истории ников ломается.
     $encoding = New-Object System.Text.UTF8Encoding -ArgumentList $true
     $preamble = $encoding.GetPreamble()
     $body = $encoding.GetBytes($Json)
@@ -2331,13 +2430,10 @@ function Write-AtomicJsonFile {
     Write-AtomicFile -Path $Path -Bytes $bytes
 }
 
+# --- Хранилище истории ников
 function Save-UsernameHistory {
     try {
         if (-not (Test-Path -LiteralPath $script:HistoryDirectory)) { [void](New-Item -ItemType Directory -Path $script:HistoryDirectory -Force) }
-        # Ограничение «первые 30» снято: из-за него новые свободные ники переставали
-        # попадать в историю после тридцатого, хотя проверка продолжала их находить.
-        # Свободные ники — главный результат работы, терять их нельзя. Предел оставлен
-        # только для служебных списков, чтобы файл не рос бесконечно.
         $data = [pscustomobject]@{
             FreeHistory = @($script:FreeHistory | Select-Object -First 5000)
             RetiredNames = @($script:RetiredNames.Keys | Select-Object -First 20000)
@@ -2345,8 +2441,6 @@ function Save-UsernameHistory {
         }
         $json = ConvertTo-Json -InputObject $data -Depth 6
         if ([string]::IsNullOrWhiteSpace($json)) { $json = '{}' }
-        # Атомарная запись: раньше Set-Content писал прямо в целевой файл, и падение
-        # программы посреди записи оставляло побитый username_history.json.
         $historyFull = [System.IO.Path]::GetFullPath($script:HistoryPath)
         Write-AtomicJsonFile -Path $historyFull -Json $json
         $script:HistoryDirty = $false
@@ -2354,9 +2448,6 @@ function Save-UsernameHistory {
     } catch { Write-AppLog ('Не удалось сохранить историю ников: ' + $_.Exception.Message) }
 }
 
-# История меняется на каждый проверенный ник; писать файл на каждое событие дорого.
-# Помечаем данные «грязными» и сбрасываем на диск не чаще раза в несколько секунд,
-# а также по завершении прогона и при закрытии окна.
 function Mark-HistoryDirty {
     $script:HistoryDirty = $true
     if (-not $script:HistoryDirtySince) { $script:HistoryDirtySince = [DateTime]::UtcNow }
@@ -2369,9 +2460,7 @@ function Flush-HistoryIfDue {
     if (([DateTime]::UtcNow - $script:HistoryDirtySince).TotalSeconds -ge $IntervalSeconds) { Save-UsernameHistory }
 }
 
-# --- Настройки приложения -------------------------------------------------------
-# Export-/Import- функции намеренно чистые (без обращений к контролам и к области
-# видимости скрипта): их можно тестировать без создания окон.
+# --- Настройки приложения
 
 function Export-AppSettings {
     param(
@@ -2394,15 +2483,12 @@ function Import-AppSettings {
         if ($null -eq $data) { return $result }
         foreach ($property in $data.PSObject.Properties) { $result[$property.Name] = $property.Value }
     } catch {
-        # Повреждённые настройки не должны мешать запуску: возвращаем пустой набор.
         return @{}
     }
     return $result
 }
 
-# --- Безопасное применение значений к контролам ---------------------------------
-# Каждое значение проверяется: выход за границы NumericUpDown и отсутствующий пункт
-# ComboBox раньше приводили к исключениям или к обнулению выбора.
+# --- Безопасное применение значений к контролам
 
 function Add-SettingValue {
     param([hashtable]$Target, [string]$Key, [scriptblock]$Getter)
@@ -2446,6 +2532,7 @@ function Set-CheckedListFromSettings {
     }
 }
 
+# --- Настройки и геометрия окна
 function Get-AppSettingsFromUi {
     $settings = @{}
     Add-SettingValue $settings 'AppVersion' { $script:AppVersion }
@@ -2454,29 +2541,8 @@ function Get-AppSettingsFromUi {
         $bounds = if ($script:Form.WindowState -eq 'Normal') { $script:Form.Bounds } else { $script:Form.RestoreBounds }
         @{ X = [int]$bounds.X; Y = [int]$bounds.Y; Width = [int]$bounds.Width; Height = [int]$bounds.Height }
     }
-    Add-SettingValue $settings 'Platform' { [string]$script:PlatformBox.SelectedItem }
     Add-SettingValue $settings 'StatusFilter' { [string]$script:StatusFilterBox.SelectedItem }
     Add-SettingValue $settings 'SortMode' { [string]$script:SortBox.SelectedItem }
-    Add-SettingValue $settings 'Style' { [string]$script:StyleBox.SelectedItem }
-    Add-SettingValue $settings 'Categories' { @($script:CategoryList.CheckedItems | ForEach-Object { [string]$_ }) }
-    Add-SettingValue $settings 'Count' { [int]$script:CountBox.Value }
-    Add-SettingValue $settings 'MinLength' { [int]$script:MinLengthBox.Value }
-    Add-SettingValue $settings 'MaxLength' { [int]$script:MaxLengthBox.Value }
-    Add-SettingValue $settings 'DelayMs' { [int]$script:DelayBox.Value }
-    Add-SettingValue $settings 'TimeoutMs' { [int]$script:TimeoutBox.Value }
-    Add-SettingValue $settings 'Threads' { [int]$script:ThreadsBox.Value }
-    Add-SettingValue $settings 'UseNumbers' { [bool]$script:NumbersCheck.Checked }
-    Add-SettingValue $settings 'UseUnderscore' { [bool]$script:UnderscoreCheck.Checked }
-    Add-SettingValue $settings 'OneWord' { [bool]$script:OneWordCheck.Checked }
-    Add-SettingValue $settings 'TwoWords' { [bool]$script:TwoWordsCheck.Checked }
-    Add-SettingValue $settings 'InventedWords' { [bool]$script:InventedWordsCheck.Checked }
-    Add-SettingValue $settings 'InventedPairs' { [bool]$script:InventedPairsCheck.Checked }
-    Add-SettingValue $settings 'LeetWords' { [bool]$script:LeetCheck.Checked }
-    Add-SettingValue $settings 'RareShort' { [bool]$script:RareShortCheck.Checked }
-    Add-SettingValue $settings 'Ordered' { [bool]$script:OrderedCheck.Checked }
-    Add-SettingValue $settings 'OnlyShort' { [bool]$script:ShortOnlyCheck.Checked }
-    Add-SettingValue $settings 'ExcludeChecked' { [bool]$script:ExcludeCheckedCheck.Checked }
-    Add-SettingValue $settings 'OnlyFree' { [bool]$script:OnlyFreeCheck.Checked }
     return $settings
 }
 
@@ -2484,8 +2550,6 @@ function Restore-AppSettingsToUi {
     param([hashtable]$Settings)
     if ($null -eq $Settings -or $Settings.Count -eq 0) { return }
 
-    # Геометрия окна: сохраняем только если окно попадает в границы текущего экрана,
-    # иначе после отключения второго монитора окно оказалось бы за пределами видимости.
     if ($Settings.ContainsKey('WindowBounds')) {
         try {
             $raw = $Settings['WindowBounds']
@@ -2506,38 +2570,8 @@ function Restore-AppSettingsToUi {
         try { $script:Form.WindowState = [System.Windows.Forms.FormWindowState]([string]$Settings['WindowState']) } catch { }
     }
 
-    Set-ComboFromSettings $script:PlatformBox $Settings['Platform']
     Set-ComboFromSettings $script:StatusFilterBox $Settings['StatusFilter']
     Set-ComboFromSettings $script:SortBox $Settings['SortMode']
-    Set-ComboFromSettings $script:StyleBox $Settings['Style']
-    Set-CheckedListFromSettings $script:CategoryList $Settings['Categories']
-
-    Set-NumericFromSettings $script:CountBox $Settings['Count'] ([int]$script:CountBox.Value)
-    Set-NumericFromSettings $script:MinLengthBox $Settings['MinLength'] ([int]$script:MinLengthBox.Value)
-    Set-NumericFromSettings $script:MaxLengthBox $Settings['MaxLength'] ([int]$script:MaxLengthBox.Value)
-    Set-NumericFromSettings $script:DelayBox $Settings['DelayMs'] ([int]$script:DelayBox.Value)
-    Set-NumericFromSettings $script:TimeoutBox $Settings['TimeoutMs'] ([int]$script:TimeoutBox.Value)
-    Set-NumericFromSettings $script:ThreadsBox $Settings['Threads'] ([int]$script:ThreadsBox.Value)
-
-    Set-CheckFromSettings $script:NumbersCheck $Settings['UseNumbers']
-    Set-CheckFromSettings $script:UnderscoreCheck $Settings['UseUnderscore']
-    Set-CheckFromSettings $script:OneWordCheck $Settings['OneWord']
-    Set-CheckFromSettings $script:TwoWordsCheck $Settings['TwoWords']
-    Set-CheckFromSettings $script:InventedWordsCheck $Settings['InventedWords']
-    Set-CheckFromSettings $script:InventedPairsCheck $Settings['InventedPairs']
-    Set-CheckFromSettings $script:LeetCheck $Settings['LeetWords']
-    Set-CheckFromSettings $script:RareShortCheck $Settings['RareShort']
-    Set-CheckFromSettings $script:OrderedCheck $Settings['Ordered']
-    Set-CheckFromSettings $script:ShortOnlyCheck $Settings['OnlyShort']
-    Set-CheckFromSettings $script:ExcludeCheckedCheck $Settings['ExcludeChecked']
-    Set-CheckFromSettings $script:OnlyFreeCheck $Settings['OnlyFree']
-
-    # Минимальная длина не должна превышать максимальную после восстановления.
-    try {
-        if ([int]$script:MinLengthBox.Value -gt [int]$script:MaxLengthBox.Value) {
-            $script:MinLengthBox.Value = $script:MaxLengthBox.Value
-        }
-    } catch { }
 }
 
 function Save-AppSettings {
@@ -2572,8 +2606,6 @@ function Update-FreeHistoryFromCandidate {
         if ($script:RetiredNames.ContainsKey($key)) { return }
         $entry = [pscustomobject]@{ Name=$name; Platform=$platform; Status=$status; Time=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss') }
         $remaining = @($script:FreeHistory | Where-Object { (Get-HistoryKey -Name ([string]$_.Name) -Platform ([string]$_.Platform)) -ne $key })
-        # Потолок в 30 записей убран: раньше после тридцатого свободного ника новые
-        # переставали добавляться в список, хотя проверка продолжала их находить.
         $script:FreeHistory = @(@($entry) + @($remaining))
     } elseif ($status -eq 'Занят') {
         $script:FreeHistory = @($script:FreeHistory | Where-Object { (Get-HistoryKey -Name ([string]$_.Name) -Platform ([string]$_.Platform)) -ne $key })
@@ -2587,8 +2619,16 @@ function Refresh-FreeHistoryList {
     if (-not $script:HistoryListBox) { return }
     $script:HistoryListBox.BeginUpdate()
     $script:HistoryListBox.Items.Clear()
-    foreach ($item in @($script:FreeHistory | Sort-Object Time -Descending)) {
-        $display = '{0} — {1}' -f [string]$item.Name, [string]$item.Platform
+    $historyItems = @($script:FreeHistory)
+    $historySort = 'По времени'
+    if ($script:HistorySortBox -and $script:HistorySortBox.SelectedItem) { $historySort = [string]$script:HistorySortBox.SelectedItem }
+    switch ($historySort) {
+        'По нику' { $historyItems = @($historyItems | Sort-Object Name, Platform) }
+        'По платформе (почте)' { $historyItems = @($historyItems | Sort-Object Platform, Name) }
+        default { $historyItems = @($historyItems | Sort-Object Time -Descending) }
+    }
+    foreach ($item in $historyItems) {
+        $display = '{0} — {1}' -f (Get-DisplayNick -Platform ([string]$item.Platform) -Name ([string]$item.Name)), [string]$item.Platform
         [void]$script:HistoryListBox.Items.Add([pscustomobject]@{Display=$display; Name=[string]$item.Name; Platform=[string]$item.Platform; Status=[string]$item.Status})
     }
     $script:HistoryListBox.EndUpdate()
@@ -2599,10 +2639,7 @@ function Refresh-FreeHistoryList {
     }
 }
 
-# Список уже проверенных имён хранится в username_history.json и используется галочкой
-# «Исключать проверенные». Окно показывает этот список и даёт три действия: проверить
-# имена снова (они возвращаются в таблицу со статусом «Ожидает»), удалить выбранные из
-# списка и очистить список целиком.
+# --- Проверенные ники и история свободных
 function Update-CheckedNamesButtonText {
     if (-not $script:CheckedNamesButton) { return }
     $script:CheckedNamesButton.Text = ('Проверенные ники ({0})' -f $script:CheckedNames.Count)
@@ -2625,7 +2662,7 @@ function Refresh-CheckedNamesList {
             $keyPlatform = ''
             $keyName = $key
         }
-        [void]$script:CheckedNamesListBox.Items.Add([pscustomobject]@{Display=('{0} — {1}' -f $keyName,$keyPlatform); Name=$keyName; Platform=$keyPlatform; Key=$key})
+        [void]$script:CheckedNamesListBox.Items.Add([pscustomobject]@{Display=(('{0} — {1}') -f (Get-DisplayNick -Platform $keyPlatform -Name $keyName),$keyPlatform); Name=$keyName; Platform=$keyPlatform; Key=$key})
     }
     $script:CheckedNamesListBox.EndUpdate()
     if ($script:CheckedNamesListBox.Items.Count -eq 0) {
@@ -2645,20 +2682,20 @@ function Open-CheckedNamesWindow {
     $checkedForm.StartPosition = 'CenterParent'
     $checkedForm.Size = New-Object System.Drawing.Size(560,600)
     $checkedForm.MinimumSize = New-Object System.Drawing.Size(480,480)
-    $checkedForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
-    $checkedForm.ForeColor = [System.Drawing.Color]::White
+    $checkedForm.BackColor = [System.Drawing.Color]::FromArgb(245,246,248)
+    $checkedForm.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $checkedForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
     $script:CheckedNamesDescription = New-Object System.Windows.Forms.Label
     $script:CheckedNamesDescription.Location = New-Object System.Drawing.Point(16,14)
     $script:CheckedNamesDescription.Size = New-Object System.Drawing.Size(516,50)
-    $script:CheckedNamesDescription.ForeColor = [System.Drawing.Color]::FromArgb(190,202,221)
+    $script:CheckedNamesDescription.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
     $checkedForm.Controls.Add($script:CheckedNamesDescription)
     $script:CheckedNamesSearchBox = New-Object System.Windows.Forms.TextBox
     $script:CheckedNamesSearchBox.Location = New-Object System.Drawing.Point(16,70)
     $script:CheckedNamesSearchBox.Size = New-Object System.Drawing.Size(516,27)
     $script:CheckedNamesSearchBox.Anchor = 'Top, Left, Right'
-    $script:CheckedNamesSearchBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-    $script:CheckedNamesSearchBox.ForeColor = [System.Drawing.Color]::White
+    $script:CheckedNamesSearchBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+    $script:CheckedNamesSearchBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $script:CheckedNamesSearchBox.BorderStyle = 'FixedSingle'
     $checkedForm.Controls.Add($script:CheckedNamesSearchBox)
     $script:CheckedNamesListBox = New-Object System.Windows.Forms.ListBox
@@ -2667,8 +2704,8 @@ function Open-CheckedNamesWindow {
     $script:CheckedNamesListBox.Anchor = 'Top, Bottom, Left, Right'
     $script:CheckedNamesListBox.DisplayMember = 'Display'
     $script:CheckedNamesListBox.SelectionMode = 'MultiExtended'
-    $script:CheckedNamesListBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-    $script:CheckedNamesListBox.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
+    $script:CheckedNamesListBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+    $script:CheckedNamesListBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $checkedForm.Controls.Add($script:CheckedNamesListBox)
     $recheckChecked = New-Object System.Windows.Forms.Button
     $recheckChecked.Text = '↻ Проверить снова'
@@ -2676,8 +2713,8 @@ function Open-CheckedNamesWindow {
     $recheckChecked.Size = New-Object System.Drawing.Size(180,34)
     $recheckChecked.Anchor = 'Bottom, Left'
     $recheckChecked.FlatStyle = 'Flat'
-    $recheckChecked.BackColor = [System.Drawing.Color]::FromArgb(93,73,222)
-    $recheckChecked.ForeColor = [System.Drawing.Color]::White
+    $recheckChecked.BackColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $recheckChecked.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $checkedForm.Controls.Add($recheckChecked)
     $deleteChecked = New-Object System.Windows.Forms.Button
     $deleteChecked.Text = 'Удалить из списка'
@@ -2685,8 +2722,8 @@ function Open-CheckedNamesWindow {
     $deleteChecked.Size = New-Object System.Drawing.Size(160,34)
     $deleteChecked.Anchor = 'Bottom, Left'
     $deleteChecked.FlatStyle = 'Flat'
-    $deleteChecked.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
-    $deleteChecked.ForeColor = [System.Drawing.Color]::White
+    $deleteChecked.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+    $deleteChecked.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $checkedForm.Controls.Add($deleteChecked)
     $clearChecked = New-Object System.Windows.Forms.Button
     $clearChecked.Text = 'Очистить весь список'
@@ -2694,8 +2731,8 @@ function Open-CheckedNamesWindow {
     $clearChecked.Size = New-Object System.Drawing.Size(160,34)
     $clearChecked.Anchor = 'Bottom, Left'
     $clearChecked.FlatStyle = 'Flat'
-    $clearChecked.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
-    $clearChecked.ForeColor = [System.Drawing.Color]::White
+    $clearChecked.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+    $clearChecked.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $checkedForm.Controls.Add($clearChecked)
     $script:CheckedNamesSearchBox.Add_TextChanged({ Refresh-CheckedNamesList })
     $deleteChecked.Add_Click({
@@ -2730,8 +2767,6 @@ function Open-CheckedNamesWindow {
             [System.Windows.Forms.MessageBox]::Show('Сначала выдели имена в списке.','Повторная проверка','OK','Information') | Out-Null
             return
         }
-        # Проверка идёт для одной платформы, поэтому за один запуск берутся имена только
-        # первой выбранной платформы; остальные сообщаются как пропущенные.
         $targetPlatform = [string]$selectedItems[0].Platform
         if (-not (Test-SupportedPlatform -Platform $targetPlatform)) {
             [System.Windows.Forms.MessageBox]::Show(("Платформа «{0}» больше не поддерживается этой версией программы.`r`n`r`nПовторная проверка доступна для: {1}." -f $targetPlatform, ($script:SupportedPlatforms -join ', ')),'Повторная проверка','OK','Information') | Out-Null
@@ -2770,8 +2805,6 @@ function Open-CheckedNamesWindow {
         Add-Diagnostic ('Повторная проверка: {0} имён ({1}){2}.' -f $queued, $targetPlatform, $skipNote)
         Start-Checking -RetryErrorsOnly $false
     })
-    # Контролы окна уничтожаются при закрытии: обращения к disposed-листбоксу
-    # из Refresh-CheckedNamesList после этого просто игнорируются.
     $checkedForm.Add_FormClosed({
         $script:CheckedNamesListBox = $null
         $script:CheckedNamesSearchBox = $null
@@ -2779,6 +2812,7 @@ function Open-CheckedNamesWindow {
     })
     Refresh-CheckedNamesList
     $checkedForm.Add_Shown({ $checkedForm.Activate() })
+    & $script:WireButtonAnimations $checkedForm
     [void]$checkedForm.ShowDialog($script:Form)
 }
 
@@ -2788,21 +2822,29 @@ function Open-FreeHistoryWindow {
     $script:HistoryForm.StartPosition = 'CenterParent'
     $script:HistoryForm.Size = New-Object System.Drawing.Size(520,560)
     $script:HistoryForm.MinimumSize = New-Object System.Drawing.Size(480,480)
-    $script:HistoryForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
-    $script:HistoryForm.ForeColor = [System.Drawing.Color]::White
+    $script:HistoryForm.BackColor = [System.Drawing.Color]::FromArgb(245,246,248)
+    $script:HistoryForm.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $script:HistoryForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
     $script:HistoryDescription = New-Object System.Windows.Forms.Label
     $script:HistoryDescription.Location = New-Object System.Drawing.Point(16,14)
     $script:HistoryDescription.Size = New-Object System.Drawing.Size(470,50)
-    $script:HistoryDescription.ForeColor = [System.Drawing.Color]::FromArgb(190,202,221)
+    $script:HistoryDescription.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
     $script:HistoryForm.Controls.Add($script:HistoryDescription)
+    $script:HistorySortBox = New-Object System.Windows.Forms.ComboBox
+    $script:HistorySortBox.Location = New-Object System.Drawing.Point(330,66)
+    $script:HistorySortBox.Size = New-Object System.Drawing.Size(156,27)
+    $script:HistorySortBox.DropDownStyle = 'DropDownList'
+    [void]$script:HistorySortBox.Items.AddRange([object[]]@('По времени','По нику','По платформе (почте)'))
+    $script:HistorySortBox.SelectedItem = 'По времени'
+    $script:HistorySortBox.Add_SelectedIndexChanged({ Refresh-FreeHistoryList })
+    $script:HistoryForm.Controls.Add($script:HistorySortBox)
     $script:HistoryListBox = New-Object System.Windows.Forms.ListBox
-    $script:HistoryListBox.Location = New-Object System.Drawing.Point(16,70)
-    $script:HistoryListBox.Size = New-Object System.Drawing.Size(470,370)
+    $script:HistoryListBox.Location = New-Object System.Drawing.Point(16,100)
+    $script:HistoryListBox.Size = New-Object System.Drawing.Size(470,340)
     $script:HistoryListBox.Anchor = 'Top, Bottom, Left, Right'
     $script:HistoryListBox.DisplayMember = 'Display'
-    $script:HistoryListBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-    $script:HistoryListBox.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
+    $script:HistoryListBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+    $script:HistoryListBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $script:HistoryForm.Controls.Add($script:HistoryListBox)
     $recheck = New-Object System.Windows.Forms.Button
     $recheck.Text = '↻ Повторная проверка'
@@ -2810,8 +2852,8 @@ function Open-FreeHistoryWindow {
     $recheck.Size = New-Object System.Drawing.Size(190,34)
     $recheck.Anchor = 'Bottom, Left'
     $recheck.FlatStyle = 'Flat'
-    $recheck.BackColor = [System.Drawing.Color]::FromArgb(93,73,222)
-    $recheck.ForeColor = [System.Drawing.Color]::White
+    $recheck.BackColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $recheck.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $recheck.Enabled = -not (Test-CheckRunning)
     $script:HistoryForm.Controls.Add($recheck)
     $copy = New-Object System.Windows.Forms.Button
@@ -2820,8 +2862,8 @@ function Open-FreeHistoryWindow {
     $copy.Size = New-Object System.Drawing.Size(130,34)
     $copy.Anchor = 'Bottom, Left'
     $copy.FlatStyle = 'Flat'
-    $copy.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
-    $copy.ForeColor = [System.Drawing.Color]::White
+    $copy.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+    $copy.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $script:HistoryForm.Controls.Add($copy)
     $open = New-Object System.Windows.Forms.Button
     $open.Text = 'Открыть сайт'
@@ -2829,8 +2871,8 @@ function Open-FreeHistoryWindow {
     $open.Size = New-Object System.Drawing.Size(134,34)
     $open.Anchor = 'Bottom, Right'
     $open.FlatStyle = 'Flat'
-    $open.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
-    $open.ForeColor = [System.Drawing.Color]::White
+    $open.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
+    $open.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $script:HistoryForm.Controls.Add($open)
     $copy.Add_Click({
         $selected = $script:HistoryListBox.SelectedItem
@@ -2845,8 +2887,6 @@ function Open-FreeHistoryWindow {
         if (-not $selected) { [System.Windows.Forms.MessageBox]::Show('Сначала выбери ник в списке.','Повторная проверка','OK','Information') | Out-Null; return }
         $selectedName = [string]$selected.Name
         $selectedPlatform = [string]$selected.Platform
-        # Платформа из старой истории может больше не поддерживаться: иначе ComboBox обнулится
-        # и проверка уйдёт с пустой платформой.
         if (-not (Test-SupportedPlatform -Platform $selectedPlatform)) {
             [System.Windows.Forms.MessageBox]::Show(("Платформа «{0}» больше не поддерживается этой версией программы.`r`n`r`nПовторная проверка доступна для: {1}." -f $selectedPlatform, ($script:SupportedPlatforms -join ', ')),'Повторная проверка','OK','Information') | Out-Null
             Add-Diagnostic ("Повторная проверка отменена: платформа $selectedPlatform не поддерживается.")
@@ -2877,88 +2917,134 @@ function Open-FreeHistoryWindow {
     })
     Refresh-FreeHistoryList
     $script:HistoryForm.Add_Shown({ $script:HistoryForm.Activate() })
+    & $script:WireButtonAnimations $script:HistoryForm
     [void]$script:HistoryForm.ShowDialog($script:Form)
 }
 
+# --- Помощь
 function Show-UsernameFinderHelp {
     $helpForm = New-Object System.Windows.Forms.Form
-    $helpForm.Text = 'Помощь — Universal Username Finder'
+    $helpForm.Text = 'UUF — помощь'
     $helpForm.StartPosition = 'CenterParent'
-    $helpForm.Size = New-Object System.Drawing.Size(760,650)
-    $helpForm.MinimumSize = New-Object System.Drawing.Size(620,500)
-    $helpForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
+    $helpForm.Size = New-Object System.Drawing.Size(880,700)
+    $helpForm.MinimumSize = New-Object System.Drawing.Size(640,520)
+    $helpForm.BackColor = [System.Drawing.Color]::FromArgb(245,246,248)
     $helpForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
-    $helpText = New-Object System.Windows.Forms.RichTextBox
-    $helpText.Location = New-Object System.Drawing.Point(16,16)
-    $helpText.Size = New-Object System.Drawing.Size(710,550)
-    $helpText.Anchor = 'Top, Bottom, Left, Right'
-    $helpText.ReadOnly = $true
-    $helpText.DetectUrls = $false
-    $helpText.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-    $helpText.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
-    $helpText.BorderStyle = 'FixedSingle'
-    $helpText.Font = New-Object System.Drawing.Font('Segoe UI',10)
-    $helpText.Text = @'
-UNIVERSAL USERNAME FINDER — ПОМОЩЬ
 
-1. Платформа
-Выбери сервис, для которого хочешь подобрать имя. Каждый кандидат проверяется с учётом примерных правил длины и символов именно этой платформы.
+    $guideText = @'
+КАК ПОЛЬЗОВАТЬСЯ
 
-2. Единые категории
-В одном списке можно отметить несколько тем: цельные слова, короткие, космос, свет и энергия, природа, мифология, эмоции, скорость, абстрактное и эстетика. Категории не связаны с названиями брендов.
+1. Платформа. Выбери сервис в списке слева. Программа сразу подставит минимальную и максимальную длину по правилам платформы, а для почтовых сервисов (Google, Mail.ru, Outlook) ник будет показан и проверен как адрес: ник@gmail.com, ник@mail.ru, ник@outlook.com.
 
-3. Генерация и проверка
-Нажми «Сгенерировать и проверить» один раз. Программа создаст кандидатов, добавит собственные слова и ручные ники, отфильтрует неподходящие варианты и начнёт проверку автоматически. Запросы идут последовательно; можно остановить процесс.
+2. Категории. В списке «Единые категории» 44 темы; отметь нужные или нажми «Выделить все». Категории влияют на словарные источники генерации.
 
-4. Значения статусов
-«Свободен» — платформа сообщила, что имя доступно на момент проверки.
-«Вероятно свободен» — публичная проверка не нашла профиль или handle. Имя может быть зарезервировано.
-«Занят» — платформа нашла профиль или сообщила, что имя уже используется.
-«Не подтверждено» — сайт не раскрыл однозначный результат, например из-за защитного ограничения или изменения ответа. Это не означает, что имя свободно.
-«Ошибка сети» — запрос не удалось завершить; можно нажать «Повторить ошибки».
+3. Настройки генерации. Каждая галочка работает самостоятельно: включена — источник участвует, выключена — не участвует. «Однословные ники», «Два осмысленных слова», «Выдуманные слова», «Выдуманные сочетания», «Замена символами», «Редкие короткие (3-6)», «Случайные символы», «Использовать цифры», «Разделитель _», «Только короткие», «Исключать проверенные», «Генерация по порядку».
 
-5. Таблица и экспорт
-Используй фильтр статусов и строку поиска. Двойной щелчок по свободному/вероятно свободному имени копирует его. TXT сохраняет доступные и вероятно доступные варианты; CSV сохраняет все результаты.
+4. Свои слова. Слова из поля «Свои слова через запятую» работают якорем: каждый сгенерированный ник содержит хотя бы одно из них, а слова категорий и стиля становятся второй частью.
 
-6. Последние свободные ники
-Кнопка «Свободные ники» открывает историю в формате «Ник — Платформа». Выбери запись и нажми «Повторная проверка». Если сервис сообщает, что имя занято, запись удаляется из истории, а ник заносится в список исключений и больше не генерируется этой программой. История хранится локально в профиле Windows.
+5. Генерация и проверка. Нажми «Сгенерировать и проверить»: таблица очистится, появится запрошенное количество ников и проверка начнётся сама. Кнопка «Найти свободные» проверяет уже имеющуюся таблицу повторно. «Остановить проверку» прерывает прогон без потери результатов.
 
-7. Методы проверки платформ
-Roblox — POST регистрационный валидатор /v1/usernames/validate; разбор code=0/1/2/3/10, неизвестный код не считается свободным.
-Google — проверка Gmail через контекст страницы регистрации; если ответ не распознан, результат остаётся неподтверждённым.
-Mail.ru — GET account.mail.ru/api/v1/user/exists?email=...; анализ body.exists/exists.
-VK — попытка utils.resolveScreenName и проверка публичной страницы профиля; отсутствие профиля не гарантирует возможность регистрации.
-Discord — попытка endpoint уникального username с нормализацией к нижнему регистру и анализом taken/username_taken.
-TikTok — сначала attempt регистрации passport/web/account/check_name; при нераспознанном ответе используется публичная страница как резервная проверка.
-Microsoft/Outlook — signup.live.com CheckAvailableSigninNames для @hotmail.com и @outlook.com; разбираются isAvailable и доступный IfExistsResult.
-GitHub — signup_check/username с cookie-сессией; при неоднозначном ответе используется REST API профилей. Отсутствие профиля означает только вероятную доступность.
-YouTube — сравнение canonical handle целевой страницы и channel metadata. 404 трактуется как вероятная, но не гарантированная доступность.
-Telegram — проверка публичной страницы t.me; при неясном ответе ставится «Не подтверждено», так как account.checkUsername требует авторизованной сессии.
-Apple — запрос проверки адреса {ник}@icloud.com к account/validation/appleid; при отсутствии нужного контекста ответ остаётся неподтверждённым.
-Каждый сервис проверяется своим сетевым методом. При изменении endpoint или защитном ограничении программа не объявляет имя свободным без понятного ответа.
+6. Результаты. Статусы: «Свободен» — платформа подтвердила доступность; «Вероятно свободен» — публичный профиль не найден, но регистрация может отказать; «Занят», «Недопустимый», «Не подтверждено», «Ошибка сети». Фильтр статуса, поиск и сортировка работают во время проверки; прокрутка таблицы не сбрасывается.
 
-8. Пароль / регистрация
-Генератор паролей создаёт случайный пароль. Регистрацию нужно завершить на официальном сайте самостоятельно; программа не обходит CAPTCHA. Хранилище паролей защищается Windows DPAPI для текущего пользователя.
+7. История и проверенные. «Последние свободные ники» хранит найденные свободные адреса с сортировкой по нику, платформе или времени и повторной проверкой. «Проверенные ники» — постоянный список всего, что уже проверялось: он исключает повторы при включённой галочке «Исключать проверенные» и переживает перезапуск программы.
 
-Доступность имени может измениться после проверки. Окончательное решение принимает сама платформа во время регистрации.
+8. Пароль и регистрация. Кнопка «Пароль / регистрация» открывает окно под текущую платформу: заголовок, подпись ника и кнопка «Открыть <платформа> для регистрации» соответствуют выбранному сервису. Сайт открывается в окне инкогнито (Chrome, Edge, Brave или Vivaldi); если ни один не найден — в браузере по умолчанию. Пароль содержит заглавные и строчные буквы, цифры и спецсимвол.
+
+9. Telegram Channel. Отдельная платформа: категории и настройки генерации на неё не влияют. Программа перебирает случайные значения после https://t.me/ и проверяет, существует ли канал; для действующих каналов показывается тема из описания канала.
+
+10. Стандартный набор. При каждом запуске выставлены: все категории, стиль «без стиля», 40 ников, длина 3–25, однословные, редкие короткие, выдуманные слова, случайные символы, исключать проверенные, только короткие, пауза 700 мс, 2 потока. Остальное выключено. Сохраняются между запусками только положение окна, фильтр статусов и сортировка.
 '@
-    $helpForm.Controls.Add($helpText)
-    $close = New-Object System.Windows.Forms.Button
-    $close.Text = 'Закрыть'
-    $close.Location = New-Object System.Drawing.Point(616,574)
-    $close.Size = New-Object System.Drawing.Size(110,30)
-    $close.Anchor = 'Bottom, Right'
-    $close.FlatStyle = 'Flat'
-    $close.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
-    $close.ForeColor = [System.Drawing.Color]::White
-    $close.Add_Click({ param($sender,$e); $sender.FindForm().Close() })
-    $helpForm.Controls.Add($close)
+
+    $howText = @'
+КАК ЭТО РАБОТАЕТ
+
+Генерация. Кандидатов собирает один генератор из восьми источников: одиночные слова категорий, пары осмысленных слов, выдуманные слова из слогов, выдуманные сочетания, замена букв цифрами (leet), редкие короткие слова, случайные наборы символов и цифры у готовых ников. Каждый включённый источник получает равную долю запрошенного количества; исчерпанный источник добирается остальными, поэтому число строк всегда совпадает с запросом. Свои слова — якоря: они входят в каждый ник. Уже проверенные и занятые имена отсеиваются внутри генератора.
+
+Проверка. Запросы идут в несколько потоков (до 8, рекомендуется 2–4): все потоки разбирают одну общую очередь ников, поэтому медленный ответ не блокирует остальных. Пауза адаптивная: при HTTP 429 и 403 она растёт с учётом Retry-After, после серии успехов постепенно снижается. Под полосой прогресса показывается оценка остатка времени и время завершения. Прогон завершается, когда закончили все потоки.
+
+Платформы. Для каждой платформы используется свой регистрационный или публичный интерфейс: Roblox — валидатор регистрации, Google — валидатор доступности Gmail (резервно форма входа), Mail.ru — API существования адреса, Discord — endpoint уникального имени, Outlook — проверщик регистрационных имён, VK и YouTube — публичные страницы, Telegram — страница t.me, Telegram Channel — прямая проверка ссылок каналов, GitHub — сессия регистрации.
+
+Хранилище. username_history.json держит список проверенных ников и историю свободных; accounts.dat — сохранённые пары ник/пароль, зашифрованные Windows DPAPI для текущего пользователя; settings.json — только положение окна, фильтр статусов и сортировку. Журнал UniversalUsernameFinder.log пишется рядом с программой или в %LOCALAPPDATA%\UniversalUsernameFinder.
+
+Оболочка. UUF.exe собирается из этого скрипта модулем ps2exe: скрипт встроен в exe в открытом виде, поэтому .ps1 остаётся единственным источником правды, а exe — удобная оболочка запуска, а не защита кода.
+'@
+
+    $stylesBuilder = New-Object System.Text.StringBuilder
+    [void]$stylesBuilder.AppendLine('СТИЛИ')
+    [void]$stylesBuilder.AppendLine('Стиль добавляет к нику характерные слова своего словаря. Примеры собраны из словарей стиля и категорий.')
+    [void]$stylesBuilder.AppendLine('')
+    $styleExamples = @{
+        'Минималистичный' = 'NeoFrost, ZenRaven'
+        'Киберспортивный' = 'ClutchVortex, RiftStrafe'
+        'Футуристический' = 'QuantumPulse, VectorNova'
+        'Тёмный' = 'NoctisShadow, ObsidianVoid'
+        'Эстетичный' = 'LunarVelvet, AstraLuma'
+        'Редкий' = 'NyxVex, RynZed'
+        'Короткий' = 'KaiZen, LuxNyx'
+        'Двусловный' = 'NovaEcho, PulseOrbit (два слова даже при снятой галочке «Два осмысленных слова»)'
+        '— без стиля —' = 'словари стилей не применяются: ник собирается только из категорий, своих слов и источников'
+    }
+    foreach ($styleName in @('Минималистичный','Киберспортивный','Футуристический','Тёмный','Эстетичный','Редкий','Короткий','Двусловный','— без стиля —')) {
+        [void]$stylesBuilder.AppendLine(('• {0} — {1}' -f $styleName, $styleExamples[$styleName]))
+    }
+    [void]$stylesBuilder.AppendLine('')
+    [void]$stylesBuilder.AppendLine('КАТЕГОРИИ И ПРИМЕРЫ СЛОВ')
+    foreach ($categoryName in $script:WordCategories) {
+        $words = @($script:MeaningGroups[[string]$categoryName])
+        $sample = @($words | Select-Object -First 8) -join ', '
+        [void]$stylesBuilder.AppendLine(('• {0}: {1}' -f $categoryName, $sample))
+    }
+    $stylesText = $stylesBuilder.ToString()
+
+    $platformsBuilder = New-Object System.Text.StringBuilder
+    [void]$platformsBuilder.AppendLine('ПЛАТФОРМЫ: ПРАВИЛА, ДОМЕНЫ И РЕГИСТРАЦИЯ')
+    [void]$platformsBuilder.AppendLine('')
+    $checkNotes = @{
+        'Roblox' = 'регистрационный валидатор имён'
+        'Google' = 'валидатор доступности Gmail, резервно форма входа; ник проверяется как адрес gmail.com'
+        'Mail.ru' = 'API существования адреса; ник проверяется как адрес mail.ru'
+        'VK' = 'публичная страница и resolveScreenName'
+        'Discord' = 'endpoint уникального имени'
+        'Outlook' = 'проверщик регистрационных имён signup.live.com; ник проверяется как адрес outlook.com'
+        'Telegram' = 'публичная страница t.me'
+        'Telegram Channel' = 'прямая проверка ссылок каналов t.me/… с извлечением описания; категории и настройки генерации не применяются'
+        'GitHub' = 'сессия страницы регистрации'
+        'YouTube' = 'публичная страница канала по handle'
+    }
+    foreach ($platformName in $script:SupportedPlatforms) {
+        $rule = Get-PlatformLengthRule -Platform $platformName
+        $domain = Get-PlatformDomain -Platform $platformName
+        $domainText = if ($domain) { ('домен @{0}' -f $domain) } else { 'без домена' }
+        [void]$platformsBuilder.AppendLine(('• {0}: длина {1}–{2}, {3}, регистрация {4}, проверка: {5}' -f $platformName, $rule.Min, $rule.Max, $domainText, (Get-RegistrationUrl -Platform $platformName), $checkNotes[[string]$platformName]))
+    }
+    $platformsText = $platformsBuilder.ToString()
+
+    $helpTabs = New-Object System.Windows.Forms.TabControl
+    $helpTabs.Dock = 'Fill'
+    $helpTabs.Font = New-Object System.Drawing.Font('Segoe UI',9.5)
+    foreach ($page in @(@('Инструкция', $guideText), @('Как работает', $howText), @('Стили и категории', $stylesText), @('Платформы и домены', $platformsText))) {
+        $tabPage = New-Object System.Windows.Forms.TabPage
+        $tabPage.Text = [string]$page[0]
+        $tabPage.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+        $pageBox = New-Object System.Windows.Forms.TextBox
+        $pageBox.Multiline = $true
+        $pageBox.ReadOnly = $true
+        $pageBox.WordWrap = $true
+        $pageBox.ScrollBars = 'Vertical'
+        $pageBox.Dock = 'Fill'
+        $pageBox.BorderStyle = 'None'
+        $pageBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
+        $pageBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+        $pageBox.Font = New-Object System.Drawing.Font('Segoe UI',9.5)
+        $pageBox.Text = [string]$page[1]
+        $tabPage.Controls.Add($pageBox)
+        $helpTabs.TabPages.Add($tabPage) | Out-Null
+    }
+    $helpForm.Controls.Add($helpTabs)
+    & $script:WireButtonAnimations $helpForm
     [void]$helpForm.ShowDialog($script:Form)
 }
 
-# Проверка считается активной, пока не завершился хотя бы один поток-воркер.
-# Функция заменяет прежнюю проверку одиночного $script:AsyncHandle: с несколькими
-# потоками «идёт ли проверка» определяется по всем дескрипторам сразу.
 function Test-CheckRunning {
     if ($null -eq $script:AsyncHandles) { return $false }
     if ($script:AsyncHandles.Count -lt 1) { return $false }
@@ -2968,8 +3054,6 @@ function Test-CheckRunning {
     return $false
 }
 
-# Пересчёт общего прогресса по сообщению одного потока. Каждый воркер ведёт только свой
-# счётчик, поэтому общий прогресс — сумма счётчиков всех потоков.
 function Update-BatchProgress {
     param($Item)
     if ($null -eq $Item) { return }
@@ -2981,9 +3065,6 @@ function Update-BatchProgress {
     $script:CurrentBatchDone = [Math]::Min($doneTotal, [Math]::Max(0,[int]$script:CurrentBatchTotal))
 }
 
-# Оценка оставшегося времени под полосой прогресса. Считается по средней скорости
-# с начала прогона: при адаптивной паузе темп меняется, но усреднение даёт устойчивый
-# прогноз, который не «прыгает» на каждом ответе.
 function Get-CheckEtaText {
     param([int]$Done, [int]$Total)
     if (-not $script:CheckStartedAt) { return '' }
@@ -3002,9 +3083,6 @@ function Get-CheckEtaText {
     return ("осталось ~{0} с · завершение ~{1}" -f $seconds, $finishAt)
 }
 
-# Сообщения о завершении приходят от каждого потока, поэтому они сводятся в одно:
-# отмена — если её запросил хотя бы один поток, ошибка и причина остановки берутся
-# из первого непустого значения, число проверенных суммируется.
 function Add-CompletionEvent {
     param($Entry)
     if ($null -eq $Entry) { return }
@@ -3026,7 +3104,6 @@ function Reset-CheckControls {
     $script:NumbersCheck.Enabled = $true
     $script:UnderscoreCheck.Enabled = $true
     $script:CustomBox.Enabled = $true
-    $script:ThemeBox.Enabled = $true
     $script:ManualNickBox.Enabled = $true
     $script:DelayBox.Enabled = $true
     $script:TimeoutBox.Enabled = $true
@@ -3060,13 +3137,13 @@ function Update-AvailableNames {
     if ($script:CandidateRevision -eq $script:AvailableNamesRevision) { return }
     $script:AvailableNamesRevision = $script:CandidateRevision
     $script:AvailableNames.Clear()
-    $script:RobloxAvailableNames.Clear()
+    $script:PlatformAvailableNames.Clear()
     foreach ($candidate in $script:Candidates) {
         $status = [string]$candidate.Status
         $platform = [string]$candidate.Platform
-        if ($platform -eq 'Roblox' -and $status -eq 'Свободен') { $script:RobloxAvailableNames.Add([string]$candidate.Name) }
+        if ($status -eq 'Свободен') { $script:PlatformAvailableNames.Add((Get-DisplayNick -Platform $platform -Name ([string]$candidate.Name))) }
         if ($status -eq 'Свободен' -or $status -eq 'Вероятно свободен') {
-            $script:AvailableNames.Add(('{0}: {1} [{2}]' -f $platform,[string]$candidate.Name,$status))
+            $script:AvailableNames.Add(('{0}: {1} [{2}]' -f $platform,(Get-DisplayNick -Platform $platform -Name ([string]$candidate.Name)),$status))
         }
     }
 }
@@ -3074,7 +3151,6 @@ function Update-AvailableNames {
 function Update-Stats {
     $total = $script:Candidates.Count
     $checked = 0; $free = 0; $taken = 0; $invalid = 0; $errors = 0
-    # Один проход вместо пяти: статистика пересчитывается на каждую перерисовку таблицы.
     foreach ($candidate in $script:Candidates) {
         if ($candidate.Checked) { $checked++ }
         switch ([string]$candidate.Status) {
@@ -3091,28 +3167,17 @@ function Update-Stats {
     $script:StatTaken.Text = "Занято: $taken"
     $script:StatInvalid.Text = "Недопустимо: $invalid"
     $script:StatErrors.Text = "Ошибки: $errors"
-    # Счётчик на кнопке «Проверенные ники» обновляется здесь же: список растёт во время
-    # проверки, а Update-Stats и так вызывается на каждую перерисовку таблицы.
     Update-CheckedNamesButtonText
 }
 
 function Update-ResultGrid {
     if (-not $script:Grid) { return }
-    # При AutoSizeMode='Fill' ширина столбцов пересчитывается на КАЖДОЙ добавленной
-    # строке, и SuspendLayout этого не блокирует. На лимитах до 2000 кандидатов
-    # (с учётом мультиплатформенности — тысячи строк) перерисовка занимала секунды.
-    # Поэтому на время массовой вставки автоширина отключается и включается обратно
-    # один раз в конце.
     $script:Grid.SuspendLayout()
     $restoreAutoSize = $false
     if ($script:Grid.AutoSizeColumnsMode -eq [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill) {
         $script:Grid.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::None
         $restoreAutoSize = $true
     }
-    # Таблица пересобирается целиком, и раньше прокрутка из-за этого сбрасывалась:
-    # пользователь не мог смотреть нижние строки во время проверки — список прыгал
-    # наверх на каждом обновлении. Запоминаем первую видимую строку и возвращаем её
-    # после перерисовки, ограничивая новым количеством строк.
     $scrollIndex = -1
     try { $scrollIndex = $script:Grid.FirstDisplayedScrollingRowIndex } catch { $scrollIndex = -1 }
     $script:Grid.Rows.Clear()
@@ -3126,10 +3191,6 @@ function Update-ResultGrid {
         'Категория' { $items = @($items | Sort-Object Category, Platform, Name) }
         'Короткие сначала' { $items = @($items | Sort-Object @{Expression={$_.Name.Length}}, Platform, Name) }
         'Свободные первыми' { $items = @($items | Sort-Object @{Expression={ switch ([string]$_.Status) { 'Свободен' {0}; 'Вероятно свободен' {1}; 'Не подтверждено' {2}; 'Ожидает' {3}; 'Проверяется' {4}; 'Ошибка сети' {5}; 'Занят' {6}; default {7} } }}, Platform, Name) }
-        # «Порядок генерации» — порядок по умолчанию. Кандидаты лежат в ArrayList ровно
-        # в той последовательности, в которой их выдал генератор, поэтому дополнительной
-        # сортировки не требуется. Раньше здесь по умолчанию стояла сортировка по нику,
-        # и выдача выглядела как алфавитный список A→Z, а не случайная подборка.
         default { }
     }
     foreach ($item in $items) {
@@ -3137,7 +3198,7 @@ function Update-ResultGrid {
         if ($filterStatus -and $filterStatus -ne 'Все статусы' -and [string]$item.Status -ne $filterStatus) { continue }
         $searchText = ([string]$item.Name + ' ' + [string]$item.Platform + ' ' + [string]$item.Category + ' ' + [string]$item.Meaning + ' ' + [string]$item.Reason)
         if ($query -and $searchText.IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
-        $row = $script:Grid.Rows.Add([string]$item.Name,[string]$item.Platform,[string]$item.Status,[string]$item.Category,[string]$item.Meaning,[string]$item.Time,[string]$item.Reason)
+        $row = $script:Grid.Rows.Add((Get-DisplayNick -Platform ([string]$item.Platform) -Name ([string]$item.Name)),[string]$item.Platform,[string]$item.Status,[string]$item.Category,[string]$item.Meaning,[string]$item.Time,[string]$item.Reason)
         $color = $script:StatusColors[[string]$item.Status]
         if ($null -eq $color) { $color = $script:StatusColors['Ошибка сети'] }
         $script:Grid.Rows[$row].Cells['Nick'].Style.ForeColor = $color
@@ -3146,8 +3207,6 @@ function Update-ResultGrid {
     if ($restoreAutoSize) {
         $script:Grid.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
     }
-    # Возвращаем прокрутку. Индекс мог стать недостижимым, если фильтр или галочка
-    # «Показывать только свободные» уменьшили число строк, — тогда показываем последнюю.
     if ($scrollIndex -ge 0 -and $script:Grid.Rows.Count -gt 0) {
         $targetIndex = [Math]::Min($scrollIndex, $script:Grid.Rows.Count - 1)
         try { $script:Grid.FirstDisplayedScrollingRowIndex = $targetIndex } catch { }
@@ -3157,6 +3216,7 @@ function Update-ResultGrid {
     Update-AvailableNames
 }
 
+# --- Запуск прогона проверки
 function Start-Checking {
     param([bool]$RetryErrorsOnly = $false)
     if (Test-CheckRunning) { return }
@@ -3193,10 +3253,6 @@ function Start-Checking {
     Touch-Candidates
     if ($validCandidates.Count -eq 0) { Update-ResultGrid; return }
     Update-ResultGrid
-    # Число потоков берётся из интерфейса (1–8) и ограничивается количеством ников:
-    # поднимать восемь runspaces ради трёх кандидатов бессмысленно. Рекомендуемые
-    # значения — 2–4: дальше скорость упирается в ограничение частоты на стороне
-    # платформы, а не в процессор, и растёт риск HTTP 429 и блокировки по IP.
     $threadCount = 2
     try { $threadCount = [int]$script:ThreadsBox.Value } catch { $threadCount = 2 }
     if ($threadCount -lt 1) { $threadCount = 1 }
@@ -3211,22 +3267,17 @@ function Start-Checking {
     $script:CurrentBatchDone = 0
     $script:ProgressBar.Value = 0
     $script:ProgressCaption.Text = "Проверка 0 из $($script:CurrentBatchTotal) · потоков $threadCount"
+# --- Воркер: проверка платформ
     $workerScript = @'
 param($InputQueue, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform, $AppVersion, $WorkerId, $BatchTotal)
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.5.5' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.6.0' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
-# Пауза адаптивная (AIMD): значение из интерфейса — стартовая точка, а не жёсткая задержка.
-# Пол задаётся профилем платформы и не зависит от состояния контролов, потому что
-# аргументы приходят извне; потолок защищает от ухода в бесконечное ожидание.
 $platformFloorMs = 400
 switch ($Platform) {
-    # GitHub: анонимный лимит 60 запросов в час, то есть ограничивает количество,
-    # а не темп. Ускорение здесь бессмысленно — важнее раньше остановиться на 403.
     'GitHub' { $platformFloorMs = 1000 }
-    # Roblox: активная антибот-защита, поэтому старт осторожнее общего пола.
     'Roblox' { $platformFloorMs = 600 }
 }
 $minDelayMs = $platformFloorMs
@@ -3234,8 +3285,6 @@ $maxDelayMs = 20000
 $currentDelayMs = [Math]::Max($minDelayMs,[int]$DelayMs)
 $successStreak = 0
 $consecutiveRateLimits = 0
-# Общее число ников в прогоне приходит аргументом: очередь общая на все потоки,
-# и каждый воркер видит в ней только ещё не разобранные элементы.
 $total = [Math]::Max(1,[int]$BatchTotal)
 $done = 0
 $consecutiveErrors = 0
@@ -3253,9 +3302,6 @@ function Get-HttpResult {
         $WebSession = $null,
         [int]$MaxRedirects = 5
     )
-    # Редиректы сопровождаются вручную (MaximumRedirection 0). Причина: в Windows PowerShell 5.1
-    # авто-редирект для POST с телом приводит HttpWebRequest к ProtocolViolationException
-    # "Cannot send a content-body with this verb type" — именно так падали все проверки Roblox.
     $currentUrl = $Url
     $currentMethod = $Method
     $currentBody = $Body
@@ -3288,7 +3334,6 @@ function Get-HttpResult {
             $errorRecord = $_
             try { $webResponse = $_.Exception.Response } catch { }
             if ($null -eq $webResponse) {
-                # Ответа нет вообще: DNS, TLS, тайм-аут, сброс соединения или нарушение протокола.
                 $inner = $_.Exception
                 while ($null -ne $inner.InnerException) { $inner = $inner.InnerException }
                 $transportError = [string]$inner.Message
@@ -3322,7 +3367,6 @@ function Get-HttpResult {
             if ([string]::IsNullOrWhiteSpace($location)) { break }
             try { $currentUrl = ([uri]::new([uri]$currentUrl, $location)).AbsoluteUri } catch { break }
             if (($code -eq 301 -or $code -eq 302 -or $code -eq 303) -and $currentMethod -ne 'Get' -and $currentMethod -ne 'Head') {
-                # По RFC тело при таком редиректе теряется, а метод становится GET.
                 $currentMethod = 'Get'
                 $currentBody = $null
             }
@@ -3351,44 +3395,36 @@ $msSession = $null
 $msContext = $null
 $githubSession = $null
 $githubSignupUrl = 'https://github.com/signup?source=form-home-signup'
-$appleSession = $null
-$appleApiKey = ''
 if ($Platform -eq 'Google') {
     try {
         $googleSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-        $googlePage = Get-HttpResult -Url 'https://accounts.google.com/signup/v2/webcreateaccount?service=mail&flowEntry=SignUp' -Timeout $timeoutSec -Headers $browserHeaders -WebSession $googleSession
-        $setupMatch = [regex]::Match([string]$googlePage.Content, 'data-initial-setup-data="([^"]+)"')
-        if (-not $setupMatch.Success) { $setupMatch = [regex]::Match([string]$googlePage.Content, "data-initial-setup-data='([^']+)'") }
-        if ($setupMatch.Success) {
-            $setupData = [System.Net.WebUtility]::HtmlDecode($setupMatch.Groups[1].Value)
-            $setupParts = $setupData.Split(',')
-            if ($setupParts.Length -gt 13) { $googleSetupToken = $setupParts[13].Trim() }
+        $googleInitUrls = @('https://accounts.google.com/signup/v2/webcreateaccount?service=mail&flowEntry=SignUp','https://accounts.google.com/signup?service=mail')
+        foreach ($googleInitUrl in $googleInitUrls) {
+            $googlePage = Get-HttpResult -Url $googleInitUrl -Timeout $timeoutSec -Headers $browserHeaders -WebSession $googleSession
+            $googlePageText = [string]$googlePage.Content
+            $setupMatch = [regex]::Match($googlePageText, 'data-initial-setup-data="([^"]+)"')
+            if (-not $setupMatch.Success) { $setupMatch = [regex]::Match($googlePageText, "data-initial-setup-data='([^']+)'") }
+            if ($setupMatch.Success) {
+                $setupData = [System.Net.WebUtility]::HtmlDecode($setupMatch.Groups[1].Value)
+                $setupParts = $setupData.Split(',')
+                if ($setupParts.Length -gt 13) { $googleSetupToken = $setupParts[13].Trim() }
+            }
             if (-not $googleSetupToken) {
-                $tokenMatch = [regex]::Match($setupData, '(?i)(?:signup|usernameavailability)[^,]{0,30},\s*"([^"]{8,})"')
+                $tokenMatch = [regex]::Match($googlePageText, '(AFoagU[A-Za-z0-9_-]{10,})')
                 if ($tokenMatch.Success) { $googleSetupToken = $tokenMatch.Groups[1].Value }
             }
+            if ($googleSetupToken) { break }
         }
-        if (-not $googleSetupToken) { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message='Google: не удалось извлечь контекст регистрации; результаты будут помечены как неподтверждённые.'}) }
+        if (-not $googleSetupToken) { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message='Google: контекст регистрации не извлечён, включена резервная проверка через форму входа.'}) }
     } catch { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=('Google: инициализация проверки не удалась: ' + $_.Exception.Message)}) }
 }
 if ($Platform -eq 'GitHub') {
-    # Сессия и cookie создаются один раз на прогон: раньше на каждый ник выполнялись
-    # два лишних запроса (новая сессия + загрузка страницы регистрации).
     try {
         $githubSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
         $null = Get-HttpResult -Url $githubSignupUrl -Timeout $timeoutSec -Headers @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='text/html,application/xhtml+xml'} -WebSession $githubSession
     } catch { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=('GitHub: инициализация сессии не удалась: ' + $_.Exception.Message)}) }
 }
-if ($Platform -eq 'Apple') {
-    try {
-        $appleSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-        $appleInit = Get-HttpResult -Url 'https://appleid.apple.com/account' -Timeout $timeoutSec -Headers $browserHeaders -WebSession $appleSession
-        $apiKeyMatch = [regex]::Match([string]$appleInit.Content, '(?i)(?:X-Apple-Api-Key|apiKey)\s*["''\s:=]+([A-Za-z0-9_-]{20,})')
-        if ($apiKeyMatch.Success) { $appleApiKey = $apiKeyMatch.Groups[1].Value }
-        if (-not $appleApiKey) { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message='Apple: не удалось извлечь API-ключ из страницы регистрации; результаты могут остаться неподтверждёнными.'}) }
-    } catch { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=('Apple: инициализация проверки не удалась: ' + $_.Exception.Message)}) }
-}
-if ($Platform -eq 'Microsoft' -or $Platform -eq 'Outlook') {
+if ($Platform -eq 'Outlook') {
     try {
         $msSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
         $msPage = Get-HttpResult -Url 'https://signup.live.com/?lic=1' -Timeout $timeoutSec -Headers $browserHeaders -WebSession $msSession
@@ -3398,9 +3434,6 @@ if ($Platform -eq 'Microsoft' -or $Platform -eq 'Outlook') {
     } catch { $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=('Microsoft/Outlook: инициализация проверки не удалась: ' + $_.Exception.Message)}) }
 }
 try {
-    # Общая очередь на все потоки: воркер сам берёт следующий ник, поэтому работа
-    # распределяется равномерно и медленный ответ по одному нику не блокирует остальные
-    # потоки. TryDequeue атомарен — два потока не получат один и тот же элемент.
     while ($true) {
         $item = $null
         if (-not $InputQueue.TryDequeue([ref]$item)) { break }
@@ -3415,11 +3448,10 @@ try {
         $r = $null
         try {
             switch ($Platform) {
+# --- Roblox Api
                 'Roblox' {
                     $payload = @{username=$name; birthday='2000-01-01T00:00:00.000Z'; context='Signup'} | ConvertTo-Json -Compress
                     $robloxHeaders = @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json'; 'Origin'='https://www.roblox.com'; 'Referer'='https://www.roblox.com/'}
-                    # Roblox отвечает 403 "Token Validation Failed" и отдаёт токен в заголовке X-CSRF-Token.
-                    # Повторяем POST с этим токеном; GET-запрос к /v1/usernames/validate не поддерживается.
                     $csrfAttempts = 0
                     while ($true) {
                         $r = Get-HttpResult -Url 'https://auth.roblox.com/v1/usernames/validate' -Timeout $timeoutSec -Headers $robloxHeaders -Method Post -Body $payload -ContentType 'application/json; charset=UTF-8'
@@ -3450,13 +3482,12 @@ try {
                         $status = 'Не подтверждено'; $reason = "Roblox ответил HTTP $httpStatus без распознаваемого результата валидации"; $consecutiveErrors = 0
                     }
                 }
+# --- Google Api
                 'Google' {
-                    if (-not $googleSetupToken -or $null -eq $googleSession) {
-                        $status = 'Не подтверждено'; $reason = 'Google не предоставил контекст своей проверки регистрации'; $consecutiveErrors = 0
-                    } else {
-                        $email = $name + '@gmail.com'
+                    $email = $name + '@gmail.com'
+                    $googleCode = ''
+                    if ($googleSetupToken -and $null -ne $googleSession) {
                         $googleBody = 'f.req=[' + $googleSetupToken + ',"","","' + $email + '"]'
-                        $googleCode = ''
                         $googleEndpoints = @('https://accounts.google.com/_/signup/usernameavailability?hl=en','https://accounts.google.com/_/signup/webusernameavailability')
                         foreach ($googleEndpoint in $googleEndpoints) {
                             $r = Get-HttpResult -Url $googleEndpoint -Timeout $timeoutSec -Headers @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='*/*'; 'Google-Accounts-Xsrf'='1'; 'Origin'='https://accounts.google.com'; 'Referer'='https://accounts.google.com/signup/v2/webcreateaccount?service=mail&flowEntry=SignUp'} -Method Post -Body $googleBody -ContentType 'application/x-www-form-urlencoded; charset=UTF-8' -WebSession $googleSession
@@ -3470,11 +3501,28 @@ try {
                             if ($googleCode) { break }
                             if ($httpStatus -eq 429 -or $httpStatus -ge 500) { break }
                         }
-                        if ($googleCode -eq '1') { $status='Свободен'; $reason='Регистрационный валидатор Google сообщил, что имя Gmail доступно'; $consecutiveErrors=0 }
-                        elseif ($googleCode -eq '2') { $status='Занят'; $reason='Регистрационный валидатор Google сообщил, что имя Gmail занято'; $consecutiveErrors=0 }
-                        else { $status='Не подтверждено'; $reason='Google не вернул распознаваемый код доступности Gmail'; $consecutiveErrors=0 }
                     }
+                    if (-not $googleCode -and $null -ne $googleSession) {
+                        $lookupCells = @()
+                        for ($nullIndex = 0; $nullIndex -lt 4; $nullIndex++) { $lookupCells += 'null' }
+                        $lookupCells += ('"' + $email + '"')
+                        for ($nullIndex = 0; $nullIndex -lt 42; $nullIndex++) { $lookupCells += 'null' }
+                        $lookupBody = 'f.req=[[' + ($lookupCells -join ',') + ']]'
+                        try {
+                            $r = Get-HttpResult -Url 'https://accounts.google.com/_/signin/sl/lookup?hl=en' -Timeout $timeoutSec -Headers @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='*/*'; 'X-Same-Domain'='1'; 'Origin'='https://accounts.google.com'; 'Referer'='https://accounts.google.com/signin/v2/identifier?service=mail'} -Method Post -Body $lookupBody -ContentType 'application/x-www-form-urlencoded;charset=UTF-8' -WebSession $googleSession
+                            $httpStatus = [int]$r.Code
+                            if ($httpStatus -eq 200) {
+                                $lookupText = [string]$r.Content
+                                if ($lookupText -match '(?s)[,\[]\s*105\s*[,.\]]') { $googleCode = '1' }
+                                elseif ($lookupText.IndexOf($email, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $lookupText -match '(?is)"gf"|"pr"') { $googleCode = '2' }
+                            }
+                        } catch { }
+                    }
+                    if ($googleCode -eq '1') { $status='Свободен'; $reason='Google сообщил, что адрес Gmail доступен'; $consecutiveErrors=0 }
+                    elseif ($googleCode -eq '2') { $status='Занят'; $reason='Google сообщил, что адрес Gmail занят'; $consecutiveErrors=0 }
+                    else { $status='Не подтверждено'; $reason='Google не вернул распознаваемый код доступности ни основным, ни резервным способом'; $consecutiveErrors=0 }
                 }
+# --- Mail.ru Api
                 'Mail.ru' {
                     $email = $name + '@mail.ru'
                     $url = 'https://account.mail.ru/api/v1/user/exists?email=' + [uri]::EscapeDataString($email)
@@ -3491,6 +3539,7 @@ try {
                         } else { $status='Не подтверждено'; $reason='Mail.ru вернул неожиданный формат ответа'; $consecutiveErrors=0 }
                     }
                 }
+# --- VK Api
                 'VK' {
                     $url = 'https://api.vk.com/method/utils.resolveScreenName?screen_name=' + [uri]::EscapeDataString($name) + '&v=5.199'
                     $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json'}
@@ -3526,79 +3575,7 @@ try {
                         } else { $status='Не подтверждено'; $reason='Discord не вернул признак занятости имени'; $consecutiveErrors=0 }
                     } elseif ($httpStatus -eq 400 -or $httpStatus -eq 422) { $status='Недопустимый'; $reason='Discord отклонил формат имени'; $consecutiveErrors=0 }
                 }
-                'TikTok' {
-                    $normalizedTikTokName = $name.ToLowerInvariant()
-                    $checkUrl = 'https://www.tiktok.com/passport/web/account/check_name/?aid=1459&app_language=en&app_name=tiktok_web'
-                    $checkBody = ConvertTo-Json -InputObject @{username=$normalizedTikTokName; unique_id=$normalizedTikTokName} -Compress
-                    $r = Get-HttpResult -Url $checkUrl -Timeout $timeoutSec -Headers @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json, text/plain, */*'; 'Origin'='https://www.tiktok.com'; 'Referer'='https://www.tiktok.com/signup'; 'Content-Type'='application/json'} -Method Post -Body $checkBody -ContentType 'application/json; charset=UTF-8'
-                    $httpStatus = [int]$r.Code
-                    $checkedBySignupEndpoint = $false
-                    if ($httpStatus -eq 200) {
-                        try {
-                            $response = ConvertFrom-Json -InputObject $r.Content -ErrorAction Stop
-                            $availableProperty = $response.PSObject.Properties['is_available']
-                            if ($null -eq $availableProperty -and $null -ne $response.data) { $availableProperty = $response.data.PSObject.Properties['is_available'] }
-                            if ($null -eq $availableProperty -and $null -ne $response.data) { $availableProperty = $response.data.PSObject.Properties['isAvailable'] }
-                            if ($null -ne $availableProperty) {
-                                $checkedBySignupEndpoint = $true
-                                if ([bool]$availableProperty.Value) { $status='Свободен'; $reason='Регистрационный endpoint TikTok сообщил, что username доступен'; $consecutiveErrors=0 }
-                                else { $status='Занят'; $reason='Регистрационный endpoint TikTok сообщил, что username недоступен'; $consecutiveErrors=0 }
-                            } elseif ($null -ne $response.data -and $null -ne $response.data.PSObject.Properties['is_valid'] -and -not [bool]$response.data.is_valid) {
-                                $checkedBySignupEndpoint = $true; $status='Недопустимый'; $reason='TikTok отклонил формат имени'; $consecutiveErrors=0
-                            }
-                        } catch { }
-                    }
-                    if (-not $checkedBySignupEndpoint -and $httpStatus -ne 429 -and $httpStatus -lt 500) {
-                        $url = 'https://www.tiktok.com/@' + [uri]::EscapeDataString($normalizedTikTokName)
-                        $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers $browserHeaders
-                        $httpStatus = [int]$r.Code
-                        $content = [string]$r.Content
-                        $escapedForRegex = [regex]::Escape($normalizedTikTokName)
-                        if ($httpStatus -eq 200 -and $content -match ('(?is)"userInfo"\s*:\s*\{.*?"user"\s*:\s*\{.*?"uniqueId"\s*:\s*"' + $escapedForRegex + '"')) { $status='Занят'; $reason='Найден публичный профиль TikTok с этим uniqueId'; $consecutiveErrors=0 }
-                        elseif ($httpStatus -eq 200 -and $content -match '(?i)"statusCode"\s*:\s*(10202|10221)|user not found|account not found') { $status='Вероятно свободен'; $reason='TikTok сообщает, что публичный профиль не найден; зарезервированные имена могут быть недоступны'; $consecutiveErrors=0 }
-                        elseif ($httpStatus -eq 404) { $status='Вероятно свободен'; $reason='TikTok вернул 404 для страницы профиля; имя может быть зарезервировано'; $consecutiveErrors=0 }
-                        else { $status='Не подтверждено'; $reason='TikTok не выдал распознаваемый регистрационный ответ и скрыл/не нашёл однозначные данные профиля'; $consecutiveErrors=0 }
-                    }
-                }
-                'Microsoft' {
-                    if ($null -eq $msContext -or $null -eq $msSession -or -not $msContext.apiCanary) {
-                        $signInName = $name + '@hotmail.com'
-                        $credentialBody = ConvertTo-Json -InputObject @{username=$signInName; isOtherIdEntry=$true} -Compress
-                        $r = Get-HttpResult -Url 'https://login.live.com/GetCredentialType.srf' -Timeout $timeoutSec -Headers @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json'; 'Content-Type'='application/json'; 'Origin'='https://login.live.com'; 'Referer'='https://login.live.com/'} -Method Post -Body $credentialBody -ContentType 'application/json; charset=UTF-8'
-                        $httpStatus = [int]$r.Code
-                        if ($httpStatus -eq 200) {
-                            $credentialResponse = ConvertFrom-Json -InputObject $r.Content -ErrorAction Stop
-                            if ($null -ne $credentialResponse.PSObject.Properties['IfExistsResult']) {
-                                $credentialCode = [int]$credentialResponse.IfExistsResult
-                                if ($credentialCode -eq 0) { $status='Вероятно свободен'; $reason='Microsoft: Microsoft не нашёл существующий аккаунт, но регистрационная доступность отдельно не подтверждена'; $consecutiveErrors=0 }
-                                elseif ($credentialCode -eq 1) { $status='Занят'; $reason='Microsoft: Microsoft сообщил о существующем аккаунте'; $consecutiveErrors=0 }
-                                elseif ($credentialCode -eq 5 -or $credentialCode -eq 6) { $status='Не подтверждено'; $reason='Microsoft: Microsoft вернул доменную/регистрационную ошибку'; $consecutiveErrors=0 }
-                                else { $status='Не подтверждено'; $reason='Microsoft: неизвестный IfExistsResult=' + $credentialCode; $consecutiveErrors=0 }
-                            } else { $status='Не подтверждено'; $reason='Microsoft: GetCredentialType не вернул IfExistsResult'; $consecutiveErrors=0 }
-                        } else { $status='Не подтверждено'; $reason='Microsoft: ни регистрационный контекст, ни проверка GetCredentialType не дали подтверждённого статуса'; $consecutiveErrors=0 }
-                    } else {
-                        $signInName = $name + '@hotmail.com'
-                        $hpgid = $null
-                        try { $hpgid = $msContext.cpgids.Signup_MemberNamePage_Client } catch { }
-                        $payload = @{signInName=$signInName; includeSuggestions=$false; uaid=$msContext.uaid; uiflvr=$msContext.uiflvr; scid=$msContext.scid; hpgid=$hpgid} | ConvertTo-Json -Compress
-                        $r = Get-HttpResult -Url 'https://signup.live.com/API/CheckAvailableSigninNames' -Timeout $timeoutSec -Headers @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json'; 'canary'=[string]$msContext.apiCanary; 'Origin'='https://signup.live.com'; 'Referer'='https://signup.live.com/'} -Method Post -Body $payload -ContentType 'application/json; charset=UTF-8' -WebSession $msSession
-                        $httpStatus = [int]$r.Code
-                        if ($httpStatus -eq 200) {
-                            $response = ConvertFrom-Json -InputObject $r.Content -ErrorAction Stop
-                            $availableProperty = $response.PSObject.Properties['isAvailable']
-                            if ($null -ne $availableProperty) {
-                                if ([bool]$availableProperty.Value) { $status='Свободен'; $reason='Microsoft сообщил, что адрес @hotmail.com доступен'; $consecutiveErrors=0 }
-                                else { $status='Занят'; $reason='Microsoft сообщил, что адрес @hotmail.com недоступен или зарезервирован'; $consecutiveErrors=0 }
-                            } elseif ($null -ne $response.PSObject.Properties['IfExistsResult']) {
-                                $existsCode = [int]$response.IfExistsResult
-                                if ($existsCode -eq 0) { $status='Вероятно свободен'; $reason='Microsoft: Microsoft не обнаружил существующий аккаунт; проверь окончательную доступность при регистрации'; $consecutiveErrors=0 }
-                                elseif ($existsCode -eq 1) { $status='Занят'; $reason='Microsoft: Microsoft обнаружил существующий аккаунт'; $consecutiveErrors=0 }
-                                elseif ($existsCode -in @(5,6)) { $status='Не подтверждено'; $reason='Microsoft: Microsoft вернул код доменной/регистрационной ошибки ' + $existsCode; $consecutiveErrors=0 }
-                                else { $status='Не подтверждено'; $reason='Microsoft: неизвестный IfExistsResult=' + $existsCode; $consecutiveErrors=0 }
-                            } else { $status='Не подтверждено'; $reason='Microsoft вернул неизвестную структуру ответа'; $consecutiveErrors=0 }
-                        }
-                    }
-                }
+# --- Outlook Api
                 'Outlook' {
                     if ($null -eq $msContext -or $null -eq $msSession -or -not $msContext.apiCanary) {
                         $signInName = $name + '@outlook.com'
@@ -3638,6 +3615,7 @@ try {
                         }
                     }
                 }
+# --- GitHub Api
                 'GitHub' {
                     if ($null -eq $githubSession) {
                         $githubSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
@@ -3657,8 +3635,6 @@ try {
                         $url = 'https://api.github.com/users/' + [uri]::EscapeDataString($name)
                         $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers @{'User-Agent'=('UniversalUsernameFinder/{0}' -f $AppVersion); 'Accept'='application/vnd.github+json'; 'X-GitHub-Api-Version'='2026-03-10'}
                         $httpStatus = [int]$r.Code
-                        # Анонимный лимит API GitHub — 60 запросов в час. Останавливаемся, когда
-                        # запас исчерпан, а не после первого 403, чтобы не долбить сервис.
                         $rateRemaining = -1
                         try {
                             if ($null -ne $r.Headers) {
@@ -3674,6 +3650,7 @@ try {
                         }
                     }
                 }
+# --- YouTube Api
                 'YouTube' {
                     $url = 'https://www.youtube.com/@' + [uri]::EscapeDataString($name)
                     $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers $browserHeaders
@@ -3686,6 +3663,7 @@ try {
                     elseif (($httpStatus -eq 404 -or $content -match '(?i)channelNotFound|This page isn.t available|channel does not exist') -and -not $channelMetadata) { $status='Вероятно свободен'; $reason='YouTube не нашёл канал с этим handle; зарезервированность имени не исключена'; $consecutiveErrors=0 }
                     else { $status='Не подтверждено'; $reason='Публичная страница не подтвердила ни существование канала с этим canonical handle, ни регистрационную доступность'; $consecutiveErrors=0 }
                 }
+# --- Telegram Api
                 'Telegram' {
                     $url = 'https://t.me/' + [uri]::EscapeDataString($name)
                     $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers $browserHeaders
@@ -3700,37 +3678,26 @@ try {
                     elseif ($httpStatus -eq 404 -or $genericNotFound) { $status='Вероятно свободен'; $reason='Публичная страница Telegram не найдена; авторизованный метод может выявить резервирование'; $consecutiveErrors=0 }
                     else { $status='Не подтверждено'; $reason='Публичная страница не дала однозначного результата; account.checkUsername требует авторизованной пользовательской сессии'; $consecutiveErrors=0 }
                 }
-                'Apple' {
-                    if ($null -eq $appleSession) {
-                        $appleSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-                        $appleInit = Get-HttpResult -Url 'https://appleid.apple.com/account' -Timeout $timeoutSec -Headers $browserHeaders -WebSession $appleSession
-                        $apiKeyMatch = [regex]::Match([string]$appleInit.Content, '(?i)(?:X-Apple-Api-Key|apiKey)\s*["''\s:=]+([A-Za-z0-9_-]{20,})')
-                        if ($apiKeyMatch.Success) { $appleApiKey = $apiKeyMatch.Groups[1].Value }
-                    }
-                    $appleEmail = $name + '@icloud.com'
-                    $appleHeaders = @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json, text/javascript, */*; q=0.01'; 'Content-Type'='application/json'; 'Origin'='https://appleid.apple.com'; 'Referer'='https://appleid.apple.com/account'; 'X-Requested-With'='XMLHttpRequest'; 'X-Apple-Request-Context'='create'}
-                    if ($appleApiKey) { $appleHeaders['X-Apple-Api-Key'] = $appleApiKey }
-                    try {
-                        $appleCookies = $appleSession.Cookies.GetCookies([uri]'https://appleid.apple.com')
-                        foreach ($cookie in $appleCookies) { if ($cookie.Name -eq 'scnt') { $appleHeaders['scnt'] = $cookie.Value }; if ($cookie.Name -eq 'aidsp') { $appleHeaders['X-Apple-ID-Session-Id'] = $cookie.Value } }
-                    } catch { }
-                    $appleBody = ConvertTo-Json -InputObject @{emailAddress=$appleEmail} -Compress
-                    $r = Get-HttpResult -Url 'https://appleid.apple.com/account/validation/appleid' -Timeout $timeoutSec -Headers $appleHeaders -Method Post -Body $appleBody -ContentType 'application/json; charset=UTF-8' -WebSession $appleSession
+# --- Telegram Channel Api
+                'Telegram Channel' {
+                    $url = 'https://t.me/' + $name
+                    $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers $browserHeaders
                     $httpStatus = [int]$r.Code
-                    if ($httpStatus -eq 200) {
-                        try {
-                            $response = ConvertFrom-Json -InputObject $r.Content -ErrorAction Stop
-                            if ($null -ne $response.PSObject.Properties['used']) {
-                                if ([bool]$response.used) { $status='Занят'; $reason='Apple сообщил, что указанный адрес уже используется'; $consecutiveErrors=0 }
-                                else { $status='Вероятно свободен'; $reason='Apple не сообщил, что адрес уже используется; окончательное подтверждение выполняется при создании Apple Account'; $consecutiveErrors=0 }
-                            } elseif ($null -ne $response.PSObject.Properties['emailAddress'] -and $null -ne $response.PSObject.Properties['valid']) {
-                                if (-not [bool]$response.valid) { $status='Недопустимый'; $reason='Apple отклонил формат адреса'; $consecutiveErrors=0 }
-                                else { $status='Не подтверждено'; $reason='Apple подтвердил формат, но не вернул флаг занятости адреса'; $consecutiveErrors=0 }
-                            } else { $status='Не подтверждено'; $reason='Apple не вернул распознаваемый результат проверки адреса'; $consecutiveErrors=0 }
-                        } catch { $status='Не подтверждено'; $reason='Apple вернул нераспознанный ответ проверки'; $consecutiveErrors=0 }
-                    } elseif ($httpStatus -eq 400 -and [string]$r.Content -match '(?i)already.*used|email.*used') {
-                        $status='Занят'; $reason='Apple отклонил адрес как уже используемый'; $consecutiveErrors=0
-                    } else { $status='Не подтверждено'; $reason='Apple потребовал дополнительный контекст/защитные параметры либо изменил endpoint; доступность адреса не подтверждена'; $consecutiveErrors=0 }
+                    $content = [string]$r.Content
+                    $channelMarker = $content -match '(?is)tgme_channel_info|tgme_page_title|tgme_page_description'
+                    $invalidMarker = $content -match "(?is)doesn.?t seem to exist|does not exist|channel not found|invalid link|Page not found|tgme_page_error"
+                    if ($httpStatus -eq 200 -and $channelMarker -and -not $invalidMarker) {
+                        $descMatch = [regex]::Match($content, '(?is)<meta\s+(?:property="og:description"|name="description")\s+content="([^"]*)"')
+                        $channelAbout = ''
+                        if ($descMatch.Success) { $channelAbout = [System.Net.WebUtility]::HtmlDecode($descMatch.Groups[1].Value).Trim() }
+                        $channelAbout = $channelAbout -replace '[\r\n]+', ' '
+                        if ($channelAbout.Length -gt 200) { $channelAbout = $channelAbout.Substring(0,200) + '…' }
+                        $status='Занят'
+                        if ($channelAbout) { $reason = 'Канал действует; из описания: ' + $channelAbout } else { $reason = 'Канал действует; публичное описание не раскрыто' }
+                        $consecutiveErrors=0
+                    } elseif ($httpStatus -eq 404 -or $invalidMarker) {
+                        $status='Свободен'; $reason='Канал по ссылке не найден или ссылка недействительна — адрес свободен'; $consecutiveErrors=0
+                    } else { $status='Не подтверждено'; $reason='Telegram не раскрыл статус ссылки на канал'; $consecutiveErrors=0 }
                 }
                 default {
                     $status='Не подтверждено'
@@ -3739,8 +3706,6 @@ try {
                 }
             }
             if ($null -ne $r -and [string]$r.TransportKind -eq 'protocol') {
-                # Нарушение протокола (например, редирект POST→GET с телом) — это не «сеть упала»,
-                # а системная проблема запроса: не считаем её сетевой ошибкой, но и не долбим сервис.
                 $status = 'Не подтверждено'
                 $reason = ('{0} отклонил запрос на уровне протокола: {1}' -f $Platform, [string]$r.TransportError)
                 $errorDetail = [string]$r.TransportError
@@ -3752,13 +3717,10 @@ try {
             if ($httpStatus -eq 429) {
                 $consecutiveRateLimits++
                 $successStreak = 0
-                # Сброс обязателен: иначе значение Retry-After от прошлого ника
-                # переиспользовалось бы для текущего.
                 $retryAfter = 0
                 try { if ($null -ne $r -and $r.Headers['Retry-After']) { $retryAfter = [int]$r.Headers['Retry-After'] } } catch { }
                 if ($retryAfter -lt 0) { $retryAfter = 0 }
                 if ($retryAfter -gt 120) { $retryAfter = 120 }
-                # Мультипликативный рост паузы; Retry-After служит нижним порогом.
                 $currentDelayMs = [Math]::Min($maxDelayMs,[Math]::Max($currentDelayMs * 2, $retryAfter * 1000))
                 $null = $Queue.Enqueue([pscustomobject]@{Type='Log'; Message=("HTTP 429 для {0} ({1}). Пауза увеличена до {2} мс; ограничение подряд: {3} из 3." -f $name,$Platform,$currentDelayMs,$consecutiveRateLimits)})
                 if ($retryAfter -gt 0) {
@@ -3766,8 +3728,6 @@ try {
                     while ([DateTime]::UtcNow -lt $waitUntil -and -not $Cancellation.IsCancellationRequested) { Start-Sleep -Milliseconds 100 }
                 }
                 $status = 'Ошибка сети'; $reason = "HTTP 429 — ограничение частоты запросов $Platform; пауза увеличена"
-                # Единичный 429 больше не обрывает прогон: воркер откатывает темп и
-                # продолжает. Остановка — только если платформа упорно ограничивает.
                 if ($consecutiveRateLimits -ge 3) { $stopReason = "$Platform ограничил частоту запросов три раза подряд (HTTP 429); прогон остановлен" }
             } elseif ($httpStatus -eq 403 -and $Platform -eq 'GitHub') {
                 $status = 'Ошибка сети'; $reason = 'GitHub HTTP 403: возможен лимит анонимного API'; $stopReason = 'GitHub ограничил запросы; проверка остановлена'
@@ -3795,8 +3755,6 @@ try {
             $consecutiveErrors++
         }
         if ($Cancellation.IsCancellationRequested) { break }
-        # Аддитивное снижение паузы: после серии ответов без ограничения частоты темп
-        # постепенно возвращается к стартовому, но не ниже пола профиля платформы.
         if ($httpStatus -gt 0 -and $httpStatus -ne 429 -and $status -ne 'Ошибка сети') {
             $successStreak++
             $consecutiveRateLimits = 0
@@ -3816,9 +3774,6 @@ try {
             if (-not $stopReason) { $stopReason = 'Три сетевые ошибки подряд; проверка остановлена для защиты от повторных запросов' }
             break
         }
-        # Пауза между запросами нужна, только если работа ещё есть: бессмысленно
-        # ждать после последнего ника. Очередь общая, поэтому проверяем её, а не свой
-        # счётчик — он у каждого потока собственный.
         if (-not $InputQueue.IsEmpty) {
             $elapsed = 0
             while ($elapsed -lt $currentDelayMs -and -not $Cancellation.IsCancellationRequested) {
@@ -3841,24 +3796,16 @@ try {
     $script:NumbersCheck.Enabled = $false
     $script:UnderscoreCheck.Enabled = $false
     $script:CustomBox.Enabled = $false
-    $script:ThemeBox.Enabled = $false
     $script:ManualNickBox.Enabled = $false
     $script:DelayBox.Enabled = $false
     $script:TimeoutBox.Enabled = $false
     if ($script:ThreadsBox) { $script:ThreadsBox.Enabled = $false }
     $script:PlatformBox.Enabled = $false
     try {
-        # Две очереди: входная (ники, общие для всех потоков) и выходная (результаты,
-        # которые разбирает таймер интерфейса). Обе — ConcurrentQueue, поэтому обращение
-        # из нескольких runspaces безопасно без дополнительных блокировок.
         $script:CheckQueue = [System.Collections.Concurrent.ConcurrentQueue[object]]::new()
         $script:CheckInputQueue = [System.Collections.Concurrent.ConcurrentQueue[object]]::new()
         foreach ($queuedCandidate in $validCandidates) { $script:CheckInputQueue.Enqueue($queuedCandidate) }
         $script:Cancellation = New-Object System.Threading.CancellationTokenSource
-        # Списки создаются как List[object] и заполняются методом Add, а не оператором
-        # +=: BeginInvoke возвращает PSDataCollection, а += для коллекций перечисляет
-        # элементы правой части. В момент запуска коллекция ещё пуста, поэтому массив
-        # дескрипторов остался бы пустым и проверка считалась бы завершённой мгновенно.
         $script:WorkerPowerShells = New-Object 'System.Collections.Generic.List[object]'
         $script:WorkerRunspaces = New-Object 'System.Collections.Generic.List[object]'
         $script:AsyncHandles = New-Object 'System.Collections.Generic.List[object]'
@@ -3875,8 +3822,6 @@ try {
             [void]$workerPowerShell.AddScript($workerScript).AddArgument($script:CheckInputQueue).AddArgument($script:CheckQueue).AddArgument($script:Cancellation).AddArgument([int]$script:DelayBox.Value).AddArgument([int]$script:TimeoutBox.Value).AddArgument([string]$selectedPlatform).AddArgument([string]$script:AppVersion).AddArgument([int]$workerIndex).AddArgument([int]$script:CurrentBatchTotal)
             $script:WorkerRunspaces.Add($workerRunspace)
             $script:WorkerPowerShells.Add($workerPowerShell)
-            # BeginInvoke вызываем после добавления экземпляра в список: если запуск
-            # упадёт, уже созданные потоки всё равно будут остановлены и освобождены.
             $script:AsyncHandles.Add($workerPowerShell.BeginInvoke())
         }
         $script:CheckStartedAt = [DateTime]::UtcNow
@@ -3908,13 +3853,9 @@ $script:PollTimer.Add_Tick({
                     Update-FreeHistoryFromCandidate $candidate
                     Touch-Candidates
                 }
-                # Прогресс собирается из счётчиков всех потоков: воркер сообщает только
-                # свой Index, поэтому здесь они суммируются.
                 Update-BatchProgress $item
                 $script:ProgressBar.Value = [Math]::Min(100,[int](100 * $script:CurrentBatchDone / [Math]::Max(1,$script:CurrentBatchTotal)))
                 $captionText = "Прогресс: $($script:CurrentBatchDone)/$($script:CurrentBatchTotal) · $($item.Name)"
-                # Оценка остатка времени выводится рядом со счётчиком: раньше под полосой
-                # прогресса не было никакого ориентира, сколько ещё ждать.
                 $etaText = Get-CheckEtaText -Done ([int]$script:CurrentBatchDone) -Total ([int]$script:CurrentBatchTotal)
                 if ($etaText) { $captionText = "$captionText · $etaText" }
                 $script:ProgressCaption.Text = $captionText
@@ -3922,24 +3863,18 @@ $script:PollTimer.Add_Tick({
             } elseif ($entry.Type -eq 'Log') {
                 Add-Diagnostic ([string]$entry.Message)
             } elseif ($entry.Type -eq 'Complete') {
-                # Сообщений о завершении приходит столько, сколько было потоков.
                 Add-CompletionEvent $entry
                 $script:CompletedWorkers = $script:CompletedWorkers + 1
             }
             $entry = $null
         }
     }
-    # Таблица перерисовывается не на каждый результат, а не чаще ~4 раз в секунду:
-    # полная перестройка строк на каждую проверку заметно тормозила интерфейс.
     if ($script:GridRefreshPending -and (([DateTime]::UtcNow - $script:LastGridRefresh).TotalMilliseconds -ge 250)) {
         $script:GridRefreshPending = $false
         $script:LastGridRefresh = [DateTime]::UtcNow
         Update-ResultGrid
     }
     Flush-HistoryIfDue -IntervalSeconds 5
-    # Прогон завершён, только когда закончились ВСЕ потоки. Проверка по одному
-    # дескриптору при нескольких воркерах отрапортовала бы готовность, пока остальные
-    # потоки ещё работают, и часть результатов потерялась бы.
     if ($null -ne $script:AsyncHandles -and $script:AsyncHandles.Count -gt 0 -and -not (Test-CheckRunning)) {
         $script:PollTimer.Stop()
         foreach ($workerIndex in 0..($script:AsyncHandles.Count - 1)) {
@@ -3961,8 +3896,6 @@ $script:PollTimer.Add_Tick({
         $completed = $script:CompletionEvent
         $unhandledError = $script:UnhandledWorkerError
         $workerErrors = ''
-        # Ошибки собираются со всех потоков: сбой в любом воркере, кроме первого,
-        # иначе остался бы незамеченным.
         $workerErrorLines = New-Object System.Collections.ArrayList
         foreach ($worker in $script:WorkerPowerShells) {
             try {
@@ -3979,7 +3912,6 @@ $script:PollTimer.Add_Tick({
                 if ($candidate.Status -eq 'Проверяется') { $candidate.Status='Ожидает'; $candidate.Reason='Проверка не завершена; можно запустить повторно' }
             }
         }
-        # Таймер после завершения останавливается, поэтому сбрасываем историю на диск здесь.
         $script:GridRefreshPending = $false
         $script:LastGridRefresh = [DateTime]::UtcNow
         if ($script:HistoryDirty) { Save-UsernameHistory }
@@ -4018,29 +3950,18 @@ $script:GenerateButton.Add_Click({
     $platform = [string]$script:PlatformBox.SelectedItem
     $categories = @($script:CategoryList.CheckedItems | ForEach-Object { [string]$_ })
     $customWords = Get-TextBoxValue $script:CustomBox
-    $customTheme = Get-TextBoxValue $script:ThemeBox
     $excludeTokens = @($script:ExcludeBox.Text -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     $requestedCount = [int]$script:CountBox.Value
-    # Таблица очищается перед каждой генерацией. Раньше результаты накапливались от
-    # прогона к прогону, и вместо запрошенных 1000 ников в списке оказывалось 1978:
-    # число строк не соответствовало запрошенному количеству.
-    # Уже проверенные имена при этом не теряются — они живут отдельно в
-    # username_history.json (CheckedNames и RetiredNames) и продолжают исключаться из
-    # выдачи, а повторно проверить их можно из окна «Свободные ники».
     $script:Candidates.Clear()
     Clear-CandidateIndex
     $script:AvailableNames.Clear()
     $seen = @{}
-    # Исключения собираются ДО генерации и передаются в генератор: он отсеивает занятые
-    # и уже проверенные ники сам и добирает замену, поэтому запрошенное количество
-    # совпадает с результатом. Раньше отсев шёл после получения списка без добора,
-    # и вместо 40 ников в таблицу попадало 37, а вместо 200 — 187.
     $excludeKeys = @{}
     foreach ($retiredKey in $script:RetiredNames.Keys) { $excludeKeys[[string]$retiredKey] = $true }
     if ($script:ExcludeCheckedCheck.Checked) {
         foreach ($checkedKey in $script:CheckedNames.Keys) { $excludeKeys[[string]$checkedKey] = $true }
     }
-    $candidates = @(New-AdvancedCandidatePool -SelectedWordCategories $categories -CustomWords $customWords -CustomTheme $customTheme -Style ([string]$script:StyleBox.SelectedItem) -Platform $platform -Prefix $script:PrefixBox.Text -Suffix $script:SuffixBox.Text -MinLength ([int]$script:MinLengthBox.Value) -MaxLength ([int]$script:MaxLengthBox.Value) -Count $requestedCount -UseNumbers ([bool]$script:NumbersCheck.Checked) -UseUnderscore ([bool]$script:UnderscoreCheck.Checked) -OneWord ([bool]$script:OneWordCheck.Checked) -TwoWords ([bool]$script:TwoWordsCheck.Checked) -InventedWords ([bool]$script:InventedWordsCheck.Checked) -InventedPairs ([bool]$script:InventedPairsCheck.Checked) -LeetWords ([bool]$script:LeetCheck.Checked) -RareShort ([bool]$script:RareShortCheck.Checked) -Ordered ([bool]$script:OrderedCheck.Checked) -OnlyShort ([bool]$script:ShortOnlyCheck.Checked) -ExcludeTokens $excludeTokens -ExcludeKeys $excludeKeys)
+    $candidates = @(New-AdvancedCandidatePool -SelectedWordCategories $categories -CustomWords $customWords -Style ([string]$script:StyleBox.SelectedItem) -Platform $platform -MinLength ([int]$script:MinLengthBox.Value) -MaxLength ([int]$script:MaxLengthBox.Value) -Count $requestedCount -UseNumbers ([bool]$script:NumbersCheck.Checked) -UseUnderscore ([bool]$script:UnderscoreCheck.Checked) -OneWord ([bool]$script:OneWordCheck.Checked) -TwoWords ([bool]$script:TwoWordsCheck.Checked) -InventedWords ([bool]$script:InventedWordsCheck.Checked) -InventedPairs ([bool]$script:InventedPairsCheck.Checked) -LeetWords ([bool]$script:LeetCheck.Checked) -RareShort ([bool]$script:RareShortCheck.Checked) -Ordered ([bool]$script:OrderedCheck.Checked) -RandomChars ([bool]$script:RandomCharsCheck.Checked) -OnlyShort ([bool]$script:ShortOnlyCheck.Checked) -ExcludeTokens $excludeTokens -ExcludeKeys $excludeKeys)
     $poolStats = $script:GenerationStats
     if ($null -eq $poolStats) { $poolStats = @{} }
     if ($candidates.Count -lt $requestedCount) {
@@ -4048,11 +3969,7 @@ $script:GenerateButton.Add_Click({
         Add-Diagnostic ("По источникам — однословные {0}, двусловные {1}, выдуманные {2}, выдуманные сочетания {3}, с заменой символами {4}, редкие короткие {5}, с цифрами {6}." -f $poolStats['Single'], $poolStats['Pair'], $poolStats['Invented'], $poolStats['InventedPair'], $poolStats['Leet'], $poolStats['Rare'], $poolStats['Number'])
     }
     if ($candidates.Count -eq 0 -and [string]::IsNullOrWhiteSpace($script:ManualNickBox.Text)) {
-        # Сообщение объясняет настоящую причину. Прежний текст всегда советовал выбрать
-        # категорию, хотя чаще всего вариантов не оставалось из-за исчерпания запаса имён:
-        # при включённом «Исключать проверенные» уже проверенные ники занимают всё
-        # пространство, и подсказка про категории только уводила в сторону.
-        if ($categories.Count -lt 1 -and [string]::IsNullOrWhiteSpace($customWords) -and [string]::IsNullOrWhiteSpace($customTheme)) {
+        if ($categories.Count -lt 1 -and [string]::IsNullOrWhiteSpace($customWords)) {
             $noVariantHint = 'Не выбрана ни одна категория и не введены свои слова. Нажми «Выделить все» или впиши свои слова через запятую.'
         } elseif ($excludeKeys.Count -gt 0) {
             $noVariantHint = ("Запас имён исчерпан: уже проверено или занято {0}. Сними галочку «Исключать проверенные», включи «Выдуманные слова» и «Выдуманные словосочетания» или очисти список проверенных имён в окне «Свободные ники»." -f $excludeKeys.Count)
@@ -4067,7 +3984,6 @@ $script:GenerateButton.Add_Click({
     $dropped = 0
     foreach ($candidate in $candidates) {
         $key = (($platform + '|' + [string]$candidate.Name).ToLowerInvariant())
-        # Страховка: генератор уже отсек эти ключи, но список мог измениться за время работы.
         if ($script:RetiredNames.ContainsKey($key)) { $dropped++; continue }
         if ($script:ExcludeCheckedCheck.Checked -and $script:CheckedNames.ContainsKey($key)) { $dropped++; continue }
         if ($seen.ContainsKey($key)) { $dropped++; continue }
@@ -4091,9 +4007,6 @@ $script:GenerateButton.Add_Click({
         $seen[$key]=$true; $added++
     }
     Touch-Candidates
-    # Порог поднят до 5000: максимум количества за одну генерацию теперь 2000, и прежний
-    # порог 2000 срабатывал бы сразу после запрошенного большого прогона.
-    # Это предупреждение, а не запрет — работа не прерывается.
     if ($script:Candidates.Count -gt 5000) { [System.Windows.Forms.MessageBox]::Show('В списке больше 5000 записей: таблица может перерисовываться медленнее. Экспортируй результаты или очисти список.','Размер списка','OK','Information') | Out-Null }
     Update-ResultGrid
     if ($added -eq $requestedCount) {
@@ -4135,7 +4048,7 @@ $script:CsvButton.Add_Click({
     $dialog.FileName = 'Universal_Usernames_All_' + (Get-Date -Format 'yyyy-MM-dd_HH-mm') + '.csv'
     $dialog.Title = 'Экспорт всех результатов'
     if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        $script:Candidates | Select-Object @{Name='Платформа';Expression={$_.Platform}},@{Name='Ник';Expression={$_.Name}},@{Name='Статус';Expression={$_.Status}},@{Name='Категория';Expression={$_.Category}},@{Name='Структура';Expression={$_.Structure}},@{Name='Значение';Expression={$_.Meaning}},@{Name='Время';Expression={$_.Time}},@{Name='Причина';Expression={$_.Reason}} | Export-Csv -LiteralPath $dialog.FileName -NoTypeInformation -Encoding UTF8
+        $script:Candidates | Select-Object @{Name='Платформа';Expression={$_.Platform}},@{Name='Ник';Expression={(Get-DisplayNick -Platform ([string]$_.Platform) -Name ([string]$_.Name))}},@{Name='Статус';Expression={$_.Status}},@{Name='Категория';Expression={$_.Category}},@{Name='Структура';Expression={$_.Structure}},@{Name='Значение';Expression={$_.Meaning}},@{Name='Время';Expression={$_.Time}},@{Name='Причина';Expression={$_.Reason}} | Export-Csv -LiteralPath $dialog.FileName -NoTypeInformation -Encoding UTF8
         Add-Diagnostic "CSV экспортировано записей: $($script:Candidates.Count) → $($dialog.FileName)"
     }
 })
@@ -4154,10 +4067,6 @@ $script:ClearButton.Add_Click({
     $script:ProgressBar.Value = 0
     $script:ProgressCaption.Text = 'Прогресс проверки'
     Update-ResultGrid
-    # Список проверенных имён намеренно НЕ очищается: он постоянный и хранится в
-    # username_history.json. Именно благодаря ему уже проверенные, свободные и
-    # недопустимые ники не появляются в выдаче повторно после очистки таблицы.
-    # Управление списком — в окне «Проверенные ники».
     $script:SummaryLabel.Text = 'Результаты очищены'
     Add-Diagnostic ('Таблица очищена. Список проверенных имён сохранён ({0}); управлять им можно в окне «Проверенные ники».' -f $script:CheckedNames.Count)
 })
@@ -4192,13 +4101,8 @@ $script:PlatformBox.Add_SelectedIndexChanged({
     if ($script:PlatformBox.SelectedItem) {
         $selectedPlatform = [string]$script:PlatformBox.SelectedItem
         $script:SummaryLabel.Text = "Выбрана платформа: $selectedPlatform"
+        Update-AccountPlatformUi
         Add-Diagnostic "Выбрана платформа проверки: $selectedPlatform. Для проверки используются только строки этой платформы."
-        # Минимальная и максимальная длина подставляются из того же источника, которым
-        # проверяется формат ника (Get-PlatformLengthRule дублирует границы из
-        # Test-UsernameFormat). Поэтому сгенерированные имена сразу проходят валидацию
-        # выбранной платформы, а не отсеиваются после генерации как недопустимые.
-        # Значения из сохранённых настроек при этом не затираются на старте: обработчик
-        # срабатывает только на действие пользователя.
         try {
             $rule = Get-PlatformLengthRule -Platform $selectedPlatform
             $ruleMin = [int]$rule.Min
@@ -4226,8 +4130,6 @@ Update-CheckedNamesButtonText
 $script:HistoryButton.Text = "Свободные ники ($($script:FreeHistory.Count))"
 $script:AccountButton.Add_Click({ Open-AccountTools })
 
-# Настройки предыдущего сеанса восстанавливаются после создания всех контролов
-# и до показа окна, чтобы пользователь не видел «прыжка» значений.
 Restore-AppSettings
 try { if ($script:OnlyFreeCheck.Checked) { Refresh-FreeHistoryList } } catch { }
 Update-ResultGrid
@@ -4239,7 +4141,6 @@ $script:Form.Add_FormClosing({
     foreach ($worker in $script:WorkerPowerShells) { try { if ($worker) { $worker.Stop() } } catch { } }
     foreach ($runspace in $script:WorkerRunspaces) { try { if ($runspace) { $runspace.Close() } } catch { } }
     try { if ($script:PasswordRng) { $script:PasswordRng.Dispose() } } catch { }
-    # История пишется с задержкой (дебаунс), поэтому при закрытии сохраняем принудительно.
     try { if ($script:HistoryDirty) { Save-UsernameHistory } } catch { }
     try { Save-AppSettings } catch { }
     try {
@@ -4252,9 +4153,16 @@ $script:Form.Add_FormClosing({
 })
 
 try {
+    & $script:WireButtonAnimations $script:Form
+    try {
+        $script:ResizeFrame = New-Object UufResizeFrame
+        $script:ResizeFrame.AssignHandle($script:Form.Handle)
+    } catch { }
+    try {
+        if ($null -ne $script:SplashForm) { $script:SplashForm.Close(); $script:SplashForm.Dispose() }
+    } catch { }
     [void]$script:Form.ShowDialog()
 } catch {
-    # Без этого любое исключение на уровне формы закрывало приложение без сообщения.
     Write-StartupLog ('Фатальная ошибка главного окна: ' + $_.Exception.ToString())
     Show-FatalError 'Фатальная ошибка' ("Приложение не может продолжить работу:`r`n`r`n{0}`r`n`r`nПодробности: UniversalUsernameFinder.log" -f $_.Exception.Message)
     exit 1

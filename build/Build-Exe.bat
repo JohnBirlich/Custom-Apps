@@ -5,7 +5,7 @@ set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 set "LOG=%~dp0build_error.log"
 if exist "%LOG%" del /q "%LOG%"
 
-rem Builds dist\UniversalUsernameFinder.exe from ..\UniversalUsernameFinder.ps1.
+rem Builds dist\UUF.exe from ..\UniversalUsernameFinder.ps1.
 rem The .ps1 file stays the single source of truth; the .exe only embeds it.
 
 if not exist "%PS%" (
