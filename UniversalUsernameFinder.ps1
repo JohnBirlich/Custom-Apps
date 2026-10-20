@@ -1,11 +1,26 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.5.3'
+$script:AppVersion = '2.5.4'
+
+# Каталог приложения. При запуске из .ps1 это каталог скрипта, а в скомпилированном
+# .exe переменная $PSScriptRoot пуста — ps2exe вместо неё задаёт $ScriptRoot. Если и он
+# недоступен, берётся каталог сборки процесса. Без этого журнал в .exe уезжал бы в
+# непредсказуемое место.
+function Get-AppDirectory {
+    $candidate = ''
+    try { $candidate = [string]$ScriptRoot } catch { }
+    if ([string]::IsNullOrWhiteSpace($candidate)) { $candidate = [string]$PSScriptRoot }
+    if ([string]::IsNullOrWhiteSpace($candidate)) {
+        try { $candidate = [string][System.AppDomain]::CurrentDomain.BaseDirectory } catch { }
+    }
+    if ([string]::IsNullOrWhiteSpace($candidate)) { $candidate = [string](Get-Location).Path }
+    return $candidate
+}
 
 # Журнал: предпочитаем папку скрипта, но если она недоступна для записи
 # (например, программа распакована в Program Files), уходим в профиль пользователя.
 # Раньше запись молча глоталась catch-блоком, и диагностика пропадала.
 function Resolve-LogPath {
-    $primary = Join-Path $PSScriptRoot 'UniversalUsernameFinder.log'
+    $primary = Join-Path (Get-AppDirectory) 'UniversalUsernameFinder.log'
     try {
         $directory = Split-Path -Parent $primary
         $probe = Join-Path $directory ('.uuf-write-probe-' + [guid]::NewGuid().ToString('N'))
@@ -38,8 +53,18 @@ $script:LogPath = Resolve-LogPath
 Rotate-AppLog
 
 Add-Type -AssemblyName System.Security
-$script:VaultDirectory = Join-Path $env:LOCALAPPDATA 'RobloxNickFinder'
+# До версии 2.5.4 зашифрованное хранилище аккаунтов лежало в папке RobloxNickFinder:
+# приложение тогда работало только с Roblox. Теперь платформ 12, поэтому хранилище
+# переносится в общую папку приложения. Старый путь сохранён для миграции.
+$script:VaultDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
 $script:VaultPath = Join-Path $script:VaultDirectory 'accounts.dat'
+$script:LegacyVaultDirectory = Join-Path $env:LOCALAPPDATA 'RobloxNickFinder'
+$script:LegacyVaultPath = Join-Path $script:LegacyVaultDirectory 'accounts.dat'
+# Значение энтропии намеренно оставлено прежним: оно участвует в расшифровке уже
+# созданных хранилищ, и его смена сделала бы сохранённые аккаунты нечитаемыми.
+# Секретом эта строка не является (она лежит в открытом репозитории) — реальную
+# защиту даёт область DPAPI CurrentUser: данные расшифровывает только тот же
+# пользователь Windows на той же машине. Подробности в README.
 $script:VaultEntropy = [System.Text.Encoding]::UTF8.GetBytes('RobloxNickFinder:account-vault:v1')
 $script:PasswordRng = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
 Add-Type -AssemblyName System.Windows.Forms
@@ -71,11 +96,30 @@ function Write-StartupLog {
     param([string]$Message)
     try {
         $logPath = $script:LogPath
-        if ([string]::IsNullOrWhiteSpace($logPath)) { $logPath = Join-Path $PSScriptRoot 'UniversalUsernameFinder.log' }
+        if ([string]::IsNullOrWhiteSpace($logPath)) { $logPath = Join-Path (Get-AppDirectory) 'UniversalUsernameFinder.log' }
         $line = '[{0}] {1}{2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message, [Environment]::NewLine
         [System.IO.File]::AppendAllText($logPath, $line, (New-Object System.Text.UTF8Encoding -ArgumentList $true))
     } catch { }
 }
+
+function Migrate-LegacyVault {
+    # Переносит зашифрованное хранилище из старой папки RobloxNickFinder в общую
+    # папку приложения. DPAPI привязан к пользователю Windows, а не к пути файла,
+    # поэтому перенос не мешает расшифровке. Старый файл не удаляется, а
+    # переименовывается в accounts.dat.migrated — это запасной вариант на случай,
+    # если что-то пойдёт не так.
+    try {
+        if (-not [System.IO.File]::Exists($script:LegacyVaultPath)) { return }
+        if ([System.IO.File]::Exists($script:VaultPath)) { return }
+        $null = [System.IO.Directory]::CreateDirectory($script:VaultDirectory)
+        [System.IO.File]::Copy($script:LegacyVaultPath, $script:VaultPath, $false)
+        try { [System.IO.File]::Move($script:LegacyVaultPath, ($script:LegacyVaultPath + '.migrated')) } catch { }
+        Write-StartupLog 'Хранилище аккаунтов перенесено из папки RobloxNickFinder в UniversalUsernameFinder.'
+    } catch {
+        Write-StartupLog ('Не удалось перенести хранилище аккаунтов из старой папки: ' + $_.Exception.Message)
+    }
+}
+Migrate-LegacyVault
 
 function Show-FatalError {
     param([string]$Title, [string]$Message)
@@ -250,6 +294,10 @@ $script:Candidates = New-Object 'System.Collections.Generic.List[object]'
 # Индекс «платформа|ник» → кандидат: без него каждый результат проверки искался
 # линейным перебором всего списка (O(n²) на прогон) и подтормаживал интерфейс.
 $script:CandidateIndex = @{}
+# Ревизия списка кандидатов и ревизия, до которой уже посчитаны свободные ники.
+# Пока они равны, Update-AvailableNames не пересчитывает списки заново.
+$script:CandidateRevision = 0
+$script:AvailableNamesRevision = -1
 $script:HistoryDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
 $script:HistoryPath = Join-Path $script:HistoryDirectory 'username_history.json'
 $script:SettingsPath = Join-Path $script:HistoryDirectory 'settings.json'
@@ -259,17 +307,36 @@ $script:HistoryDirty = $false
 $script:HistoryDirtySince = $null
 $script:LastGridRefresh = [DateTime]::MinValue
 $script:GridRefreshPending = $false
+# Палитра статусов таблицы вынесена из цикла перерисовки: раньше switch с
+# FromArgb выполнялся для каждой строки при каждом обновлении сетки.
+$script:StatusColors = @{
+    'Свободен'            = [System.Drawing.Color]::FromArgb(99,222,151)
+    'Вероятно свободен'   = [System.Drawing.Color]::FromArgb(120,205,250)
+    'Занят'               = [System.Drawing.Color]::FromArgb(245,120,120)
+    'Недопустимый'        = [System.Drawing.Color]::FromArgb(180,188,203)
+    'Не подтверждено'      = [System.Drawing.Color]::FromArgb(207,185,255)
+    'Ошибка сети'         = [System.Drawing.Color]::FromArgb(255,190,92)
+    'Проверяется'         = [System.Drawing.Color]::FromArgb(105,185,255)
+}
 try {
     if (Test-Path -LiteralPath $script:HistoryPath) {
-        $historyData = Get-Content -LiteralPath $script:HistoryPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-        $script:FreeHistory = @($historyData.FreeHistory | Where-Object { $_.Name -and $_.Platform })
-        foreach ($retiredKey in @($historyData.RetiredNames)) {
-            if (-not [string]::IsNullOrWhiteSpace([string]$retiredKey)) { $script:RetiredNames[[string]$retiredKey] = $true }
+        # ReadAllText вместо Get-Content: в Windows PowerShell 5.1 Get-Content без
+        # -Encoding читает файл без BOM как ANSI. Файлы истории, созданные до версии
+        # 2.5.2, записывались без BOM, поэтому кириллические статусы («Свободен»)
+        # превращались в нечитаемые символы и сравнения переставали срабатывать.
+        $historyJson = [System.IO.File]::ReadAllText($script:HistoryPath)
+        if (-not [string]::IsNullOrWhiteSpace($historyJson)) {
+            $historyData = $historyJson | ConvertFrom-Json -ErrorAction Stop
+            $script:FreeHistory = @($historyData.FreeHistory | Where-Object { $_.Name -and $_.Platform })
+            foreach ($retiredKey in @($historyData.RetiredNames)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$retiredKey)) { $script:RetiredNames[[string]$retiredKey] = $true }
+            }
         }
     }
 } catch {
     $script:FreeHistory = @()
     $script:RetiredNames = @{}
+    Write-StartupLog ('Не удалось прочитать историю ников, начинаем с пустой: ' + $_.Exception.Message)
 }
 
 # Индекс «слово → значение» строится один раз за сеанс.
@@ -498,6 +565,13 @@ function New-AdvancedCandidatePool {
 
     $result = New-Object System.Collections.ArrayList
     $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    # Счётчики ведутся в hashtable, а не в обычных переменных: scriptblock видит
+    # переменные функции только на чтение, а hashtable — ссылочный тип, поэтому
+    # изменения внутри блоков заполнения сохраняются.
+    # Флаги исчерпания нужны, чтобы финальный добор не запускал повторно источник,
+    # который уже просмотрен целиком: повтор ничего не добавляет, но раздувает
+    # счётчики отсева в диагностике.
+    $counters = @{ Single = 0; Pair = 0; Number = 0; SingleExhausted = $false; PairExhausted = $false }
 
     # Единая точка приёма кандидата: все фильтры применяются здесь, поэтому статистика
     # отсева и итоговое количество согласованы, а не расходятся, как было раньше.
@@ -537,30 +611,43 @@ function New-AdvancedCandidatePool {
         return $true
     }
 
-    # Этап 1 — одиночные слова. Набор конечен, поэтому перебираем перемешанные базы.
-    if ($OneWord -and $bases.Count -gt 0) {
+    # Блок заполнения одиночными словами: набор конечен, поэтому перебираем перемешанные
+    # базы и останавливаемся, когда общий результат достиг целевого значения.
+    $fillSingle = {
+        param([int]$StopAtTotal)
+        if ($bases.Count -lt 1) { $counters['SingleExhausted'] = $true; return }
+        if ($result.Count -ge $StopAtTotal) { return }
         foreach ($base in (Get-ShuffledArray -Items $bases.ToArray())) {
-            if ($result.Count -ge $Count) { break }
+            if ($result.Count -ge $StopAtTotal) { break }
             $word = [regex]::Replace([string]$base.Word, '[^A-Za-z0-9]', '')
             if ($word.Length -lt 1) { continue }
-            $null = & $tryAccept $word ([string]$base.Meaning) ([string]$base.Category) 'Одно слово'
+            if (& $tryAccept $word ([string]$base.Meaning) ([string]$base.Category) 'Одно слово') {
+                $counters['Single'] = $counters['Single'] + 1
+            }
         }
+        # Набор баз конечен: если он просмотрен целиком, а цель не достигнута, источник
+        # исчерпан. Повторный проход дал бы только отказы по повторам и раздул бы
+        # статистику отсева, которая показывается пользователю как причина нехватки.
+        if ($result.Count -lt $StopAtTotal) { $counters['SingleExhausted'] = $true }
     }
 
-    # Этап 2 — пары слов. Комбинации больше не материализуются: раньше создавались все
+    # Блок заполнения парами слов. Комбинации не материализуются: раньше создавались все
     # пары «база × модификатор» (десятки тысяч объектов), и только потом брались первые
-    # Count. Теперь пара выбирается случайно, пока не набрано нужное количество; предел по
-    # числу неудач подряд означает, что пространство имён при текущих фильтрах исчерпано.
-    if ($TwoWords -and $result.Count -lt $Count -and $bases.Count -gt 0 -and $modifiers.Count -gt 0) {
+    # Count. Теперь пара выбирается случайно; предел по числу неудач подряд означает,
+    # что пространство имён при текущих фильтрах исчерпано.
+    $fillPairs = {
+        param([int]$StopAtTotal)
+        if ($bases.Count -lt 1 -or $modifiers.Count -lt 1) { $counters['PairExhausted'] = $true; return }
+        if ($result.Count -ge $StopAtTotal) { return }
         $joiner = ''
         if ($UseUnderscore) { $joiner = '_' }
         $baseArray = @($bases.ToArray())
         $modArray = @($modifiers)
-        $maxAttempts = [Math]::Max(400, $Count * 40)
+        $budget = [Math]::Max(400, ($StopAtTotal - $result.Count) * 40)
         $failureLimit = 400
         $consecutiveFailures = 0
         $attempts = 0
-        while ($result.Count -lt $Count -and $attempts -lt $maxAttempts -and $consecutiveFailures -lt $failureLimit) {
+        while ($result.Count -lt $StopAtTotal -and $attempts -lt $budget -and $consecutiveFailures -lt $failureLimit) {
             $attempts++
             $base = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Length)]
             $mod = $modArray[(Get-Random -Minimum 0 -Maximum $modArray.Length)]
@@ -574,26 +661,71 @@ function New-AdvancedCandidatePool {
                 $pairName = $modWord + $joiner + $word
                 $pairMeaning = ('{0} + {1}' -f [string]$mod.Meaning, [string]$base.Meaning)
             }
-            if (& $tryAccept $pairName $pairMeaning 'Двусловные' 'Два слова') { $consecutiveFailures = 0 } else { $consecutiveFailures++ }
+            if (& $tryAccept $pairName $pairMeaning 'Двусловные' 'Два слова') {
+                $consecutiveFailures = 0
+                $counters['Pair'] = $counters['Pair'] + 1
+            } else { $consecutiveFailures++ }
         }
+        # Выход из цикла по пределу неудач подряд или по бюджету попыток означает, что
+        # пространство пар при текущих фильтрах фактически исчерпано.
+        if ($result.Count -lt $StopAtTotal) { $counters['PairExhausted'] = $true }
     }
 
-    # Этап 3 — добор вариантами с цифрами, если они включены и количество ещё не набрано.
-    if ($UseNumbers -and $result.Count -lt $Count -and $result.Count -gt 0) {
-        foreach ($entry in (Get-ShuffledArray -Items $result.ToArray())) {
-            if ($result.Count -ge $Count) { break }
+    # Квоты между источниками. Раньше этапы шли строго последовательно и одиночные слова
+    # заполняли весь запрос, поэтому при отмеченной галочке «Два осмысленных слова» пары
+    # не создавались вовсе: по умолчанию отмечено шесть категорий, это около 189 базовых
+    # слов, а запрос по умолчанию — 40 ников.
+    $numberTarget = 0
+    if ($UseNumbers) { $numberTarget = [Math]::Min([int][Math]::Ceiling($Count * 0.3), [Math]::Max(0, $Count - 1)) }
+    $wordBudget = $Count - $numberTarget
+    if ($wordBudget -lt 1) { $wordBudget = 1 }
+    if ($OneWord -and $TwoWords) { $singleTarget = [int][Math]::Ceiling($wordBudget / 2) }
+    elseif ($OneWord) { $singleTarget = $wordBudget }
+    else { $singleTarget = 0 }
+
+    if ($OneWord) { & $fillSingle $singleTarget }
+    if ($TwoWords) { & $fillPairs $wordBudget }
+
+    # Цифры — часть квоты, а не добор при нехватке. Раньше вариант с цифрами создавался
+    # только если количество не набиралось, поэтому при большом пространстве имён
+    # галочка «Использовать цифры» не давала ничего.
+    if ($numberTarget -gt 0 -and $result.Count -gt 0) {
+        # Снимок списка делается один раз: иначе числовые варианты наслаивались бы
+        # друг на друга (Nova -> Nova42 -> Nova4217), и каждый проход стоил бы O(n).
+        $numberSources = @(Get-ShuffledArray -Items $result.ToArray())
+        $numberBudget = [Math]::Max(200, $numberTarget * 20)
+        $numberAttempts = 0
+        $sourceIndex = 0
+        while ($counters['Number'] -lt $numberTarget -and $result.Count -lt $Count -and $numberAttempts -lt $numberBudget) {
+            $numberAttempts++
+            if ($sourceIndex -ge $numberSources.Length) { $sourceIndex = 0 }
+            $entry = $numberSources[$sourceIndex]
+            $sourceIndex++
             $baseName = [string]$entry.Name
-            for ($try = 0; $try -lt 3; $try++) {
-                $number = Get-Random -Minimum 2 -Maximum 10000
-                $withNumber = $baseName + $number
-                if ($withNumber.Length -gt $maximum) { continue }
-                # Префикс и суффикс уже входят в имя, поэтому повторно не подставляются.
-                $meaningWithNumber = ([string]$entry.Meaning) + (' + число {0}' -f $number)
-                if (& $tryAccept $withNumber $meaningWithNumber ([string]$entry.Category) ([string]$entry.Structure) -SkipAffixes) { break }
+            $number = Get-Random -Minimum 2 -Maximum 10000
+            $withNumber = $baseName + $number
+            if ($withNumber.Length -gt $maximum) { continue }
+            # Префикс и суффикс уже входят в имя, поэтому повторно не подставляются.
+            $meaningWithNumber = ([string]$entry.Meaning) + (' + число {0}' -f $number)
+            if (& $tryAccept $withNumber $meaningWithNumber ([string]$entry.Category) ([string]$entry.Structure) -SkipAffixes) {
+                $counters['Number'] = $counters['Number'] + 1
             }
         }
     }
 
+    # Финальный добор: если источник исчерпан или на цифры не хватило места,
+    # остаток закрывается другим источником, чтобы количество совпало с запрошенным.
+    # Исчерпанные источники повторно не запускаются: повторный проход ничего не даёт,
+    # но увеличивает счётчики отсева, которые показываются пользователю как причина
+    # нехватки, и превращает честную диагностику в завышенную.
+    if ($result.Count -lt $Count) {
+        if ($TwoWords -and -not $counters['PairExhausted']) { & $fillPairs $Count }
+        if ($result.Count -lt $Count -and $OneWord -and -not $counters['SingleExhausted']) { & $fillSingle $Count }
+    }
+
+    $stats['Single'] = $counters['Single']
+    $stats['Pair'] = $counters['Pair']
+    $stats['Number'] = $counters['Number']
     $script:GenerationStats = $stats
     if ($result.Count -eq 0) { return @() }
     $shuffled = @(Get-ShuffledArray -Items $result.ToArray())
@@ -731,9 +863,42 @@ function New-TextBox {
     $box.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
     $box.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $box.BorderStyle = 'FixedSingle'
-    if ($Placeholder) { $box.Text = $Placeholder; $box.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187) }
+    if ($Placeholder) {
+        # Подсказка больше не считается значением поля: при получении фокуса она
+        # стирается, при потере фокуса и пустом поле возвращается. Раньше строка
+        # «Pixel, Void, Storm» просто лежала в .Text, и если пользователь дописывал
+        # свои слова вместо полной замены, Pixel и Void молча становились базовыми
+        # словами и участвовали в генерации.
+        $box.Tag = $Placeholder
+        $box.Text = $Placeholder
+        $box.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
+        $box.Add_GotFocus({
+            $hint = [string]$this.Tag
+            if ($hint -and $this.Text -eq $hint) {
+                $this.Text = ''
+                $this.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+            }
+        })
+        $box.Add_LostFocus({
+            $hint = [string]$this.Tag
+            if ($hint -and [string]::IsNullOrWhiteSpace($this.Text)) {
+                $this.Text = $hint
+                $this.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
+            }
+        })
+    }
     $left.Controls.Add($box)
     return $box
+}
+function Get-TextBoxValue {
+    param($Box)
+    # Возвращает текст поля, но пустую строку, если в поле осталась подсказка.
+    # Заменяет сравнение с литералом «Pixel, Void, Storm» в обработчиках.
+    if (-not $Box) { return '' }
+    $value = [string]$Box.Text
+    $hint = [string]$Box.Tag
+    if ($hint -and $value -eq $hint) { return '' }
+    return $value
 }
 function New-CheckBox {
     param([string]$Text,[int]$X,[int]$Y,[int]$Width=170,[bool]$Checked=$false)
@@ -1062,7 +1227,7 @@ function Write-AppLog {
     param([string]$Message)
     try {
         $logPath = $script:LogPath
-        if ([string]::IsNullOrWhiteSpace($logPath)) { $logPath = Join-Path $PSScriptRoot 'UniversalUsernameFinder.log' }
+        if ([string]::IsNullOrWhiteSpace($logPath)) { $logPath = Join-Path (Get-AppDirectory) 'UniversalUsernameFinder.log' }
         $line = '[{0}] {1}{2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message, [Environment]::NewLine
         [System.IO.File]::AppendAllText($logPath, $line, (New-Object System.Text.UTF8Encoding -ArgumentList $true))
     } catch { }
@@ -1597,6 +1762,12 @@ function Find-Candidate {
 function Clear-CandidateIndex {
     $script:CandidateIndex = @{}
 }
+function Touch-Candidates {
+    # Любое добавление кандидата, смена его статуса или очистка списка повышает
+    # ревизию. Update-AvailableNames сравнивает её с уже обработанной и не
+    # пересчитывает свободные ники, если ничего не изменилось.
+    $script:CandidateRevision = $script:CandidateRevision + 1
+}
 
 # --- Атомарная запись файлов ----------------------------------------------------
 # Используется и для истории ников, и для настроек: оба файла содержат кириллицу и
@@ -1985,6 +2156,7 @@ function Open-FreeHistoryWindow {
         $candidate.Time = ''
         $candidate.Reason = 'Запрошена повторная проверка'
         $candidate.Checked = $false
+        Touch-Candidates
         $key = Get-HistoryKey -Name $selectedName -Platform $selectedPlatform
         $script:CheckedNames.Remove($key)
         Update-ResultGrid
@@ -2102,6 +2274,8 @@ function Close-CheckRunspace {
 }
 
 function Update-AvailableNames {
+    if ($script:CandidateRevision -eq $script:AvailableNamesRevision) { return }
+    $script:AvailableNamesRevision = $script:CandidateRevision
     $script:AvailableNames.Clear()
     $script:RobloxAvailableNames.Clear()
     foreach ($candidate in $script:Candidates) {
@@ -2138,7 +2312,17 @@ function Update-Stats {
 
 function Update-ResultGrid {
     if (-not $script:Grid) { return }
+    # При AutoSizeMode='Fill' ширина столбцов пересчитывается на КАЖДОЙ добавленной
+    # строке, и SuspendLayout этого не блокирует. На лимитах до 2000 кандидатов
+    # (с учётом мультиплатформенности — тысячи строк) перерисовка занимала секунды.
+    # Поэтому на время массовой вставки автоширина отключается и включается обратно
+    # один раз в конце.
     $script:Grid.SuspendLayout()
+    $restoreAutoSize = $false
+    if ($script:Grid.AutoSizeColumnsMode -eq [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill) {
+        $script:Grid.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::None
+        $restoreAutoSize = $true
+    }
     $script:Grid.Rows.Clear()
     $filterStatus = [string]$script:StatusFilterBox.SelectedItem
     $query = ''
@@ -2158,18 +2342,13 @@ function Update-ResultGrid {
         $searchText = ([string]$item.Name + ' ' + [string]$item.Platform + ' ' + [string]$item.Category + ' ' + [string]$item.Structure + ' ' + [string]$item.Meaning + ' ' + [string]$item.Reason)
         if ($query -and $searchText.IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
         $row = $script:Grid.Rows.Add([string]$item.Name,[string]$item.Platform,[string]$item.Status,[string]$item.Category,[string]$item.Structure,[string]$item.Meaning,[string]$item.Time,[string]$item.Reason)
-        $color = [System.Drawing.Color]::FromArgb(255,190,92)
-        switch ([string]$item.Status) {
-            'Свободен' { $color = [System.Drawing.Color]::FromArgb(99,222,151) }
-            'Вероятно свободен' { $color = [System.Drawing.Color]::FromArgb(120,205,250) }
-            'Занят' { $color = [System.Drawing.Color]::FromArgb(245,120,120) }
-            'Недопустимый' { $color = [System.Drawing.Color]::FromArgb(180,188,203) }
-            'Не подтверждено' { $color = [System.Drawing.Color]::FromArgb(207,185,255) }
-            'Ошибка сети' { $color = [System.Drawing.Color]::FromArgb(255,190,92) }
-            'Проверяется' { $color = [System.Drawing.Color]::FromArgb(105,185,255) }
-        }
+        $color = $script:StatusColors[[string]$item.Status]
+        if ($null -eq $color) { $color = $script:StatusColors['Ошибка сети'] }
         $script:Grid.Rows[$row].Cells['Nick'].Style.ForeColor = $color
         $script:Grid.Rows[$row].Cells['Status'].Style.ForeColor = $color
+    }
+    if ($restoreAutoSize) {
+        $script:Grid.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
     }
     $script:Grid.ResumeLayout()
     Update-Stats
@@ -2209,6 +2388,7 @@ function Start-Checking {
         $candidate.Reason = "Подготовка проверки для $selectedPlatform"
         [void]$validCandidates.Add([pscustomobject]@{Name=[string]$candidate.Name; Platform=$selectedPlatform; Meaning=[string]$candidate.Meaning; Category=[string]$candidate.Category; Structure=[string]$candidate.Structure})
     }
+    Touch-Candidates
     if ($validCandidates.Count -eq 0) { Update-ResultGrid; return }
     Update-ResultGrid
     Add-Diagnostic ("Начата проверка: {0} ников; пауза {1} мс; тайм-аут {2} мс; потоков 1; платформа {3}." -f $validCandidates.Count,[int]$script:DelayBox.Value,[int]$script:TimeoutBox.Value,$selectedPlatform)
@@ -2221,7 +2401,7 @@ param($Candidates, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform, $AppV
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.5.3' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.5.4' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 # Пауза адаптивная (AIMD): значение из интерфейса — стартовая точка, а не жёсткая задержка.
 # Пол задаётся профилем платформы и не зависит от состояния контролов, потому что
@@ -2877,6 +3057,7 @@ $script:PollTimer.Add_Tick({
                     $candidate.Reason = [string]$item.Reason
                     $candidate.Checked = $true
                     Update-FreeHistoryFromCandidate $candidate
+                    Touch-Candidates
                 }
                 $script:CurrentBatchDone = [int]$item.Index
                 $script:ProgressBar.Value = [Math]::Min(100,[int](100 * $script:CurrentBatchDone / [Math]::Max(1,$script:CurrentBatchTotal)))
@@ -2907,7 +3088,7 @@ $script:PollTimer.Add_Tick({
                 if ($entry.Type -eq 'Progress') {
                     $item = $entry.Item
                     $candidate = Find-Candidate -Name ([string]$item.Name) -Platform ([string]$item.Platform)
-                    if ($candidate) { $script:CheckedNames[((([string]$candidate.Platform) + '|' + [string]$candidate.Name).ToLowerInvariant())] = $true; $candidate.Status=[string]$item.Status; $candidate.Time=[string]$item.Time; $candidate.Reason=[string]$item.Reason; $candidate.Checked=$true; Update-FreeHistoryFromCandidate $candidate }
+                    if ($candidate) { $script:CheckedNames[((([string]$candidate.Platform) + '|' + [string]$candidate.Name).ToLowerInvariant())] = $true; $candidate.Status=[string]$item.Status; $candidate.Time=[string]$item.Time; $candidate.Reason=[string]$item.Reason; $candidate.Checked=$true; Update-FreeHistoryFromCandidate $candidate; Touch-Candidates }
                     $script:CurrentBatchDone = [int]$item.Index
                 } elseif ($entry.Type -eq 'Log') { Add-Diagnostic ([string]$entry.Message) }
                 elseif ($entry.Type -eq 'Complete') { $script:CompletionEvent = $entry }
@@ -2963,9 +3144,8 @@ $script:GenerateButton.Add_Click({
     }
     $platform = [string]$script:PlatformBox.SelectedItem
     $categories = @($script:CategoryList.CheckedItems | ForEach-Object { [string]$_ })
-    $customWords = $script:CustomBox.Text
-    if ($customWords -eq 'Pixel, Void, Storm') { $customWords = '' }
-    $customTheme = $script:ThemeBox.Text
+    $customWords = Get-TextBoxValue $script:CustomBox
+    $customTheme = Get-TextBoxValue $script:ThemeBox
     $excludeTokens = @($script:ExcludeBox.Text -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     $seen = @{}
     foreach ($existing in $script:Candidates) { $existingPlatform = [string]$existing.Platform; if (-not $existingPlatform) { $existingPlatform = 'Roblox' }; $seen[(($existingPlatform + '|' + [string]$existing.Name).ToLowerInvariant())] = $true }
@@ -3017,6 +3197,7 @@ $script:GenerateButton.Add_Click({
         Register-Candidate $manualCandidate
         $seen[$key]=$true; $added++
     }
+    Touch-Candidates
     # Порог поднят до 5000: максимум количества за одну генерацию теперь 2000, и прежний
     # порог 2000 срабатывал бы сразу после запрошенного большого прогона.
     # Это предупреждение, а не запрет — работа не прерывается.
@@ -3076,6 +3257,7 @@ $script:ClearButton.Add_Click({
     $script:Candidates.Clear()
     Clear-CandidateIndex
     $script:AvailableNames.Clear()
+    Touch-Candidates
     $script:CheckedNames.Clear()
     $script:ProgressBar.Value = 0
     $script:ProgressCaption.Text = 'Прогресс проверки'
