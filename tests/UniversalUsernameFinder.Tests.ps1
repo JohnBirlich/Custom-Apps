@@ -852,7 +852,8 @@ Describe 'Новые источники генерации' {
 
 Describe 'Интерфейс и поведение версии 2.5.5' {
     It 'список категорий строится из того же массива, которым пользуется генератор' {
-        $global:UufMainText.Contains('AddRange([object[]]@($script:WordCategories))') | Should -BeTrue
+        # v2.8.3: список тот же, но отсортирован по алфавиту
+        $global:UufMainText.Contains('AddRange([object[]]@($script:WordCategories | Sort-Object))') | Should -BeTrue
         $global:UufMainText.Contains('$script:WordCategories = @(') | Should -BeTrue
     }
 
