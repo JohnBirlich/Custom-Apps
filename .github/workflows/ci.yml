@@ -308,20 +308,44 @@ jobs:
               Write-Host '::warning::Extraction produced no file; embedded script was not verified.'
               exit 0
             }
+            # ps2exe writes the extracted script as UTF-8 without a BOM, and ParseFile
+            # reads a BOM-less file as ANSI in Windows PowerShell 5.1. That mangles
+            # Cyrillic and yields bogus syntax errors, so the text is decoded
+            # explicitly as UTF-8 and parsed with ParseInput instead of by path.
+            $extractedText = [System.IO.File]::ReadAllText($extracted, [System.Text.Encoding]::UTF8)
+            $failed = $false
             $tokens = $null
             $parseErrors = $null
-            $null = [System.Management.Automation.Language.Parser]::ParseFile($extracted, [ref]$tokens, [ref]$parseErrors)
+            $null = [System.Management.Automation.Language.Parser]::ParseInput($extractedText, [ref]$tokens, [ref]$parseErrors)
             $parseErrors = @($parseErrors)
+            Write-Host ('Embedded script characters: ' + $extractedText.Length)
             Write-Host ('Embedded script parse errors: ' + $parseErrors.Count)
             foreach ($parseError in $parseErrors) {
               Write-Host ('::error::embedded script line ' + $parseError.Extent.StartLineNumber + ': ' + $parseError.Message)
+              $failed = $true
             }
-            $extractedText = [System.IO.File]::ReadAllText($extracted)
-            if (-not $extractedText.Contains('New-AdvancedCandidatePool')) {
-              Write-Host '::error::Embedded script does not look like UniversalUsernameFinder.ps1'
-              exit 1
+            foreach ($marker in @('New-AdvancedCandidatePool', 'Get-AppDirectory', 'Migrate-LegacyVault')) {
+              if ($extractedText.Contains($marker)) { continue }
+              Write-Host ('::error::Embedded script does not contain expected marker: ' + $marker)
+              $failed = $true
             }
-            if ($parseErrors.Count -gt 0) { exit 1 }
+            # The embedded code must be exactly the reviewed repository source, so it
+            # is compared after normalizing line endings and a possible BOM. A
+            # difference is reported as a warning: it is informative, while parse
+            # errors and missing markers are fatal.
+            $crlf = [string][char]13 + [string][char]10
+            $lf = [string][char]10
+            $bom = [string][char]0xFEFF
+            $sourcePath = Join-Path $PWD 'UniversalUsernameFinder.ps1'
+            $sourceText = [System.IO.File]::ReadAllText($sourcePath, [System.Text.Encoding]::UTF8)
+            $sourceNorm = $sourceText.Replace($crlf, $lf).Replace($bom, '').TrimEnd()
+            $extractedNorm = $extractedText.Replace($crlf, $lf).Replace($bom, '').TrimEnd()
+            if ($sourceNorm -ceq $extractedNorm) {
+              Write-Host 'Embedded script matches the repository source exactly.'
+            } else {
+              Write-Host ('::warning::Embedded script differs from the repository source (source ' + $sourceNorm.Length + ' chars, embedded ' + $extractedNorm.Length + ' chars)')
+            }
+            if ($failed) { exit 1 }
             Write-Host 'Embedded script OK.'
           } catch {
             Write-Host ('::error::STEP EXCEPTION: ' + $_.Exception.ToString())
