@@ -1,6 +1,20 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:AppVersion = '2.6.0'
 
+trap {
+    $trapMessage = $_.Exception.Message
+    try {
+        $trapLine = '[{0}] Необработанная ошибка запуска: {1}{2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $_.Exception.ToString(), [Environment]::NewLine
+        $trapPath = if ($script:LogPath) { [string]$script:LogPath } else { Join-Path ([System.AppDomain]::CurrentDomain.BaseDirectory) 'UniversalUsernameFinder.log' }
+        [System.IO.File]::AppendAllText($trapPath, $trapLine, (New-Object System.Text.UTF8Encoding -ArgumentList $true))
+    } catch { }
+    try {
+        try { $null = $Host.UI.RawUI.FlushInputBuffer() } catch { }
+        [System.Windows.Forms.MessageBox]::Show(('Приложение завершилось из-за ошибки:`r`n`r`n{0}`r`n`r`nПодробности: UniversalUsernameFinder.log' -f $trapMessage), 'UUF: ошибка запуска', 'OK', 'Error') | Out-Null
+    } catch { }
+    exit 1
+}
+
 function Get-AppDirectory {
     $candidate = ''
     try { $candidate = [string]$ScriptRoot } catch { }
@@ -64,7 +78,8 @@ try {
     $createdNew = $false
     $script:SingleInstanceMutex = New-Object System.Threading.Mutex($true, 'Local\UniversalUsernameFinder.SingleInstance', [ref]$createdNew)
     if (-not $createdNew) {
-        [System.Windows.Forms.MessageBox]::Show('Universal Username Finder уже запущен. Второе окно не открыто, чтобы не повредить историю ников и зашифрованное хранилище.','Приложение уже запущено','OK','Information') | Out-Null
+        try { $null = $Host.UI.RawUI.FlushInputBuffer() } catch { }
+        [System.Windows.Forms.MessageBox]::Show('Universal Username Finder уже запущен. Второе окно не открыто, чтобы не повредить историю ников и зашифрованное хранилище. Если окно не находится, завершите процесс UUF или UniversalUsernameFinder в Диспетчере задач.','Приложение уже запущено','OK','Information','Button1','DefaultDesktopOnly') | Out-Null
         exit 0
     }
 } catch {
@@ -1174,6 +1189,8 @@ $script:Form.BackColor = [System.Drawing.Color]::FromArgb(245,246,248)
 $script:Form.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $script:Form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $script:Form.FormBorderStyle = 'None'
+$script:UufWin32Available = $false
+try {
 Add-Type -TypeDefinition @'
 using System;
 using System.Drawing;
@@ -1209,6 +1226,10 @@ public static class UufWin32 {
     public static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
 }
 '@ -ReferencedAssemblies System.Windows.Forms, System.Drawing
+$script:UufWin32Available = $true
+} catch {
+    try { Write-StartupLog ('Не удалось подключить Win32-рамку окна: ' + $_.Exception.Message) } catch { }
+}
 
 $script:CaptionBar = New-Object System.Windows.Forms.Panel
 $script:CaptionBar.Location = New-Object System.Drawing.Point(0, 6)
@@ -1261,7 +1282,7 @@ $script:CaptionBar.Controls.Add($script:CaptionClose)
 $script:Form.Controls.Add($script:CaptionBar)
 $captionDrag = {
     param($sender, $e)
-    if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
+    if ($script:UufWin32Available -and $e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
         [void][UufWin32]::ReleaseCapture()
         [void][UufWin32]::SendMessage($script:Form.Handle, 0xA1, [IntPtr]2, [IntPtr]::Zero)
     }
@@ -1333,7 +1354,7 @@ $script:Form.Controls.Add($header)
 $title = New-Object System.Windows.Forms.Label
 $title.Text = ('UNIVERSAL USERNAME FINDER  •  v{0}' -f $script:AppVersion)
 $title.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 19, [System.Drawing.FontStyle]::Bold)
-$title.ForeColor = [System.Drawing.Color]::FromArgb(112, 164, 255)
+$title.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $title.AutoSize = $true
 $title.Location = New-Object System.Drawing.Point(22, 12)
 $header.Controls.Add($title)
@@ -1373,16 +1394,16 @@ $script:AccountButton.Size = New-Object System.Drawing.Size(167, 42)
 $script:AccountButton.Anchor = 'Top, Right'
 $script:AccountButton.FlatStyle = 'Flat'
 $script:AccountButton.FlatAppearance.BorderSize = 0
-$script:AccountButton.BackColor = [System.Drawing.Color]::FromArgb(67, 123, 235)
-$script:AccountButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:AccountButton.BackColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$script:AccountButton.ForeColor = [System.Drawing.Color]::FromArgb(255,255,255)
 $script:AccountButton.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 9.5, [System.Drawing.FontStyle]::Bold)
 $script:AccountButton.Cursor = [System.Windows.Forms.Cursors]::Hand
 $header.Controls.Add($script:AccountButton)
 
 # --- Интерфейс: левая панель
 $left = New-Object System.Windows.Forms.Panel
-$left.Location = New-Object System.Drawing.Point(14, 94)
-$left.Size = New-Object System.Drawing.Size(390, 790)
+$left.Location = New-Object System.Drawing.Point(14, 138)
+$left.Size = New-Object System.Drawing.Size(390, 852)
 $left.Anchor = 'Top, Bottom, Left'
 $left.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
 $left.AutoScroll = $true
@@ -1570,8 +1591,8 @@ $script:CopyButton = Add-UiButton '⧉  Копировать доступные/
 $script:CheckedNamesButton = Add-UiButton '≡  Проверенные ники (0)' 14 1197 350 $false 33
 
 $right = New-Object System.Windows.Forms.Panel
-$right.Location = New-Object System.Drawing.Point(418, 94)
-$right.Size = New-Object System.Drawing.Size(1040, 790)
+$right.Location = New-Object System.Drawing.Point(418, 138)
+$right.Size = New-Object System.Drawing.Size(1040, 852)
 $right.Anchor = 'Top, Bottom, Left, Right'
 $right.BackColor = [System.Drawing.Color]::FromArgb(250,250,251)
 $script:Form.Controls.Add($right)
@@ -1589,7 +1610,7 @@ for ($i=0; $i -lt $statLabels.Count; $i++) {
     $statLabels[$i].Text = $statTexts[$i]
     $statLabels[$i].Location = New-Object System.Drawing.Point((12 + 168*$i), 10)
     $statLabels[$i].Size = New-Object System.Drawing.Size(160,26)
-    $statLabels[$i].BackColor = [System.Drawing.Color]::FromArgb(31,40,56)
+    $statLabels[$i].BackColor = [System.Drawing.Color]::FromArgb(240,241,243)
     $statLabels[$i].ForeColor = $statColors[$i]
     $statLabels[$i].TextAlign = 'MiddleCenter'
     $statLabels[$i].Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
@@ -1679,12 +1700,12 @@ $script:Grid.BackgroundColor = [System.Drawing.Color]::FromArgb(255,255,255)
 $script:Grid.BorderStyle = 'None'
 $script:Grid.GridColor = [System.Drawing.Color]::FromArgb(250,250,251)
 $script:Grid.EnableHeadersVisualStyles = $false
-$script:Grid.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(35,46,63)
+$script:Grid.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(235,236,239)
 $script:Grid.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $script:Grid.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
-$script:Grid.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(20,27,38)
+$script:Grid.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
 $script:Grid.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
-$script:Grid.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(50,75,112)
+$script:Grid.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(225,227,231)
 $script:Grid.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $script:Grid.RowHeadersVisible = $false
 $script:Grid.AllowUserToAddRows = $false
@@ -1730,7 +1751,7 @@ $diagnosticHeader.Text = 'ДИАГНОСТИКА И ЖУРНАЛ'
 $diagnosticHeader.Location = New-Object System.Drawing.Point(14,584)
 $diagnosticHeader.Size = New-Object System.Drawing.Size(250,20)
 $diagnosticHeader.Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
-$diagnosticHeader.ForeColor = [System.Drawing.Color]::FromArgb(194,207,226)
+$diagnosticHeader.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
 $right.Controls.Add($diagnosticHeader)
 $script:DiagnosticBox = New-Object System.Windows.Forms.TextBox
 $script:DiagnosticBox.Location = New-Object System.Drawing.Point(14,606)
@@ -1741,7 +1762,7 @@ $script:DiagnosticBox.ReadOnly = $true
 $script:DiagnosticBox.ScrollBars = 'Vertical'
 $script:DiagnosticBox.WordWrap = $true
 $script:DiagnosticBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:DiagnosticBox.ForeColor = [System.Drawing.Color]::FromArgb(255,198,112)
+$script:DiagnosticBox.ForeColor = [System.Drawing.Color]::FromArgb(64,67,72)
 $script:DiagnosticBox.Font = New-Object System.Drawing.Font('Consolas',8.5)
 $script:DiagnosticBox.Text = 'Готово. Здесь отображаются события, ошибки сети и ответы API.'
 $right.Controls.Add($script:DiagnosticBox)
@@ -1756,12 +1777,12 @@ $script:SummaryLabel.ForeColor = [System.Drawing.Color]::FromArgb(112,117,126)
 $script:SummaryLabel.TextAlign = 'MiddleRight'
 $right.Controls.Add($script:SummaryLabel)
 $footer = New-Object System.Windows.Forms.Label
-$footer.Text = '⚠  Доступность имени зависит от платформы. «Вероятно свободен» означает, что профиль не найден, но регистрация должна подтвердить доступность.'
+$footer.Text = '!  Доступность имени зависит от платформы. «Вероятно свободен» означает, что профиль не найден, но регистрация должна подтвердить доступность.'
 $footer.Location = New-Object System.Drawing.Point(14,744)
 $footer.Size = New-Object System.Drawing.Size(1008,34)
 $footer.Anchor = 'Bottom, Left, Right'
-$footer.ForeColor = [System.Drawing.Color]::FromArgb(20,20,24)
-$footer.BackColor = [System.Drawing.Color]::FromArgb(248,185,65)
+$footer.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+$footer.BackColor = [System.Drawing.Color]::FromArgb(240,241,243)
 $footer.Font = New-Object System.Drawing.Font('Segoe UI',9.5,[System.Drawing.FontStyle]::Bold)
 $footer.TextAlign = 'MiddleLeft'
 $footer.Padding = New-Object System.Windows.Forms.Padding(8,0,4,0)
@@ -2056,15 +2077,15 @@ function Open-AccountTools {
     $generateButton.Size = New-Object System.Drawing.Size(190, 36)
     $generateButton.FlatStyle = 'Flat'
     $generateButton.FlatAppearance.BorderSize = 0
-    $generateButton.BackColor = [System.Drawing.Color]::FromArgb(67, 123, 235)
-    $generateButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $generateButton.BackColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $generateButton.ForeColor = [System.Drawing.Color]::FromArgb(255,255,255)
     $prepareTab.Controls.Add($generateButton)
 
     $script:AccountPasswordBox = New-Object System.Windows.Forms.TextBox
     $script:AccountPasswordBox.Location = New-Object System.Drawing.Point(18, 198)
     $script:AccountPasswordBox.Size = New-Object System.Drawing.Size(677, 29)
     $script:AccountPasswordBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-    $script:AccountPasswordBox.ForeColor = [System.Drawing.Color]::FromArgb(149, 222, 176)
+    $script:AccountPasswordBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $script:AccountPasswordBox.Font = New-Object System.Drawing.Font('Consolas', 11)
     $script:AccountPasswordBox.BorderStyle = 'FixedSingle'
     $prepareTab.Controls.Add($script:AccountPasswordBox)
@@ -2112,8 +2133,8 @@ function Open-AccountTools {
     $saveAccountButton.Size = New-Object System.Drawing.Size(677, 42)
     $saveAccountButton.FlatStyle = 'Flat'
     $saveAccountButton.FlatAppearance.BorderSize = 0
-    $saveAccountButton.BackColor = [System.Drawing.Color]::FromArgb(37, 125, 83)
-    $saveAccountButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $saveAccountButton.BackColor = [System.Drawing.Color]::FromArgb(24,26,30)
+    $saveAccountButton.ForeColor = [System.Drawing.Color]::FromArgb(255,255,255)
     $prepareTab.Controls.Add($saveAccountButton)
 
     $safetyInfo = New-Object System.Windows.Forms.Label
@@ -2144,7 +2165,7 @@ function Open-AccountTools {
     $script:SavedPasswordBox.Size = New-Object System.Drawing.Size(677, 29)
     $script:SavedPasswordBox.ReadOnly = $true
     $script:SavedPasswordBox.BackColor = [System.Drawing.Color]::FromArgb(255,255,255)
-    $script:SavedPasswordBox.ForeColor = [System.Drawing.Color]::FromArgb(149, 222, 176)
+    $script:SavedPasswordBox.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $script:SavedPasswordBox.Font = New-Object System.Drawing.Font('Consolas', 10)
     $vaultTab.Controls.Add($script:SavedPasswordBox)
 
@@ -2174,7 +2195,7 @@ function Open-AccountTools {
     $deleteAccountButton.Size = New-Object System.Drawing.Size(180, 36)
     $deleteAccountButton.FlatStyle = 'Flat'
     $deleteAccountButton.FlatAppearance.BorderSize = 0
-    $deleteAccountButton.BackColor = [System.Drawing.Color]::FromArgb(115, 47, 55)
+    $deleteAccountButton.BackColor = [System.Drawing.Color]::FromArgb(235,236,239)
     $deleteAccountButton.ForeColor = [System.Drawing.Color]::FromArgb(24,26,30)
     $vaultTab.Controls.Add($deleteAccountButton)
 
