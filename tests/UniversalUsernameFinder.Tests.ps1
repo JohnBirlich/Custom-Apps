@@ -1260,13 +1260,13 @@ Describe 'Изменения версии 2.8.6' {
 }
 
 Describe 'Версия 2.8.7: подпись сборки и антивирусное доверие' {
-    It 'собираемый exe получает метаданные издателя Hasberb' {
+    It 'собираемый exe получает метаданные издателя Hasberd' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $buildText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
-        $buildText.Contains("company     = 'Hasberb'") | Should -BeTrue
+        $buildText.Contains("company     = 'Hasberd'") | Should -BeTrue
         $buildText.Contains("title       = 'Universal Username Finder'") | Should -BeTrue
     }
-    It 'скрипт подписи умеет секретный PFX и самоподпись CN=Hasberb без хранилища' {
+    It 'скрипт подписи умеет секретный PFX и самоподпись CN=Hasberd без хранилища' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $signPath = [System.IO.Path]::Combine($repoRoot, 'build', 'Sign-Uuf.ps1')
         [System.IO.File]::Exists($signPath) | Should -BeTrue
@@ -1279,7 +1279,7 @@ Describe 'Версия 2.8.7: подпись сборки и антивирус�
         $signText.Contains('CertificateRequest') | Should -BeTrue
         $signText.Contains('CreateSelfSigned') | Should -BeTrue
         $signText.Contains('X509ContentType') | Should -BeTrue
-        $signText.Contains("'CN=Hasberb'") | Should -BeTrue
+        $signText.Contains("'CN=Hasberd'") | Should -BeTrue
         $signText.Contains('/fd') | Should -BeTrue
         $signText.Contains('/tr') | Should -BeTrue
         $signText.Contains('Get-AuthenticodeSignature') | Should -BeTrue
