@@ -100,11 +100,28 @@ if (-not [System.IO.File]::Exists($ExePath)) {
 Stop-RunningApp
 New-Item -ItemType Directory -Force -Path $targetDirectory | Out-Null
 Copy-Item -LiteralPath ([System.IO.Path]::GetFullPath($ExePath)) -Destination $targetExe -Force
+$exeSourceFull = [System.IO.Path]::GetFullPath($ExePath)
+$certificateSource = Join-Path (Split-Path -Parent $exeSourceFull) 'UUF-signing.cer'
+if ([System.IO.File]::Exists($certificateSource)) {
+    Copy-Item -LiteralPath $certificateSource -Destination (Join-Path $targetDirectory 'UUF-signing.cer') -Force
+}
 New-InstallShortcut -Directory $desktopDirectory
 New-InstallShortcut -Directory $programsDirectory
 try { Get-Item -LiteralPath $targetExe | Unblock-File } catch { }
 
+$signatureStatus = 'неизвестно'
+try {
+    $signature = Get-AuthenticodeSignature -FilePath $targetExe
+    $signerName = ''
+    if ($signature.SignerCertificate) { $signerName = ' — ' + $signature.SignerCertificate.Subject }
+    $signatureStatus = [string]$signature.SignatureStatus + $signerName
+    if ($signature.SignatureStatus -eq 'NotTrusted' -and [System.IO.File]::Exists((Join-Path $targetDirectory 'UUF-signing.cer'))) {
+        Write-Host 'Подпись самоподписанная: чтобы она стала зелёной, импортируйте UUF-signing.cer (можно двойным щелчком) в «Доверенные корневые центры сертификации» текущего пользователя.'
+    }
+} catch { }
+
 Write-Host ''
 Write-Host ('Готово! UUF установлен: ' + $targetExe)
+Write-Host ('Подпись exe: ' + $signatureStatus)
 Write-Host ('Ярлык «' + $appName + '» лежит на рабочем столе и в меню «Пуск».')
 Write-Host ('Данные (история, настройки, сейф, журнал): ' + $dataDirectory)
