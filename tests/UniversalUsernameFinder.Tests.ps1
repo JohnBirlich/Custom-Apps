@@ -1320,7 +1320,7 @@ Describe 'Версия 2.8.8: статистика по размеру окна 
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
         $installText.Contains('[switch]$TrustSelfSigned') | Should -BeTrue
-        $installText.Contains('Import-Certificate -FilePath $candidatePath -CertStoreLocation ''Cert:\CurrentUser\TrustedPublisher'') | Should -BeTrue
+        $installText.Contains('Import-Certificate -FilePath $candidatePath -CertStoreLocation ''Cert:\CurrentUser\TrustedPublisher''') | Should -BeTrue
         $installText.Contains("'Cert:\CurrentUser\Root'") | Should -BeTrue
     }
     It 'README объясняет SmartScreen и отчёт Dr.Web' {
