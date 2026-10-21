@@ -97,10 +97,11 @@ $buildArguments = @{
     STA         = $true
     noOutput    = $true
     noError     = $true
-    title       = 'UUF'
-    product     = 'UUF'
+    title       = 'Universal Username Finder'
+    product     = 'Universal Username Finder'
     description = 'Генератор никнеймов и проверка доступности на платформах и в Telegram-каналах'
     copyright   = 'GPL-3.0-or-later'
+    company     = 'Hasberb'
     version     = $fileVersion
 }
 if ([System.IO.File]::Exists($iconPath)) { $buildArguments['iconFile'] = $iconPath }

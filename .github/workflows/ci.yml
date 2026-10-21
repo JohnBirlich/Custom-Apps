@@ -352,12 +352,48 @@ jobs:
             exit 1
           }
 
+      # Authenticode: SHA-256 + timestamp. If the UUF_SIGN_PFX_BASE64/PASSWORD secrets
+      # are configured, the build is signed with the real code signing certificate;
+      # otherwise Sign-Uuf.ps1 falls back to a self-signed CN=Hasberb certificate and
+      # exports its public key (dist/UUF-signing.cer) next to the exe.
+      - name: Sign executable (Authenticode)
+        shell: powershell
+        env:
+          UUF_SIGN_PFX_BASE64: ${{ secrets.UUF_SIGN_PFX_BASE64 }}
+          UUF_SIGN_PFX_PASSWORD: ${{ secrets.UUF_SIGN_PFX_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            & (Join-Path $PWD 'build\Sign-Uuf.ps1') -SelfSign
+          } catch {
+            Write-Host ('::error::SIGN STEP EXCEPTION: ' + $_.Exception.ToString())
+            exit 1
+          }
+
+      # Hash of the final signed binary: users can verify the artifact and hand the
+      # hash to antivirus support as a known-good sample.
+      - name: Compute checksum
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            $exe = Join-Path $PWD 'dist\UUF.exe'
+            $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+            [System.IO.File]::WriteAllText((Join-Path $PWD 'dist\UUF.exe.sha256'), ($hash + '  UUF.exe'), (New-Object System.Text.UTF8Encoding -ArgumentList $false))
+            Write-Host ('SHA256 UUF.exe: ' + $hash)
+          } catch {
+            Write-Host ('::error::CHECKSUM STEP EXCEPTION: ' + $_.Exception.ToString())
+            exit 1
+          }
+
       - name: Upload executable
         uses: actions/upload-artifact@v7
         with:
           name: UniversalUsernameFinder-windows
           path: |
             dist/UUF.exe
+            dist/UUF.exe.sha256
+            dist/*.cer
             build/Install-UUF.ps1
           if-no-files-found: error
           retention-days: 90

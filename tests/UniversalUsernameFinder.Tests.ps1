@@ -1197,8 +1197,8 @@ Describe 'Исправление версии 2.8.5' {
 }
 
 Describe 'Изменения версии 2.8.6' {
-    It 'версия 2.8.6 в скрипте' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.8\.6'''
+    It 'версия не ниже 2.8.6 в скрипте' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.8\.[6-9]'''
     }
     It 'статуса «Вероятно свободен» в проверках больше нет' {
         $global:UufWorkerText.Contains('Вероятно свободен') | Should -BeFalse
@@ -1256,5 +1256,50 @@ Describe 'Изменения версии 2.8.6' {
     }
     It 'футер честно описывает смысл статусов' {
         $global:UufMainText.Contains('финальное подтверждение — форма регистрации') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.8.7: подпись сборки и антивирусное доверие' {
+    It 'собираемый exe получает метаданные издателя Hasberb' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $buildText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
+        $buildText.Contains("company     = 'Hasberb'") | Should -BeTrue
+        $buildText.Contains("title       = 'Universal Username Finder'") | Should -BeTrue
+    }
+    It 'скрипт подписи умеет секретный PFX и самоподпись CN=Hasberb' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $signPath = [System.IO.Path]::Combine($repoRoot, 'build', 'Sign-Uuf.ps1')
+        [System.IO.File]::Exists($signPath) | Should -BeTrue
+        $signBytes = [System.IO.File]::ReadAllBytes($signPath)
+        $signBytes[0] | Should -Be 0xEF
+        $signBytes[1] | Should -Be 0xBB
+        $signBytes[2] | Should -Be 0xBF
+        $signText = [System.IO.File]::ReadAllText($signPath, [System.Text.Encoding]::UTF8)
+        $signText.Contains('UUF_SIGN_PFX_BASE64') | Should -BeTrue
+        $signText.Contains('New-SelfSignedCertificate') | Should -BeTrue
+        $signText.Contains("'CN=Hasberb'") | Should -BeTrue
+        $signText.Contains('/fd') | Should -BeTrue
+        $signText.Contains('/tr') | Should -BeTrue
+        $signText.Contains('Get-AuthenticodeSignature') | Should -BeTrue
+    }
+    It 'CI подписывает exe и публикует sha256 вместе с публичным сертификатом' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
+        $ciText.Contains('build\Sign-Uuf.ps1') | Should -BeTrue
+        $ciText.Contains('secrets.UUF_SIGN_PFX_BASE64') | Should -BeTrue
+        $ciText.Contains('dist/UUF.exe.sha256') | Should -BeTrue
+        $ciText.Contains('Get-FileHash') | Should -BeTrue
+    }
+    It 'установщик сообщает о подписи и копирует сертификат издателя' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $installText.Contains('Get-AuthenticodeSignature') | Should -BeTrue
+        $installText.Contains('UUF-signing.cer') | Should -BeTrue
+    }
+    It 'README объясняет ложные срабатывания ML-движков' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $readmeText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'README.md'), [System.Text.Encoding]::UTF8)
+        $readmeText.Contains('Если антивирус подозревает') | Should -BeTrue
+        $readmeText.Contains('UUF_SIGN_PFX_BASE64') | Should -BeTrue
     }
 }
