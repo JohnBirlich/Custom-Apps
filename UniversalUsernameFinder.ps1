@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.8.7'
+$script:AppVersion = '2.8.8'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -1639,6 +1639,7 @@ $script:StatInvalid = New-Object System.Windows.Forms.Label
 $script:StatErrors = New-Object System.Windows.Forms.Label
 $script:StatChecked = New-Object System.Windows.Forms.Label
 $statLabels = @($script:StatTotal,$script:StatChecked,$script:StatFree,$script:StatTaken,$script:StatInvalid,$script:StatErrors)
+$script:StatLabels = $statLabels
 $statTexts = @('Всего: 0','Проверено: 0','Свободно: 0','Занято: 0','Недопустимо: 0','Ошибки: 0')
 $statColors = @([System.Drawing.Color]::White,[System.Drawing.Color]::FromArgb(200,210,226),[System.Drawing.Color]::FromArgb(99,222,151),[System.Drawing.Color]::FromArgb(245,120,120),[System.Drawing.Color]::FromArgb(186,194,207),[System.Drawing.Color]::FromArgb(255,190,92))
 for ($i=0; $i -lt $statLabels.Count; $i++) {
@@ -1651,6 +1652,17 @@ for ($i=0; $i -lt $statLabels.Count; $i++) {
     $statLabels[$i].Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
     $right.Controls.Add($statLabels[$i])
 }
+# --- Полоса статистики: ширины блоков считаются от фактической панели, поэтому «Недопустимо» и «Ошибки» не вылезают за край ни на одном разрешении
+$right.Add_SizeChanged({
+    $uufPanelW = [int]$script:Form.ClientSize.Width - 440
+    if ($uufPanelW -lt 520) { $uufPanelW = 520 }
+    $uufBlockW = [Math]::Max(84,[int](($uufPanelW - 64) / 6))
+    if ($uufBlockW -gt 190) { $uufBlockW = 190 }
+    for ($uufI = 0; $uufI -lt $script:StatLabels.Count; $uufI++) {
+        $script:StatLabels[$uufI].Size = New-Object System.Drawing.Size($uufBlockW, 26)
+        $script:StatLabels[$uufI].Location = New-Object System.Drawing.Point((12 + [int]($uufI * ($uufBlockW + 8))), 10)
+    }
+})
 
 $script:ProgressCaption = New-Object System.Windows.Forms.Label
 $script:ProgressCaption.Text = 'Прогресс проверки'
@@ -1661,6 +1673,7 @@ $right.Controls.Add($script:ProgressCaption)
 $script:ProgressBar = New-Object System.Windows.Forms.ProgressBar
 $script:ProgressBar.Location = New-Object System.Drawing.Point(14,59)
 $script:ProgressBar.Size = New-Object System.Drawing.Size(1008,10)
+$script:ProgressBar.Anchor = 'Top, Left, Right'
 $script:ProgressBar.Minimum = 0
 $script:ProgressBar.Maximum = 100
 $script:ProgressBar.Value = 0
@@ -3523,7 +3536,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.7' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.8' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
