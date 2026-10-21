@@ -1283,6 +1283,7 @@ Describe 'Версия 2.8.7: подпись сборки и антивирус�
         $signText.Contains('/fd') | Should -BeTrue
         $signText.Contains('/tr') | Should -BeTrue
         $signText.Contains('Get-AuthenticodeSignature') | Should -BeTrue
+        $signText.Contains('EphemeralKeySet') | Should -BeTrue
     }
     It 'CI подписывает exe и публикует sha256 вместе с публичным сертификатом' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
