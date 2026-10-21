@@ -80,8 +80,8 @@ try {
         $rsaKey = [System.Security.Cryptography.RSA]::Create(3072)
         $dnType = [System.Security.Cryptography.X509Certificates.X500DistinguishedName]
         $requestType = [System.Security.Cryptography.X509Certificates.CertificateRequest]
-        $hashSha256 = [System.Security.Cryptography.X509Certificates.HashAlgorithmName]::SHA256
-        $paddingPkcs1 = [System.Security.Cryptography.X509Certificates.RSASignaturePadding]::Pkcs1
+        $hashSha256 = [System.Security.Cryptography.HashAlgorithmName]::SHA256
+        $paddingPkcs1 = [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
         $distinguishedName = $dnType::new($Subject)
         $request = $requestType::new($distinguishedName, $rsaKey, $hashSha256, $paddingPkcs1)
         $keyUsage = [System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new([System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature, $true)
