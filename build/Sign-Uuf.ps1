@@ -67,6 +67,7 @@ if (-not $signtool) {
 
 $tempPfx = $null
 $pfxPlainPassword = $env:UUF_SIGN_PFX_PASSWORD
+$certGeneratedInMemory = $false
 try {
     if ([string]::IsNullOrWhiteSpace($PfxPath) -and -not [string]::IsNullOrWhiteSpace($env:UUF_SIGN_PFX_BASE64)) {
         $tempPfx = Join-Path $env:TEMP ('uuf-sign-' + [guid]::NewGuid().ToString('N') + '.pfx')
@@ -97,6 +98,7 @@ try {
         $pfxPlainPassword = $selfPassword
         $cerPath = Join-Path $distDirectory 'UUF-signing.cer'
         [System.IO.File]::WriteAllBytes($cerPath, $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+        $certGeneratedInMemory = $true
         Write-Host ('Самоподписанный сертификат: ' + $certificate.Thumbprint + '; публичный ключ: ' + $cerPath)
         # На .NET Framework у CertificateRequest нет Dispose — освобожаем только ключ и сертификат.
         $certificate.Dispose()
@@ -125,6 +127,20 @@ try {
     if (-not $signature.SignerCertificate) { throw 'signtool завершился без ошибок, но подпись не обнаружена' }
     if ($signature.SignatureStatus -ne 'Valid') {
         Write-Host 'Справка: статус не Valid ожидаем для самоподписанного сертификата — файл целостен, но издатель не в списке доверенных на этой машине.'
+    }
+    $cerPath = Join-Path $distDirectory 'UUF-signing.cer'
+    if (-not $certGeneratedInMemory) {
+        try {
+            $pfxPasswordForExport = ''
+            if ($pfxPlainPassword) { $pfxPasswordForExport = [string]$pfxPlainPassword }
+            $storageFlags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet -bor [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+            $signerCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($PfxPath, $pfxPasswordForExport, $storageFlags)
+            [System.IO.File]::WriteAllBytes($cerPath, $signerCertificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+            $signerCertificate.Dispose()
+            Write-Host ('Публичный ключ подписанта: ' + $cerPath)
+        } catch {
+            Write-Host ('::warning::Публичный ключ подписанта экспортировать не удалось: ' + $_.Exception.Message)
+        }
     }
 } finally {
     if ($tempPfx -and [System.IO.File]::Exists($tempPfx)) {
