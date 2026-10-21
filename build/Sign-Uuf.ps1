@@ -98,8 +98,8 @@ try {
         $cerPath = Join-Path $distDirectory 'UUF-signing.cer'
         [System.IO.File]::WriteAllBytes($cerPath, $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
         Write-Host ('Самоподписанный сертификат: ' + $certificate.Thumbprint + '; публичный ключ: ' + $cerPath)
+        # На .NET Framework у CertificateRequest нет Dispose — освобожаем только ключ и сертификат.
         $certificate.Dispose()
-        $request.Dispose()
         $rsaKey.Dispose()
     }
     if ([string]::IsNullOrWhiteSpace($PfxPath)) {
