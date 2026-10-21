@@ -6,10 +6,10 @@
 #      секреты называются так же. Только подпись центром доверия снимает у
 #      SmartScreen статус «неизвестный издатель» и заметно глушит ML-эвристики
 #      антивирусов.
-#   2. -SelfSign: если PFX нет, в текущем профиле создаётся (или переиспользуется)
-#      самоподписанный сертификат CN=Hasberb; публичный ключ экспортируется рядом
-#      с exe в UUF-signing.cer — пользователь может добавить его в доверенные,
-#      чтобы подпись его машины считалась валидной.
+#   2. -SelfSign: если PFX нет, на лету генерируется самоподписанный сертификат
+#      CN=Hasberb (чистый .NET CertificateRequest — без хранилища сертификатов,
+#      капризничающего на чистых runner-образах); публичный ключ экспортируется
+#      рядом с exe в UUF-signing.cer, приватный PFX удаляется сразу после подписи.
 #
 # Если signtool.exe (Windows SDK) не найден, скрипт предупреждает и выходит с
 # кодом 0: сборка не должна зависеть от наличия SDK.
@@ -75,23 +75,32 @@ try {
         Write-Host 'Сертификат подписи получен из секрета UUF_SIGN_PFX_BASE64.'
     }
     if ([string]::IsNullOrWhiteSpace($PfxPath) -and $SelfSign) {
-        $securePassword = ConvertTo-SecureString -String ([guid]::NewGuid().ToString('N')) -Force
-        $pfxPlainPassword = $null
-        $certificate = $null
-        $existing = @(Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert -ErrorAction SilentlyContinue | Where-Object { $_.Subject -eq $Subject -and $_.NotAfter -gt (Get-Date) })
-        if ($existing.Count -gt 0) {
-            $certificate = @($existing | Sort-Object NotAfter)[-1]
-            Write-Host ('Переиспользован самоподписанный сертификат: ' + $certificate.Thumbprint)
-        } else {
-            $certificate = New-SelfSignedCertificate -Subject $Subject -Type CodeSigningCert -CertStoreLocation Cert:\CurrentUser\My -HashAlgorithm SHA256 -KeyLength 3072 -KeyExportPolicy Exportable -NotAfter (Get-Date).AddYears(3)
-            Write-Host ('Создан самоподписанный сертификат: ' + $certificate.Thumbprint)
-        }
+        $selfPassword = [guid]::NewGuid().ToString('N')
         $tempPfx = Join-Path $env:TEMP ('uuf-sign-' + [guid]::NewGuid().ToString('N') + '.pfx')
-        $null = Export-PfxCertificate -Cert $certificate.PSPath -FilePath $tempPfx -Password $securePassword
+        $rsaKey = [System.Security.Cryptography.RSA]::Create(3072)
+        $dnType = [System.Security.Cryptography.X509Certificates.X500DistinguishedName]
+        $requestType = [System.Security.Cryptography.X509Certificates.CertificateRequest]
+        $hashSha256 = [System.Security.Cryptography.X509Certificates.HashAlgorithmName]::SHA256
+        $paddingPkcs1 = [System.Security.Cryptography.X509Certificates.RSASignaturePadding]::Pkcs1
+        $distinguishedName = $dnType::new($Subject)
+        $request = $requestType::new($distinguishedName, $rsaKey, $hashSha256, $paddingPkcs1)
+        $keyUsage = [System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new([System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature, $true)
+        $request.CertificateExtensions.Add($keyUsage)
+        $ekuOids = [System.Security.Cryptography.OidCollection]::new()
+        $null = $ekuOids.Add([System.Security.Cryptography.Oid]::new('1.3.6.1.5.5.7.3.3'))
+        $eku = [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new($ekuOids, $false)
+        $request.CertificateExtensions.Add($eku)
+        $certificate = $request.CreateSelfSigned([DateTimeOffset]::UtcNow.AddDays(-1), [DateTimeOffset]::UtcNow.AddYears(3))
+        $pfxBytes = $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $selfPassword)
+        [System.IO.File]::WriteAllBytes($tempPfx, $pfxBytes)
         $PfxPath = $tempPfx
+        $pfxPlainPassword = $selfPassword
         $cerPath = Join-Path $distDirectory 'UUF-signing.cer'
-        $null = Export-Certificate -Cert $certificate.PSPath -FilePath $cerPath
-        Write-Host ('Публичный ключ сертификата: ' + $cerPath)
+        [System.IO.File]::WriteAllBytes($cerPath, $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+        Write-Host ('Самоподписанный сертификат: ' + $certificate.Thumbprint + '; публичный ключ: ' + $cerPath)
+        $certificate.Dispose()
+        $request.Dispose()
+        $rsaKey.Dispose()
     }
     if ([string]::IsNullOrWhiteSpace($PfxPath)) {
         Write-Host '::warning::Нет сертификата подписи (секрет UUF_SIGN_PFX_BASE64 или ключ -SelfSign); UUF.exe остаётся неподписанным.'

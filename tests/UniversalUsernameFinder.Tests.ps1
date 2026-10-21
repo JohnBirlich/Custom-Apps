@@ -1266,7 +1266,7 @@ Describe 'Версия 2.8.7: подпись сборки и антивирус�
         $buildText.Contains("company     = 'Hasberb'") | Should -BeTrue
         $buildText.Contains("title       = 'Universal Username Finder'") | Should -BeTrue
     }
-    It 'скрипт подписи умеет секретный PFX и самоподпись CN=Hasberb' {
+    It 'скрипт подписи умеет секретный PFX и самоподпись CN=Hasberb без хранилища' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $signPath = [System.IO.Path]::Combine($repoRoot, 'build', 'Sign-Uuf.ps1')
         [System.IO.File]::Exists($signPath) | Should -BeTrue
@@ -1276,7 +1276,9 @@ Describe 'Версия 2.8.7: подпись сборки и антивирус�
         $signBytes[2] | Should -Be 0xBF
         $signText = [System.IO.File]::ReadAllText($signPath, [System.Text.Encoding]::UTF8)
         $signText.Contains('UUF_SIGN_PFX_BASE64') | Should -BeTrue
-        $signText.Contains('New-SelfSignedCertificate') | Should -BeTrue
+        $signText.Contains('CertificateRequest') | Should -BeTrue
+        $signText.Contains('CreateSelfSigned') | Should -BeTrue
+        $signText.Contains('X509ContentType') | Should -BeTrue
         $signText.Contains("'CN=Hasberb'") | Should -BeTrue
         $signText.Contains('/fd') | Should -BeTrue
         $signText.Contains('/tr') | Should -BeTrue
