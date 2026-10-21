@@ -354,7 +354,7 @@ jobs:
 
       # Authenticode: SHA-256 + timestamp. If the UUF_SIGN_PFX_BASE64/PASSWORD secrets
       # are configured, the build is signed with the real code signing certificate;
-      # otherwise Sign-Uuf.ps1 falls back to a self-signed CN=Hasberb certificate and
+      # otherwise Sign-Uuf.ps1 falls back to a self-signed CN=Hasberd certificate and
       # exports its public key (dist/UUF-signing.cer) next to the exe.
       - name: Sign executable (Authenticode)
         shell: powershell
