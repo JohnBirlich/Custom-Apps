@@ -1379,12 +1379,12 @@ Describe 'Версия 2.9.0: ручной ввод, вкладки, зерка�
     It 'почтовый суффикс ника отсекается до проверки формата' {
         $global:UufMainText.Contains('function Get-PlatformNickInput {') | Should -BeTrue
         $global:UufMainText.Contains('Get-PlatformNickInput -Platform ([string]$script:AccountPlatform) -Raw $script:AccountUsernameBox.Text') | Should -BeTrue
-        $global:UufMainText.Contains('Get-PlatformNickInput -Platform $platform -Raw $nickRaw') | Should -BeTrue
+        $global:UufFullText.Contains('Get-PlatformNickInput -Platform $platform -Raw $nickRaw') | Should -BeTrue
     }
     It 'ручные ники не глушат генерацию молча: есть диагностика и счётчик' {
-        $global:UufMainText.Contains('в таблицу берутся только ручные ники') | Should -BeTrue
-        $global:UufMainText.Contains('$addedManual') | Should -BeTrue
-        $global:UufMainText.Contains('ручных: $addedManual') | Should -BeTrue
+        $global:UufFullText.Contains('в таблицу берутся только ручные ники') | Should -BeTrue
+        $global:UufFullText.Contains('$addedManual') | Should -BeTrue
+        $global:UufFullText.Contains('ручных: $addedManual') | Should -BeTrue
     }
     It 'Telegram: обход t.me и зеркал, первый однозначный ответ выигрывает' {
         $global:UufWorkerText.Contains("`$tgBase in @('https://t.me/','https://telegram.dog/','https://telegram.me/')") | Should -BeTrue
