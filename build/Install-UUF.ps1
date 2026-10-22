@@ -12,7 +12,11 @@
 param(
     [string]$ExePath = '',
     [switch]$Uninstall,
-    [switch]$RemoveData
+    [switch]$RemoveData,
+    # Добавить UUF-signing.cer в доверенные корневые и доверенные издатели текущего
+    # пользователя (без администратора): после этого SmartScreen показывает
+    # «Издатель: Hasberd» вместо красного окна «Неизвестный издатель».
+    [switch]$TrustSelfSigned
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,6 +24,7 @@ $ErrorActionPreference = 'Stop'
 $appName = 'Universal Username Finder'
 $targetDirectory = Join-Path $env:LOCALAPPDATA 'Programs\UniversalUsernameFinder'
 $targetExe = Join-Path $targetDirectory 'UUF.exe'
+$targetCertificatePath = Join-Path $targetDirectory 'UUF-signing.cer'
 $dataDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
 $desktopDirectory = [Environment]::GetFolderPath('Desktop')
 $programsDirectory = [Environment]::GetFolderPath('Programs')
@@ -63,9 +68,35 @@ function Stop-RunningApp {
     }
 }
 
+function Get-InstalledCertificateThumbprint {
+    $certificateCandidates = @((Join-Path $targetDirectory 'UUF-signing.cer'))
+    if (-not [string]::IsNullOrWhiteSpace($ExePath)) {
+        $certificateCandidates += (Join-Path (Split-Path -Parent ([System.IO.Path]::GetFullPath($ExePath))) 'UUF-signing.cer')
+    }
+    foreach ($candidatePath in $certificateCandidates) {
+        if ([System.IO.File]::Exists($candidatePath)) {
+            try {
+                $cer = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($candidatePath)
+                return [string]$cer.Thumbprint
+            } catch { }
+        }
+    }
+    return ''
+}
+
 if ($Uninstall) {
     Stop-RunningApp
     Remove-InstallShortcuts
+    $thumbprint = Get-InstalledCertificateThumbprint
+    if ($thumbprint) {
+        foreach ($storePath in @('Cert:\CurrentUser\Root', 'Cert:\CurrentUser\TrustedPublisher')) {
+            try {
+                $stale = @(Get-ChildItem -CertStoreLocation $storePath -ErrorAction Stop | Where-Object { $_.Thumbprint -eq $thumbprint })
+                foreach ($item in $stale) { Remove-Item -LiteralPath $item.PSPath -Force }
+            } catch { }
+        }
+        Write-Host 'Доверие к сертификату Hasberd из хранилища текущего пользователя удалено.'
+    }
     if ([System.IO.File]::Exists($targetExe)) {
         Remove-Item -LiteralPath $targetExe -Force
         Write-Host ('Программа удалена: ' + $targetExe)
@@ -108,6 +139,24 @@ if ([System.IO.File]::Exists($certificateSource)) {
 New-InstallShortcut -Directory $desktopDirectory
 New-InstallShortcut -Directory $programsDirectory
 try { Get-Item -LiteralPath $targetExe | Unblock-File } catch { }
+if ($TrustSelfSigned) {
+    $certificateImported = $false
+    foreach ($candidatePath in @($targetCertificatePath, (Join-Path (Split-Path -Parent $exeSourceFull) 'UUF-signing.cer'))) {
+        if (-not [System.IO.File]::Exists($candidatePath)) { continue }
+        $thumbprint = Get-InstalledCertificateThumbprint
+        $already = $false
+        if ($thumbprint) {
+            $already = @(@(Get-ChildItem -CertStoreLocation 'Cert:\CurrentUser\TrustedPublisher' -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $thumbprint })).Count -gt 0
+        }
+        if ($already) { Write-Host 'Сертификат Hasberd уже в доверенных издателях.'; $certificateImported = $true; break }
+        $null = Import-Certificate -FilePath $candidatePath -CertStoreLocation 'Cert:\CurrentUser\Root'
+        $null = Import-Certificate -FilePath $candidatePath -CertStoreLocation 'Cert:\CurrentUser\TrustedPublisher'
+        Write-Host 'Сертификат издателя Hasberd добавлен в «Доверенные корневые» и «Доверенные издатели» текущего пользователя — предупреждение SmartScreen «Неизвестный издатель» для подписанных сборок уйдёт.'
+        $certificateImported = $true
+        break
+    }
+    if (-not $certificateImported) { Write-Host 'UUF-signing.cer не найден рядом с UUF.exe — доверьте сертификат вручную: двойной щелчок по .cer → Установить сертификат → Текущий пользователь → Доверенные корневые центры сертификации.' }
+}
 
 $signatureStatus = 'неизвестно'
 try {

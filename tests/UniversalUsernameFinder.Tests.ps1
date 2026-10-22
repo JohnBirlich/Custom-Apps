@@ -1306,3 +1306,28 @@ Describe 'Версия 2.8.7: подпись сборки и антивирус�
         $readmeText.Contains('UUF_SIGN_PFX_BASE64') | Should -BeTrue
     }
 }
+
+Describe 'Версия 2.8.8: статистика по размеру окна и доверие подписи' {
+    It 'полоса счётчиков пересчитывается от фактической ширины панели' {
+        $global:UufMainText.Contains('$script:StatLabels = $statLabels') | Should -BeTrue
+        $global:UufMainText.Contains('$right.Add_SizeChanged({') | Should -BeTrue
+        $global:UufMainText.Contains('$uufBlockW = [Math]::Max(84,[int](($uufPanelW - 64) / 6))') | Should -BeTrue
+    }
+    It 'прогресс-бар прижат правым якорем' {
+        $global:UufMainText.Contains("`$script:ProgressBar.Anchor = 'Top, Left, Right'") | Should -BeTrue
+    }
+    It 'установщик умеет доверять сертификату и снимать доверие' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $installText.Contains('[switch]$TrustSelfSigned') | Should -BeTrue
+        $installText.Contains('Import-Certificate -FilePath $candidatePath -CertStoreLocation ''Cert:\CurrentUser\TrustedPublisher''') | Should -BeTrue
+        $installText.Contains("'Cert:\CurrentUser\Root'") | Should -BeTrue
+    }
+    It 'README объясняет SmartScreen и отчёт Dr.Web' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $readmeText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'README.md'), [System.Text.Encoding]::UTF8)
+        $readmeText.Contains('-TrustSelfSigned') | Should -BeTrue
+        $readmeText.Contains('doctor@drweb.com') | Should -BeTrue
+        $readmeText.Contains('Подробнее → Выполнить в любом случае') | Should -BeTrue
+    }
+}
