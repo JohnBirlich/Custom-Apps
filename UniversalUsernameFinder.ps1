@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.8.8'
+$script:AppVersion = '2.8.9'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -67,6 +67,19 @@ function Rotate-AppLog {
 # --- Журнал и стартовая диагностика
 $script:LogPath = Resolve-LogPath
 Rotate-AppLog
+
+# --- Статус подписи запускаемого файла: по таким строкам в журнале видно, собрана ли подпись и доверен ли издатель
+try {
+    $uufSelfPath = [string]([Environment]::GetCommandLineArgs()[0])
+    if ($uufSelfPath -and (Test-Path -LiteralPath $uufSelfPath) -and ($uufSelfPath -notmatch '(?i)\\(powershell(_ise)?|pwsh)(\.cat)?(\.exe)?$')) {
+        $uufSelfSig = Get-AuthenticodeSignature -FilePath $uufSelfPath -ErrorAction SilentlyContinue
+        $uufSelfSigner = 'нет данных о подписи'
+        if ($uufSelfSig.SignerCertificate) { $uufSelfSigner = [string]$uufSelfSig.SignerCertificate.Subject }
+        Write-StartupLog ('Подпись: ' + [string]$uufSelfSig.SignatureStatus + ' — ' + $uufSelfSigner)
+    } else {
+        Write-StartupLog 'Подпись: пропуск (запуск из powershell/pwsh — подписывать нечего)'
+    }
+} catch { }
 
 Add-Type -AssemblyName System.Security
 $script:VaultDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
@@ -3536,7 +3549,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.8' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.9' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {

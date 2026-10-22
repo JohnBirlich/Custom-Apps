@@ -139,7 +139,15 @@ if ([System.IO.File]::Exists($certificateSource)) {
 New-InstallShortcut -Directory $desktopDirectory
 New-InstallShortcut -Directory $programsDirectory
 try { Get-Item -LiteralPath $targetExe | Unblock-File } catch { }
+$trustAppliedNow = $false
 if ($TrustSelfSigned) {
+    # Снимаем метку интернета со всех файлов папки распаковки: даже запуск
+    # UUF.exe двойным кликом «из архива» после этого не показывает окно SmartScreen.
+    $uufSourceDir = Split-Path -Parent $exeSourceFull
+    foreach ($uufFile in @(Get-ChildItem -LiteralPath $uufSourceDir -File -ErrorAction SilentlyContinue)) {
+        try { Unblock-File -LiteralPath $uufFile.FullName } catch { }
+    }
+    Write-Host 'Файлы папки распаковки разблокированы (метка интернета снята).'
     $certificateImported = $false
     foreach ($candidatePath in @($targetCertificatePath, (Join-Path (Split-Path -Parent $exeSourceFull) 'UUF-signing.cer'))) {
         if (-not [System.IO.File]::Exists($candidatePath)) { continue }
@@ -148,11 +156,12 @@ if ($TrustSelfSigned) {
         if ($thumbprint) {
             $already = @(@(Get-ChildItem -CertStoreLocation 'Cert:\CurrentUser\TrustedPublisher' -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $thumbprint })).Count -gt 0
         }
-        if ($already) { Write-Host 'Сертификат Hasberd уже в доверенных издателях.'; $certificateImported = $true; break }
+        if ($already) { Write-Host 'Сертификат Hasberd уже в доверенных издателях.'; $certificateImported = $true; $trustAppliedNow = $true; break }
         $null = Import-Certificate -FilePath $candidatePath -CertStoreLocation 'Cert:\CurrentUser\Root'
         $null = Import-Certificate -FilePath $candidatePath -CertStoreLocation 'Cert:\CurrentUser\TrustedPublisher'
         Write-Host 'Сертификат издателя Hasberd добавлен в «Доверенные корневые» и «Доверенные издатели» текущего пользователя — предупреждение SmartScreen «Неизвестный издатель» для подписанных сборок уйдёт.'
         $certificateImported = $true
+        $trustAppliedNow = $true
         break
     }
     if (-not $certificateImported) { Write-Host 'UUF-signing.cer не найден рядом с UUF.exe — доверьте сертификат вручную: двойной щелчок по .cer → Установить сертификат → Текущий пользователь → Доверенные корневые центры сертификации.' }
@@ -164,8 +173,14 @@ try {
     $signerName = ''
     if ($signature.SignerCertificate) { $signerName = ' — ' + $signature.SignerCertificate.Subject }
     $signatureStatus = [string]$signature.SignatureStatus + $signerName
-    if ($signature.SignatureStatus -eq 'NotTrusted' -and [System.IO.File]::Exists((Join-Path $targetDirectory 'UUF-signing.cer'))) {
-        Write-Host 'Подпись самоподписанная: чтобы она стала зелёной, импортируйте UUF-signing.cer (можно двойным щелчком) в «Доверенные корневые центры сертификации» текущего пользователя.'
+    if ($signature.SignatureStatus -eq 'Valid') {
+        Write-Host 'Подпись проверена: издатель Hasberd в доверенных на этом компьютере.'
+    } elseif ($signature.SignatureStatus -eq 'NotSigned') {
+        Write-Host 'Внимание: файл не подписан — это сборка до включения подписи. Скачайте свежий артефакт из GitHub Actions.'
+    } elseif ($trustAppliedNow) {
+        Write-Host 'Сертификат добавлен в доверенные; если окно SmartScreen для уже скачанного файла осталось, выполните: Unblock-File "' + $targetExe + '" и перезапустите браузер перед новой загрузкой.'
+    } elseif ([System.IO.File]::Exists($targetCertificatePath)) {
+        Write-Host 'Издатель не в доверенных. Решается одной командой: powershell -ExecutionPolicy Bypass -File "' + (Join-Path $targetDirectory 'Install-UUF.ps1') + '" -TrustSelfSigned — либо двойным щелчком по UUF-signing.cer → «Установить сертификат» → «Локальный компьютер» → «Доверенные корневые центры сертификации» (потребуются права администратора).'
     }
 } catch { }
 
