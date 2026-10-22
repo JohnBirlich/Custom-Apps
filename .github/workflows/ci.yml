@@ -395,5 +395,6 @@ jobs:
             dist/UUF.exe.sha256
             dist/*.cer
             build/Install-UUF.ps1
+            build/Install-UUF.bat
           if-no-files-found: error
           retention-days: 90

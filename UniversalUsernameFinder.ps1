@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.9.0'
+$script:AppVersion = '2.9.1'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -1400,6 +1400,9 @@ function New-UufCaptionButton {
     $captionButton.FlatStyle = 'Flat'
     $captionButton.FlatAppearance.BorderSize = 0
     $captionButton.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(38,48,68)
+    $captionButton.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(30,38,54)
+    $captionButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(23,30,42)
+    $captionButton.UseVisualStyleBackColor = $false
     $captionButton.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
     $captionButton.ForeColor = [System.Drawing.Color]::FromArgb(196,206,224)
     $captionButton.TabStop = $false
@@ -1480,22 +1483,28 @@ function Set-UufTabStyle {
     $Tabs.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
     $Tabs.DrawMode = 'OwnerDrawFixed'
     $Tabs.Add_DrawItem({
-        $tabIndex = [int]$args[1].TabIndex
-        $tabBounds = [System.Drawing.Rectangle]$args[1].Bounds
-        $tabG = $args[1].Graphics
-        $tabSelected = ($sender.SelectedIndex -eq $tabIndex)
-        if ($tabSelected) { $tabBack = [System.Drawing.Color]::FromArgb(44,56,82) } else { $tabBack = [System.Drawing.Color]::FromArgb(26,33,47) }
-        $tabBrush = New-Object System.Drawing.SolidBrush($tabBack)
-        $tabG.FillRectangle($tabBrush, $tabBounds)
-        $tabBrush.Dispose()
-        if ($tabSelected) {
-            $tabAccent = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(129,108,255))
-            $tabG.FillRectangle($tabAccent, $tabBounds.X, ($tabBounds.Bottom - 3), $tabBounds.Width, 3)
-            $tabAccent.Dispose()
-        }
-        if ($tabSelected) { $tabText = [System.Drawing.Color]::FromArgb(235,240,248) } else { $tabText = [System.Drawing.Color]::FromArgb(148,161,186) }
-        $tabFlags = [System.Windows.Forms.TextFormatFlags]::HorizontalCenter -bor [System.Windows.Forms.TextFormatFlags]::VerticalCenter -bor [System.Windows.Forms.TextFormatFlags]::EndEllipsis
-        [System.Windows.Forms.TextRenderer]::DrawText($tabG, [string]$sender.TabPages[$tabIndex].Text, $sender.Font, $tabBounds, $tabText, $tabFlags)
+        param($tabSender,$tabArgs)
+        try {
+            if ($null -eq $tabArgs -or $null -eq $tabArgs.Graphics) { return }
+            if ($null -eq $tabSender -or $tabSender.TabPages.Count -lt 1) { return }
+            $tabIndex = [int]$tabArgs.TabIndex
+            if ($tabIndex -lt 0 -or $tabIndex -ge $tabSender.TabPages.Count) { return }
+            $tabBounds = $tabArgs.Bounds
+            $tabG = $tabArgs.Graphics
+            $tabSelected = ($tabSender.SelectedIndex -eq $tabIndex)
+            if ($tabSelected) { $tabBack = [System.Drawing.Color]::FromArgb(44,56,82) } else { $tabBack = [System.Drawing.Color]::FromArgb(26,33,47) }
+            $tabBrush = New-Object System.Drawing.SolidBrush($tabBack)
+            $tabG.FillRectangle($tabBrush, $tabBounds)
+            $tabBrush.Dispose()
+            if ($tabSelected) {
+                $tabAccent = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(129,108,255))
+                $tabG.FillRectangle($tabAccent, $tabBounds.X, ($tabBounds.Bottom - 3), $tabBounds.Width, 3)
+                $tabAccent.Dispose()
+            }
+            if ($tabSelected) { $tabText = [System.Drawing.Color]::FromArgb(235,240,248) } else { $tabText = [System.Drawing.Color]::FromArgb(148,161,186) }
+            $tabFlags = [System.Windows.Forms.TextFormatFlags]::HorizontalCenter -bor [System.Windows.Forms.TextFormatFlags]::VerticalCenter -bor [System.Windows.Forms.TextFormatFlags]::EndEllipsis
+            [System.Windows.Forms.TextRenderer]::DrawText($tabG, [string]$tabSender.TabPages[$tabIndex].Text, $tabSender.Font, $tabBounds, $tabText, $tabFlags)
+        } catch { }
     })
 }
 
@@ -3421,6 +3430,15 @@ function Reset-CheckControls {
     if ($script:ThreadsBox) { $script:ThreadsBox.Enabled = $true }
     if ($script:PlatformBox) { $script:PlatformBox.Enabled = $true }
     if ($script:ProxyBox) { $script:ProxyBox.Enabled = $true }
+    $resumePending = $false
+    if ($null -ne $script:Candidates -and $script:Candidates.Count -gt 0) {
+        $excludeGateOn = ($script:ExcludeCheckedCheck -and $script:ExcludeCheckedCheck.Checked)
+        foreach ($resumeCand in $script:Candidates) {
+            $resumeStatus = [string]$resumeCand.Status
+            if ($resumeStatus -eq 'Ожидает' -or $resumeStatus -eq 'Ошибка сети' -or (-not $excludeGateOn -and $resumeStatus -ne 'Проверяется' -and $resumeStatus -ne 'Недопустимый')) { $resumePending = $true; break }
+        }
+    }
+    if ($resumePending) { $script:StartButton.Visible = $true; $script:StartButton.Text = '▶  Возобновить проверку' } else { $script:StartButton.Visible = $false; $script:StartButton.Text = '▶  Найти свободные' }
 }
 
 function Close-CheckRunspace {
@@ -3595,7 +3613,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.9.0' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.9.1' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -3819,6 +3837,9 @@ try {
                     $email = $name + '@gmail.com'
                     $googleCode = ''
                     $googleHttpNote = ''
+                    if ($null -ne $googleSession -and $googleSession.Cookies.Count -lt 1) {
+                        $null = Get-HttpResult -Url 'https://accounts.google.com/signin/v2/identifier?service=mail&hl=en' -Timeout $timeoutSec -Headers $browserHeaders -WebSession $googleSession
+                    }
                     if ($null -ne $googleSession) {
                         $lookupCells = @()
                         for ($nullIndex = 0; $nullIndex -lt 4; $nullIndex++) { $lookupCells += 'null' }
@@ -3984,10 +4005,12 @@ try {
                                     else { $status='Занят'; $reason='Outlook: форма регистрации отклонила адрес ' + $signInName + ' как недоступный'; $consecutiveErrors=0 }
                                     break
                                 }
-                                if ($status2 -eq 400) {
-                                    if ($responseText -match '(?i)MemberNameUnavailable|already (?:been )?taken|is taken|недоступен') { $status='Занят'; $reason='Outlook: форма регистрации сообщает, что адрес занят или недоступен'; $consecutiveErrors=0; break }
-                                    if ($responseText -match '(?i)ForbiddenName|reserved|not allowed|invalid') { $status='Недопустимый'; $reason='Outlook: форма регистрации отклонила имя как недопустимое или зарезервированное'; $consecutiveErrors=0; break }
-                                    $msNote = 'форма регистрации вернула ошибку валидации (HTTP 400)'
+                                if ($responseText -match '(?i)"type"\s*:\s*"MemberNameUnavailable"') { $status='Занят'; $reason='Outlook: форма регистрации сообщает, что адрес занят или недоступен'; $consecutiveErrors=0; break }
+                                if ($status2 -eq 400 -or $responseText -match '(?i)"errorDefinitions"') {
+                                    $msErrorText = [regex]::Match($responseText, '(?i)"message"\s*:\s*"([^"]+)"').Groups[1].Value
+                                    if ($msErrorText -match '(?i)alread|taken|not available|unavailable|недоступен') { $status='Занят'; $reason='Outlook: форма регистрации сообщает, что адрес занят или недоступен'; $consecutiveErrors=0; break }
+                                    if ($msErrorText -match '(?i)forbidden|reserved|not allowed|invalid') { $status='Недопустимый'; $reason='Outlook: форма регистрации отклонила имя как недопустимое или зарезервированное'; $consecutiveErrors=0; break }
+                                    if ($msErrorText) { $msNote = 'форма регистрации: ' + $msErrorText.Substring(0,[Math]::Min(120,$msErrorText.Length)) }
                                 }
                                 $existsMatch2 = [regex]::Match($responseText, '(?i)"IfExistsResult"\s*:\s*(-?[0-9]+)')
                                 if ($existsMatch2.Success) {
@@ -3996,7 +4019,12 @@ try {
                                     $msNote = 'форма регистрации вернула IfExistsResult=' + $existsCode
                                 }
                                 if ($status2 -eq 401 -or $status2 -eq 403 -or $responseText -match '(?i)canary|invalid_request') { $msNote = 'canary устарел или запрос отклонён (HTTP ' + $status2 + '), обновляю страницу'; if ($msAttempt -eq 2) { break } else { continue } }
-                                if (-not $msNote) { $msNote = 'ответ формы регистрации непонятен (HTTP ' + $status2 + ')' }
+                                if (-not $msNote) {
+                                    $msPreview = ($responseText -replace '\s+',' ').Trim()
+                                    if ($msPreview.Length -gt 90) { $msPreview = $msPreview.Substring(0,90) }
+                                    if ($msPreview.StartsWith('<')) { $msNote = 'форма регистрации отдала HTML вместо JSON (включилась защита Microsoft) — повтори позже или задай «Прокси»' }
+                                    else { $msNote = 'ответ формы регистрации непонятен (HTTP ' + $status2 + '): ' + $msPreview }
+                                }
                             } catch { $msNote = 'запрос к форме регистрации не прошёл: ' + $_.Exception.Message }
                         }
                         if ($status -notin @('Занят','Свободен','Недопустимый')) {
@@ -4061,9 +4089,11 @@ try {
                     $tgResolved = $false
                     $tgLastNote = ''
                     foreach ($tgBase in @('https://t.me/','https://telegram.dog/','https://telegram.me/')) {
+                        if ($Cancellation.IsCancellationRequested) { break }
                         $tgName = 't.me'
                         if ($tgBase -ne 'https://t.me/') { $tgName = $tgBase.Substring(8).TrimEnd('/') }
-                        $r = Get-HttpResult -Url ($tgBase + [uri]::EscapeDataString($name)) -Timeout $timeoutSec -Headers $browserHeaders
+                        $tgTimeoutSec = [Math]::Min($timeoutSec,12)
+                        $r = Get-HttpResult -Url ($tgBase + [uri]::EscapeDataString($name)) -Timeout $tgTimeoutSec -Headers $browserHeaders
                         $httpStatus = [int]$r.Code
                         $content = [string]$r.Content
                         $profileOwner = ($content -match ('(?is)class="tgme_page_extra"[^>]*>\s*@?' + $normalizedHandle + '\s*</')) -or ($content -match ('(?is)<meta property="og:title" content="Telegram\s*:\s*Contact @?' + $normalizedHandle + '"'))
@@ -4076,7 +4106,7 @@ try {
                         if ($httpStatus -eq 200 -and $reservedPage) { $status='Занят'; $reason='Telegram: тег @' + $name + ' зарезервирован платформой (резерв или платный ник) — регистрация закрыта'; $consecutiveErrors=0; $tgResolved=$true; break }
                         if ($httpStatus -eq 200 -and $profileOwner) { $status='Занят'; $reason='Telegram: ' + $tgName + ' отдаёт публичную страницу @' + $name; $consecutiveErrors=0; $tgResolved=$true; break }
                         if ($httpStatus -eq 200) { $tgLastNote = $tgName + ' ответил без распознаваемых маркеров профиля'; continue }
-                        $tgLastNote = $tgName + ' вернул неожиданный HTTP ' + $httpStatus
+                        if ($httpStatus -eq 0) { $tgLastNote = $tgName + ' недоступен: соединение не установлено (сетевая блокировка) — поставь «Прокси» над таблицей или включи VPN' } else { $tgLastNote = $tgName + ' вернул неожиданный HTTP ' + $httpStatus }
                     }
                     if (-not $tgResolved) { $status='Не подтверждено'; $reason='Telegram: ' + $tgLastNote + '; попробуй повторить или задать прокси'; $consecutiveErrors=0 }
                 }
@@ -4190,6 +4220,7 @@ try {
 }
 '@
     $script:StartButton.Enabled = $false
+    $script:StartButton.Visible = $false
     $script:GenerateButton.Enabled = $false
     $script:StopButton.Enabled = $true
     $script:CategoryList.Enabled = $false

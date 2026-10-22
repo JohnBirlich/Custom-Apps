@@ -21,6 +21,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# --- Любая непройденная ошибка печатается в окно и ждёт Enter: двойной клик по .ps1 не должен закрывать PowerShell мгновенно.
+trap {
+    Write-Host ''
+    Write-Host ('ОШИБКА: ' + $_.Exception.Message) -ForegroundColor Red
+    Write-Host 'Установка не завершена. Скопируй текст ошибки в чат — починим.' -ForegroundColor Yellow
+    if ($Host.Name -eq 'ConsoleHost') { $null = Read-Host 'Нажмите Enter, чтобы закрыть окно' }
+    exit 1
+}
+
 $appName = 'Universal Username Finder'
 $targetDirectory = Join-Path $env:LOCALAPPDATA 'Programs\UniversalUsernameFinder'
 $targetExe = Join-Path $targetDirectory 'UUF.exe'
@@ -189,3 +198,4 @@ Write-Host ('Готово! UUF установлен: ' + $targetExe)
 Write-Host ('Подпись exe: ' + $signatureStatus)
 Write-Host ('Ярлык «' + $appName + '» лежит на рабочем столе и в меню «Пуск».')
 Write-Host ('Данные (история, настройки, сейф, журнал): ' + $dataDirectory)
+if ($Host.Name -eq 'ConsoleHost') { $null = Read-Host 'Нажмите Enter, чтобы закрыть окно' }
