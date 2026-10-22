@@ -1399,3 +1399,45 @@ Describe 'Версия 2.9.0: ручной ввод, вкладки, зерка�
         $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[0-9]'''
     }
 }
+
+Describe 'Версия 2.9.1: дорисовка вкладок, возобновление проверки, устойчивость остановок' {
+    It 'обработчик вкладок привязывает аргументы через param и защищён от падения' {
+        $global:UufMainText.Contains('param($tabSender,$tabArgs)') | Should -BeTrue
+        $global:UufMainText.Contains('if ($tabIndex -lt 0 -or $tabIndex -ge $tabSender.TabPages.Count) { return }') | Should -BeTrue
+        $global:UufMainText | Should -Not -Match '\$args\[1\]\.TabIndex'
+    }
+    It 'кнопки заголовка не рисуют системных рамок' {
+        $global:UufMainText.Contains('$captionButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(23,30,42)') | Should -BeTrue
+        $global:UufMainText.Contains('$captionButton.UseVisualStyleBackColor = $false') | Should -BeTrue
+    }
+    It 'после остановки появляется кнопка «Возобновить проверку» и прячется во время прогона' {
+        $global:UufMainText.Contains('Возобновить проверку') | Should -BeTrue
+        $global:UufMainText.Contains('$script:StartButton.Visible = $true') | Should -BeTrue
+        $global:UufMainText.Contains('$script:StartButton.Visible = $false') | Should -BeTrue
+    }
+    It 'Telegram: отмена проверяется между зеркалами, таймаут запроса урезан, HTTP 0 объяснён' {
+        $global:UufWorkerText.Contains('$tgTimeoutSec = [Math]::Min($timeoutSec,12)') | Should -BeTrue
+        $global:UufWorkerText.Contains('соединение не установлено (сетевая блокировка)') | Should -BeTrue
+    }
+    It 'Outlook: непонятный ответ формы разбирается детальнее (values, errorDefinitions, HTML-защита)' {
+        $global:UufWorkerText.Contains('MemberNameUnavailable') | Should -BeTrue
+        $global:UufWorkerText.Contains('"errorDefinitions"') | Should -BeTrue
+        $global:UufWorkerText.Contains('отдала HTML вместо JSON') | Should -BeTrue
+    }
+    It 'Google: сессия догревается на месте, если стартовый прогрев не оставил cookies' {
+        $global:UufWorkerText.Contains('$googleSession.Cookies.Count -lt 1') | Should -BeTrue
+        $global:UufWorkerText.Contains('signin/v2/identifier?service=mail&hl=en') | Should -BeTrue
+    }
+    It 'установщик не закрывается молча: trap с паузой плюс bat-обёртка в артефакте' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $installerText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $installerText.Contains('trap {') | Should -BeTrue
+        $installerText.Contains('Нажмите Enter, чтобы закрыть окно') | Should -BeTrue
+        Test-Path ([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.bat')) | Should -BeTrue
+        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
+        $ciText.Contains('build/Install-UUF.bat') | Should -BeTrue
+    }
+    It 'версия поднята до 2.9.1' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[0-9]'''
+    }
+}
