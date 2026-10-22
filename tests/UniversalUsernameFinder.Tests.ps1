@@ -1159,7 +1159,7 @@ Describe 'Изменения версии 2.8.3' {
     }
     It 'Telegram: детерминированный ответ t.me (404 — свободен, профиль — занят)' {
         $global:UufWorkerText.Contains('$profileOwner = ($content -match') | Should -BeTrue
-        $global:UufWorkerText.Contains('elseif ($httpStatus -eq 200 -and $reservedPage)') | Should -BeTrue
+        $global:UufWorkerText.Contains('if ($httpStatus -eq 200 -and $reservedPage)') | Should -BeTrue
     }
     It 'региональные блокировки подсказывают прокси, воркер умеет прокси' {
         $global:UufWorkerText.Contains('сайты t.me и YouTube могут быть недоступны из региона') | Should -BeTrue
@@ -1172,7 +1172,7 @@ Describe 'Изменения версии 2.8.3' {
 
 Describe 'Доработка версии 2.8.4' {
     It 'версия не ниже 2.8.4 в скрипте' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.8\.[4-9]'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.[89]\.\d'''
     }
     It 'журнал печатает режим очереди проверки' {
         $global:UufMainText.Contains('Порядок проверки: вразнобой') | Should -BeTrue
@@ -1198,7 +1198,7 @@ Describe 'Исправление версии 2.8.5' {
 
 Describe 'Изменения версии 2.8.6' {
     It 'версия не ниже 2.8.6 в скрипте' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.8\.[6-9]'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.[89]\.\d'''
     }
     It 'статуса «Вероятно свободен» в проверках больше нет' {
         $global:UufWorkerText.Contains('Вероятно свободен') | Should -BeFalse
@@ -1230,7 +1230,7 @@ Describe 'Изменения версии 2.8.6' {
         $global:UufWorkerText.Contains("'application/x-www-form-urlencoded; charset=UTF-8' -WebSession `$googleSession") | Should -BeTrue
     }
     It 'Telegram: 404 — свободен, блокировка подсказывает прокси' {
-        $global:UufWorkerText.Contains('Telegram: t.me вернул 404') | Should -BeTrue
+        $global:UufWorkerText.Contains('вернул 404 — страница') | Should -BeTrue
         $global:UufWorkerText.Contains('$blockedPage') | Should -BeTrue
     }
     It 'инструкция аккаунта строится под выбранную платформу' {
@@ -1354,6 +1354,48 @@ Describe 'Версия 2.8.9: SmartScreen-нюансы' {
         $readmeText.Contains('Установить сертификат') | Should -BeTrue
     }
     It 'версия поднята' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.8\.[9]'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[0-9]'''
+    }
+}
+
+Describe 'Версия 2.9.0: ручной ввод, вкладки, зеркала Telegram, форма Outlook, буфер' {
+    It 'поле ручных ников не перекрывается подписью, подсказка видна первой строкой' {
+        $global:UufMainText.Contains('Ручные ники для проверки') | Should -BeTrue
+        $global:UufMainText.Contains('$script:ManualNickBox = New-TextBox 14 505 350 66') | Should -BeTrue
+    }
+    It 'вкладки рисуются вручную: без белой полоски, кнопки угла в цвете таба' {
+        $global:UufMainText.Contains('function Set-UufTabStyle {') | Should -BeTrue
+        $global:UufMainText.Contains("`$Tabs.Appearance = 'FlatButtons'") | Should -BeTrue
+        $global:UufMainText.Contains("`$Tabs.DrawMode = 'OwnerDrawFixed'") | Should -BeTrue
+        $global:UufMainText.Contains('Set-UufTabStyle -Tabs $tabs -TabWidth 190') | Should -BeTrue
+        $global:UufMainText.Contains('Set-UufTabStyle -Tabs $helpTabs -TabWidth 180') | Should -BeTrue
+    }
+    It 'буфер обмена через безопасную функцию с повторами, прямых вызовов не осталось' {
+        $global:UufMainText.Contains('function Copy-UufTextToClipboard {') | Should -BeTrue
+        $global:UufMainText.Contains('[System.Windows.Forms.Clipboard]::SetText($Text); return $true') | Should -BeTrue
+        $clipDirect = @([regex]::Matches($global:UufMainText, [regex]::Escape('[System.Windows.Forms.Clipboard]::SetText('))).Count
+        $clipDirect | Should -Be 1
+    }
+    It 'почтовый суффикс ника отсекается до проверки формата' {
+        $global:UufMainText.Contains('function Get-PlatformNickInput {') | Should -BeTrue
+        $global:UufMainText.Contains('Get-PlatformNickInput -Platform ([string]$script:AccountPlatform) -Raw $script:AccountUsernameBox.Text') | Should -BeTrue
+        $global:UufFullText.Contains('Get-PlatformNickInput -Platform $platform -Raw $nickRaw') | Should -BeTrue
+    }
+    It 'ручные ники не глушат генерацию молча: есть диагностика и счётчик' {
+        $global:UufFullText.Contains('в таблицу берутся только ручные ники') | Should -BeTrue
+        $global:UufFullText.Contains('$addedManual') | Should -BeTrue
+        $global:UufFullText.Contains('ручных: $addedManual') | Should -BeTrue
+    }
+    It 'Telegram: обход t.me и зеркал, первый однозначный ответ выигрывает' {
+        $global:UufWorkerText.Contains("`$tgBase in @('https://t.me/','https://telegram.dog/','https://telegram.me/')") | Should -BeTrue
+        $global:UufWorkerText.Contains('$tgResolved') | Should -BeTrue
+    }
+    It 'Outlook: доступность подтверждает форма регистрации с обновлением canary' {
+        $global:UufWorkerText.Contains('CheckAvailableSigninNames') | Should -BeTrue
+        $global:UufWorkerText.Contains('$msAttempt') | Should -BeTrue
+        $global:UufWorkerText.Contains('форма регистрации подтвердила доступность') | Should -BeTrue
+    }
+    It 'версия поднята до 2.9.0' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[0-9]'''
     }
 }
