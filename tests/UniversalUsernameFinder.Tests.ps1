@@ -1331,3 +1331,29 @@ Describe 'Версия 2.8.8: статистика по размеру окна 
         $readmeText.Contains('Подробнее → Выполнить в любом случае') | Should -BeTrue
     }
 }
+
+Describe 'Версия 2.8.9: SmartScreen-нюансы' {
+    It 'установщик разблокирует папку распаковки и диагностирует подпись' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $installText.Contains('Unblock-File -LiteralPath $uufFile.FullName') | Should -BeTrue
+        $installText.Contains('$trustAppliedNow') | Should -BeTrue
+        $installText.Contains('Внимание: файл не подписан') | Should -BeTrue
+        $installText.Contains('Подпись проверена: издатель Hasberd') | Should -BeTrue
+    }
+    It 'журнал приложения фиксирует статус подписи запускаемого файла' {
+        $global:UufMainText.Contains("Write-StartupLog ('Подпись: '") | Should -BeTrue
+        $global:UufMainText.Contains('(powershell(_ise)?|pwsh)') | Should -BeTrue
+        $global:UufMainText.Contains('запуск из powershell/pwsh') | Should -BeTrue
+    }
+    It 'README содержит чек-лист из трёх способов против SmartScreen' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $readmeText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'README.md'), [System.Text.Encoding]::UTF8)
+        $readmeText.Contains('Если SmartScreen по-прежнему показывает') | Should -BeTrue
+        $readmeText.Contains('Подробнее → Выполнить в любом случае') | Should -BeTrue
+        $readmeText.Contains('Установить сертификат') | Should -BeTrue
+    }
+    It 'версия поднята' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.8\.[9]'''
+    }
+}
