@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.8.9'
+$script:AppVersion = '2.9.0'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -1454,6 +1454,51 @@ $left.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
 $left.AutoScroll = $true
 $script:Form.Controls.Add($left)
 
+function Get-PlatformNickInput {
+    param([string]$Platform,[string]$Raw)
+    $trimmed = ([string]$Raw).Trim()
+    $domain = Get-PlatformDomain -Platform $Platform
+    if ($domain -and $trimmed -match ('(?i)@' + [regex]::Escape($domain) + '$')) { $trimmed = $trimmed.Substring(0, $trimmed.LastIndexOf('@')) }
+    return $trimmed
+}
+
+function Copy-UufTextToClipboard {
+    param([string]$Text,[string]$Context='копирование')
+    if ($null -eq $Text) { $Text = '' }
+    for ($clipAttempt = 1; $clipAttempt -le 6; $clipAttempt++) {
+        try { [System.Windows.Forms.Clipboard]::SetText($Text); return $true } catch { Start-Sleep -Milliseconds (50 * $clipAttempt) }
+    }
+    Add-Diagnostic ('Буфер обмена занят другой программой (' + $Context + ') — копирование не выполнено, попробуй ещё раз через секунду.')
+    return $false
+}
+
+function Set-UufTabStyle {
+    param($Tabs,[int]$TabWidth)
+    $Tabs.Appearance = 'FlatButtons'
+    $Tabs.ItemSize = New-Object System.Drawing.Size($TabWidth, 30)
+    $Tabs.Padding = New-Object System.Drawing.Point(12, 3)
+    $Tabs.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $Tabs.DrawMode = 'OwnerDrawFixed'
+    $Tabs.Add_DrawItem({
+        $tabIndex = [int]$args[1].TabIndex
+        $tabBounds = [System.Drawing.Rectangle]$args[1].Bounds
+        $tabG = $args[1].Graphics
+        $tabSelected = ($sender.SelectedIndex -eq $tabIndex)
+        if ($tabSelected) { $tabBack = [System.Drawing.Color]::FromArgb(44,56,82) } else { $tabBack = [System.Drawing.Color]::FromArgb(26,33,47) }
+        $tabBrush = New-Object System.Drawing.SolidBrush($tabBack)
+        $tabG.FillRectangle($tabBrush, $tabBounds)
+        $tabBrush.Dispose()
+        if ($tabSelected) {
+            $tabAccent = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(129,108,255))
+            $tabG.FillRectangle($tabAccent, $tabBounds.X, ($tabBounds.Bottom - 3), $tabBounds.Width, 3)
+            $tabAccent.Dispose()
+        }
+        if ($tabSelected) { $tabText = [System.Drawing.Color]::FromArgb(235,240,248) } else { $tabText = [System.Drawing.Color]::FromArgb(148,161,186) }
+        $tabFlags = [System.Windows.Forms.TextFormatFlags]::HorizontalCenter -bor [System.Windows.Forms.TextFormatFlags]::VerticalCenter -bor [System.Windows.Forms.TextFormatFlags]::EndEllipsis
+        [System.Windows.Forms.TextRenderer]::DrawText($tabG, [string]$sender.TabPages[$tabIndex].Text, $sender.Font, $tabBounds, $tabText, $tabFlags)
+    })
+}
+
 function Add-UiLabel {
     param([string]$Text, [int]$X, [int]$Y, [int]$Width=350, [int]$Height=22, [System.Windows.Forms.Control]$Parent=$left)
     $label = New-Object System.Windows.Forms.Label
@@ -1589,8 +1634,8 @@ $left.Controls.Add($script:StyleBox)
 
 Add-UiLabel 'Свои слова через запятую' 14 431 350 22 | Out-Null
 $script:CustomBox = New-TextBox 14 454 350 27 'Pixel, Void, Storm'
-Add-UiLabel 'Ручные ники для проверки (каждый с новой строки или через запятую)' 14 489 350 35 | Out-Null
-$script:ManualNickBox = New-TextBox 14 512 350 60 ''
+Add-UiLabel 'Ручные ники для проверки' 14 483 350 18 | Out-Null
+$script:ManualNickBox = New-TextBox 14 505 350 66 'каждый с новой строки или через запятую'
 $script:ManualNickBox.Multiline = $true
 $script:ManualNickBox.ScrollBars = 'Vertical'
 
@@ -1819,8 +1864,7 @@ $script:Grid.add_CellDoubleClick({
         $n = [string]$script:Grid.Rows[$e.RowIndex].Cells['Nick'].Value
         $st = [string]$script:Grid.Rows[$e.RowIndex].Cells['Status'].Value
         if ($st -eq 'Свободен' -and $n) {
-            [System.Windows.Forms.Clipboard]::SetText($n)
-            Add-Diagnostic "Скопирован ник: $n (статус: $st)"
+            if (Copy-UufTextToClipboard -Text $n -Context 'копирование ника из таблицы') { Add-Diagnostic "Скопирован ник: $n (статус: $st)" }
         }
     }
 })
@@ -2157,6 +2201,7 @@ function Open-AccountTools {
     $vaultTab.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     [void]$tabs.TabPages.Add($prepareTab)
     [void]$tabs.TabPages.Add($vaultTab)
+    Set-UufTabStyle -Tabs $tabs -TabWidth 190
     $script:AccountTabs = $tabs
     $script:AccountVaultTab = $vaultTab
     $script:AccountForm.Controls.Add($tabs)
@@ -2379,21 +2424,21 @@ function Open-AccountTools {
             [System.Windows.Forms.MessageBox]::Show('Сначала сгенерируй пароль.', 'Копирование', 'OK', 'Information') | Out-Null
             return
         }
-        [System.Windows.Forms.Clipboard]::SetText($script:AccountPasswordBox.Text)
+        Copy-UufTextToClipboard -Text $script:AccountPasswordBox.Text -Context 'копирование пароля' | Out-Null
     })
 
     $copyNickButton.Add_Click({
-        $nick = $script:AccountUsernameBox.Text.Trim()
+        $nick = Get-PlatformNickInput -Platform ([string]$script:AccountPlatform) -Raw $script:AccountUsernameBox.Text
         if ([string]::IsNullOrWhiteSpace($nick)) {
             [System.Windows.Forms.MessageBox]::Show('Сначала выбери или введи ник.', 'Копирование', 'OK', 'Information') | Out-Null
             return
         }
-        [System.Windows.Forms.Clipboard]::SetText($nick)
+        Copy-UufTextToClipboard -Text $nick -Context 'копирование ника' | Out-Null
     })
 
     $script:OpenRegisterButton.Add_Click({
-        $registerNick = $script:AccountUsernameBox.Text.Trim()
         $registerPlatform = [string]$script:AccountPlatform
+        $registerNick = Get-PlatformNickInput -Platform $registerPlatform -Raw $script:AccountUsernameBox.Text
         if (-not (Test-UsernameFormat -Username $registerNick -Platform $registerPlatform)) {
             [System.Windows.Forms.MessageBox]::Show(('Ник не подходит для платформы ' + $registerPlatform + '.' + [Environment]::NewLine + [Environment]::NewLine + 'Правила: ' + (Get-PlatformFormatHint -Platform $registerPlatform) + '.'), 'Проверь ник', 'OK', 'Warning') | Out-Null
             return
@@ -2411,7 +2456,7 @@ function Open-AccountTools {
     })
 
     $saveAccountButton.Add_Click({
-        $nick = $script:AccountUsernameBox.Text.Trim()
+        $nick = Get-PlatformNickInput -Platform ([string]$script:AccountPlatform) -Raw $script:AccountUsernameBox.Text
         $password = $script:AccountPasswordBox.Text
         if (-not (Test-UsernameFormat -Username $nick -Platform ([string]$script:AccountPlatform))) {
             [System.Windows.Forms.MessageBox]::Show(('Проверь ник: ' + (Get-PlatformFormatHint -Platform ([string]$script:AccountPlatform)) + '.'), 'Неверный ник', 'OK', 'Warning') | Out-Null
@@ -2467,7 +2512,7 @@ function Open-AccountTools {
             [System.Windows.Forms.MessageBox]::Show('Сначала выбери запись в списке.', 'Копирование', 'OK', 'Information') | Out-Null
             return
         }
-        [System.Windows.Forms.Clipboard]::SetText($script:SavedPasswordBox.Text)
+        Copy-UufTextToClipboard -Text $script:SavedPasswordBox.Text -Context 'копирование сохранённого пароля' | Out-Null
     })
 
     $copySavedUsernameButton.Add_Click({
@@ -2476,7 +2521,7 @@ function Open-AccountTools {
             [System.Windows.Forms.MessageBox]::Show('Сначала выбери запись в списке.', 'Копирование', 'OK', 'Information') | Out-Null
             return
         }
-        [System.Windows.Forms.Clipboard]::SetText([string]$script:AccountRecords[$index].Username)
+        Copy-UufTextToClipboard -Text ([string]$script:AccountRecords[$index].Username) -Context 'копирование сохранённого ника' | Out-Null
     })
 
     $deleteAccountButton.Add_Click({
@@ -3063,7 +3108,7 @@ function Open-FreeHistoryWindow {
     $script:HistoryForm.Controls.Add($open)
     $copy.Add_Click({
         $selected = $script:HistoryListBox.SelectedItem
-        if ($selected) { [System.Windows.Forms.Clipboard]::SetText([string]$selected.Name) }
+        if ($selected) { Copy-UufTextToClipboard -Text ([string]$selected.Name) -Context 'копирование ника из свободных' | Out-Null }
     })
     $open.Add_Click({
         $selected = $script:HistoryListBox.SelectedItem
@@ -3241,6 +3286,7 @@ function Show-UsernameFinderHelp {
     $helpTabs = New-Object System.Windows.Forms.TabControl
     $helpTabs.Dock = 'Fill'
     $helpTabs.Font = New-Object System.Drawing.Font('Segoe UI',9.5)
+    Set-UufTabStyle -Tabs $helpTabs -TabWidth 180
     $helpBodyFont = New-Object System.Drawing.Font('Segoe UI', 10)
     $helpLeadFont = New-Object System.Drawing.Font('Segoe UI Semibold', 10.5, [System.Drawing.FontStyle]::Bold)
     $helpHeadingFont = New-Object System.Drawing.Font('Segoe UI Semibold', 12.5, [System.Drawing.FontStyle]::Bold)
@@ -3549,7 +3595,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.8.9' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.9.0' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -3906,34 +3952,57 @@ try {
                             $status='Не подтверждено'; $reason='Outlook: GetCredentialType ответил без поля IfExistsResult; включаю резервную проверку регистрации'; $consecutiveErrors=0
                         }
                     } catch { }
-                    if ($status -notin @('Занят','Свободен') -and $null -ne $msContext -and $null -ne $msSession -and $msContext.apiCanary) {
-                        $hpgid = $null
-                        try { $hpgid = $msContext.cpgids.Signup_MemberNamePage_Client } catch { }
-                        if ($null -eq $hpgid) { $hpgid = 1001 }
-                        $uaidValue = $null
-                        try { $uaidValue = [string]$msContext.uaid } catch { }
-                        if ([string]::IsNullOrWhiteSpace($uaidValue)) { $uaidValue = [string][guid]::NewGuid() }
-                        $payload = @{signInName=$signInName; includeSuggestions=$false; uaid=$uaidValue; uiflvr=1001; scid=1001; hpgid=$hpgid} | ConvertTo-Json -Compress
-                        try {
-                            $r2 = Get-HttpResult -Url 'https://signup.live.com/API/CheckAvailableSigninNames' -Timeout $timeoutSec -Headers @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json'; 'canary'=[string]$msContext.apiCanary; 'Origin'='https://signup.live.com'; 'Referer'='https://signup.live.com/'} -Method Post -Body $payload -ContentType 'application/json; charset=UTF-8' -WebSession $msSession
-                            $status2 = [int]$r2.Code
-                            if ($status2 -eq 200) {
-                                $responseText = [string]$r2.Content
-                                $availableMatch = [regex]::Match($responseText, '(?i)"isAvailable"\s*:\s*(true|false)')
-                                if ($availableMatch.Success) {
-                                    if ($availableMatch.Groups[1].Value -ieq 'true') { $status='Свободен'; $reason='Outlook API регистрации подтвердил доступность адреса @outlook.com'; $consecutiveErrors=0 }
-                                    else { $status='Занят'; $reason='Outlook API регистрации отклонил адрес @outlook.com как недоступный'; $consecutiveErrors=0 }
-                                } else {
-                                    $existsMatch2 = [regex]::Match($responseText, '(?i)"IfExistsResult"\s*:\s*(-?[0-9]+)')
-                                    if ($existsMatch2.Success) {
-                                        $existsCode = [int]$existsMatch2.Groups[1].Value
-                                        if ($existsCode -eq 0) { $status='Занят'; $reason='Outlook: резервная проверка вернула IfExistsResult=0 — аккаунт существует'; $consecutiveErrors=0 }
-                                        elseif ($existsCode -eq 1) { $status='Не подтверждено'; $reason='Outlook: резервная проверка вернула IfExistsResult=1 — аккаунт не найден, форму регистрации не подтвердил'; $consecutiveErrors=0 }
-                                        else { $status='Не подтверждено'; $reason='Outlook: резервная проверка вернула IfExistsResult=' + $existsCode; $consecutiveErrors=0 }
-                                    }
+                    if ($status -notin @('Занят','Свободен')) {
+                        $msNote = ''
+                        for ($msAttempt = 1; $msAttempt -le 2; $msAttempt++) {
+                            if ($null -eq $msSession) { $msSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession }
+                            $msCanaryNow = $null
+                            foreach ($msInitUrl in @('https://signup.live.com/CreateAccount?lic=1&uiflvr=1103&scid=200055&signup=1','https://signup.live.com/?lic=1')) {
+                                $msPageFresh = Get-HttpResult -Url $msInitUrl -Timeout $timeoutSec -Headers $browserHeaders -WebSession $msSession
+                                $msPageText = [string]$msPageFresh.Content
+                                $canaryMatch = [regex]::Match($msPageText, '(?i)"apiCanary"\s*[:=]\s*"([^"]+)"')
+                                if ($canaryMatch.Success) { $msCanaryNow = $canaryMatch.Groups[1].Value; break }
+                                $bootMatch = [regex]::Match($msPageText, '(?s)var\s+t0\s*=\s*(\{.*?\})\s*;')
+                                if ($bootMatch.Success) {
+                                    try { $bootJson = ConvertFrom-Json -InputObject $bootMatch.Groups[1].Value; if ($null -ne $bootJson -and $null -ne $bootJson.apiCanary) { $msCanaryNow = [string]$bootJson.apiCanary; break } } catch { }
                                 }
                             }
-                        } catch { }
+                            if ([string]::IsNullOrWhiteSpace($msCanaryNow) -and $null -ne $msContext -and $msContext.apiCanary) { $msCanaryNow = [string]$msContext.apiCanary }
+                            if ([string]::IsNullOrWhiteSpace($msCanaryNow)) { $msNote = 'страница регистрации не отдала canary'; break }
+                            $msUaid = [string][guid]::NewGuid()
+                            $hpgidValue = 1001
+                            try { if ($null -ne $msContext -and $null -ne $msContext.cpgids -and $null -ne $msContext.cpgids.Signup_MemberNamePage_Client) { $hpgidValue = [int]$msContext.cpgids.Signup_MemberNamePage_Client } } catch { }
+                            $payload = @{signInName=$signInName; includePhone=$false; countryCode='RU'; uaid=$msUaid; uiflvr=1103; scid=1001; hpgid=$hpgidValue} | ConvertTo-Json -Compress
+                            $msHeaders = @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json'; 'canary'=$msCanaryNow; 'Origin'='https://signup.live.com'; 'Referer'=('https://signup.live.com/CreateAccount?lic=1&uiflvr=1103&scid=200055&signup=1&uaid=' + $msUaid)}
+                            try {
+                                $r2 = Get-HttpResult -Url 'https://signup.live.com/API/CheckAvailableSigninNames' -Timeout $timeoutSec -Headers $msHeaders -Method Post -Body $payload -ContentType 'application/json; charset=UTF-8' -WebSession $msSession
+                                $status2 = [int]$r2.Code
+                                $responseText = [string]$r2.Content
+                                $availableMatch = [regex]::Match($responseText, '(?i)"isAvailable"\s*:\s*(true|false)')
+                                if ($status2 -eq 200 -and $availableMatch.Success) {
+                                    if ($availableMatch.Groups[1].Value -ieq 'true') { $status='Свободен'; $reason='Outlook: форма регистрации подтвердила доступность адреса ' + $signInName; $consecutiveErrors=0 }
+                                    else { $status='Занят'; $reason='Outlook: форма регистрации отклонила адрес ' + $signInName + ' как недоступный'; $consecutiveErrors=0 }
+                                    break
+                                }
+                                if ($status2 -eq 400) {
+                                    if ($responseText -match '(?i)MemberNameUnavailable|already (?:been )?taken|is taken|недоступен') { $status='Занят'; $reason='Outlook: форма регистрации сообщает, что адрес занят или недоступен'; $consecutiveErrors=0; break }
+                                    if ($responseText -match '(?i)ForbiddenName|reserved|not allowed|invalid') { $status='Недопустимый'; $reason='Outlook: форма регистрации отклонила имя как недопустимое или зарезервированное'; $consecutiveErrors=0; break }
+                                    $msNote = 'форма регистрации вернула ошибку валидации (HTTP 400)'
+                                }
+                                $existsMatch2 = [regex]::Match($responseText, '(?i)"IfExistsResult"\s*:\s*(-?[0-9]+)')
+                                if ($existsMatch2.Success) {
+                                    $existsCode = [int]$existsMatch2.Groups[1].Value
+                                    if ($existsCode -eq 0) { $status='Занят'; $reason='Outlook: форма регистрации вернула IfExistsResult=0 — аккаунт существует'; $consecutiveErrors=0; break }
+                                    $msNote = 'форма регистрации вернула IfExistsResult=' + $existsCode
+                                }
+                                if ($status2 -eq 401 -or $status2 -eq 403 -or $responseText -match '(?i)canary|invalid_request') { $msNote = 'canary устарел или запрос отклонён (HTTP ' + $status2 + '), обновляю страницу'; if ($msAttempt -eq 2) { break } else { continue } }
+                                if (-not $msNote) { $msNote = 'ответ формы регистрации непонятен (HTTP ' + $status2 + ')' }
+                            } catch { $msNote = 'запрос к форме регистрации не прошёл: ' + $_.Exception.Message }
+                        }
+                        if ($status -notin @('Занят','Свободен','Недопустимый')) {
+                            if ($msNote) { $reason = 'Outlook: ' + $msNote + ' — точный ответ даёт только форма регистрации, статус не подтверждён' }
+                            $consecutiveErrors=0
+                        }
                     }
                 }
 # --- GitHub Api
@@ -3987,23 +4056,29 @@ try {
                 }
 # --- Telegram Api
                 'Telegram' {
-                    # --- Публичный метод t.me: код ответа и маркеры страницы читаются однозначно
-                    $url = 'https://t.me/' + [uri]::EscapeDataString($name)
-                    $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers $browserHeaders
-                    $httpStatus = [int]$r.Code
-                    $content = [string]$r.Content
+                    # --- Публичный метод: t.me и зеркала telegram.dog/telegram.me — первый однозначный ответ выигрывает, как в веб-версии
                     $normalizedHandle = [regex]::Escape($name)
-                    $profileOwner = ($content -match ('(?is)class="tgme_page_extra"[^>]*>\s*@?' + $normalizedHandle + '\s*</')) -or ($content -match ('(?is)<meta property="og:title" content="Telegram\s*:\s*Contact @?' + $normalizedHandle + '"'))
-                    $freeHintPage = $content -match '(?i)if you have a telegram account|reserve this username|doesn.t seem to exist|username not found|tgme_page_error'
-                    $reservedPage = $content -match '(?i)username has been reserved|reserved for payment|this username is reserved|has been frozen'
-                    $blockedPage = $content -match '(?i)доступ к странице ограничен|access is restricted|reestr|roskomnadzor'
-                    if ($blockedPage) { $status='Не подтверждено'; $reason='Telegram: страница провайдера о блокировке t.me — задай «Прокси» над таблицей или включи VPN'; $consecutiveErrors++ }
-                    elseif ($httpStatus -eq 404) { $status='Свободен'; $reason='Telegram: t.me вернул 404 — страница @' + $name + ' никем не занята'; $consecutiveErrors=0 }
-                    elseif ($httpStatus -eq 200 -and $freeHintPage -and -not $reservedPage) { $status='Свободен'; $reason='Telegram: t.me предложил настроить или забронировать @' + $name + ' — тег свободен'; $consecutiveErrors=0 }
-                    elseif ($httpStatus -eq 200 -and $reservedPage) { $status='Занят'; $reason='Telegram: тег @' + $name + ' зарезервирован платформой (резерв или платный ник) — регистрация закрыта'; $consecutiveErrors=0 }
-                    elseif ($httpStatus -eq 200 -and $profileOwner) { $status='Занят'; $reason='Telegram: t.me отдаёт публичную страницу @' + $name; $consecutiveErrors=0 }
-                    elseif ($httpStatus -eq 200) { $status='Не подтверждено'; $reason='Telegram: t.me ответил без распознаваемых маркеров профиля; попробуй повторить или задать прокси'; $consecutiveErrors=0 }
-                    else { $status='Не подтверждено'; $reason='Telegram: неожиданный HTTP ' + $httpStatus + ' от t.me'; $consecutiveErrors=0 }
+                    $tgResolved = $false
+                    $tgLastNote = ''
+                    foreach ($tgBase in @('https://t.me/','https://telegram.dog/','https://telegram.me/')) {
+                        $tgName = 't.me'
+                        if ($tgBase -ne 'https://t.me/') { $tgName = $tgBase.Substring(8).TrimEnd('/') }
+                        $r = Get-HttpResult -Url ($tgBase + [uri]::EscapeDataString($name)) -Timeout $timeoutSec -Headers $browserHeaders
+                        $httpStatus = [int]$r.Code
+                        $content = [string]$r.Content
+                        $profileOwner = ($content -match ('(?is)class="tgme_page_extra"[^>]*>\s*@?' + $normalizedHandle + '\s*</')) -or ($content -match ('(?is)<meta property="og:title" content="Telegram\s*:\s*Contact @?' + $normalizedHandle + '"'))
+                        $freeHintPage = $content -match '(?i)if you have a telegram account|reserve this username|doesn.t seem to exist|username not found|tgme_page_error'
+                        $reservedPage = $content -match '(?i)username has been reserved|reserved for payment|this username is reserved|has been frozen'
+                        $blockedPage = $content -match '(?i)доступ к странице ограничен|access is restricted|reestr|roskomnadzor'
+                        if ($blockedPage) { $tgLastNote = $tgName + ' блокируется провайдером — задай «Прокси» над таблицей или включи VPN'; continue }
+                        if ($httpStatus -eq 404) { $status='Свободен'; $reason='Telegram: ' + $tgName + ' вернул 404 — страница @' + $name + ' никем не занята'; $consecutiveErrors=0; $tgResolved=$true; break }
+                        if ($httpStatus -eq 200 -and $freeHintPage -and -not $reservedPage) { $status='Свободен'; $reason='Telegram: страница @' + $name + ' на ' + $tgName + ' предлагает настроить или забронировать ник — тег свободен'; $consecutiveErrors=0; $tgResolved=$true; break }
+                        if ($httpStatus -eq 200 -and $reservedPage) { $status='Занят'; $reason='Telegram: тег @' + $name + ' зарезервирован платформой (резерв или платный ник) — регистрация закрыта'; $consecutiveErrors=0; $tgResolved=$true; break }
+                        if ($httpStatus -eq 200 -and $profileOwner) { $status='Занят'; $reason='Telegram: ' + $tgName + ' отдаёт публичную страницу @' + $name; $consecutiveErrors=0; $tgResolved=$true; break }
+                        if ($httpStatus -eq 200) { $tgLastNote = $tgName + ' ответил без распознаваемых маркеров профиля'; continue }
+                        $tgLastNote = $tgName + ' вернул неожиданный HTTP ' + $httpStatus
+                    }
+                    if (-not $tgResolved) { $status='Не подтверждено'; $reason='Telegram: ' + $tgLastNote + '; попробуй повторить или задать прокси'; $consecutiveErrors=0 }
                 }
 # --- Steam Api
                 'Steam' {
@@ -4299,7 +4374,8 @@ $script:GenerateButton.Add_Click({
         Add-Diagnostic ("Создано {0} из {1}: пространство имён исчерпано при текущих фильтрах. Отсеяно — по длине {2}, по формату платформы {3}, по словам-исключениям {4}, повторов {5}, уже проверено/занято {6}." -f $candidates.Count, $requestedCount, $poolStats['ByLength'], $poolStats['ByFormat'], $poolStats['ByExcludedToken'], $poolStats['ByDuplicate'], $poolStats['ByAlreadyUsed'])
         Add-Diagnostic ("По источникам — однословные {0}, двусловные {1}, выдуманные {2}, выдуманные сочетания {3}, с заменой символами {4}, редкие короткие {5}, с цифрами {6}." -f $poolStats['Single'], $poolStats['Pair'], $poolStats['Invented'], $poolStats['InventedPair'], $poolStats['Leet'], $poolStats['Rare'], $poolStats['Number'])
     }
-    if ($candidates.Count -eq 0 -and [string]::IsNullOrWhiteSpace($script:ManualNickBox.Text)) {
+    $manualBoxHasText = -not [string]::IsNullOrWhiteSpace($script:ManualNickBox.Text)
+    if ($candidates.Count -eq 0 -and -not $manualBoxHasText) {
         if ($categories.Count -lt 1 -and [string]::IsNullOrWhiteSpace($customWords)) {
             $noVariantHint = 'Не выбрана ни одна категория и не введены свои слова. Нажми «Выделить все» или впиши свои слова через запятую.'
         } elseif ($excludeKeys.Count -gt 0) {
@@ -4311,7 +4387,11 @@ $script:GenerateButton.Add_Click({
         Add-Diagnostic $noVariantHint
         return
     }
+    if ($candidates.Count -eq 0 -and $manualBoxHasText) {
+        Add-Diagnostic 'Генерация по настройкам не дала новых имён — все варианты уже проверены или отсеяны фильтрами, в таблицу берутся только ручные ники. Сними «Исключать проверенные» или ослабь фильтры, чтобы вернуть пул.'
+    }
     $added = 0
+    $addedManual = 0
     $dropped = 0
     foreach ($candidate in $candidates) {
         $key = (($platform + '|' + [string]$candidate.Name).ToLowerInvariant())
@@ -4325,7 +4405,7 @@ $script:GenerateButton.Add_Click({
     }
     if ($dropped -gt 0) { Add-Diagnostic ("Отброшено после генерации: {0} (совпали с уже проверенными или занятыми)." -f $dropped) }
     foreach ($nickRaw in ($script:ManualNickBox.Text -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
-        $nick = $nickRaw.Trim()
+        $nick = Get-PlatformNickInput -Platform $platform -Raw $nickRaw
         $key = (($platform + '|' + $nick).ToLowerInvariant())
         if ($seen.ContainsKey($key) -or $script:RetiredNames.ContainsKey($key)) { continue }
         $status = 'Ожидает'; $reason = 'Ожидает проверки'
@@ -4335,7 +4415,7 @@ $script:GenerateButton.Add_Click({
         $manualCandidate = [pscustomobject]@{Name=$nick; Platform=$platform; Meaning='Введён вручную'; Category='Ручной ввод'; Structure=(Get-NickStructure -Name $nick); Status=$status; Time=$manualTime; Reason=$reason; Checked=($status -eq 'Недопустимый')}
         [void]$script:Candidates.Add($manualCandidate)
         Register-Candidate $manualCandidate
-        $seen[$key]=$true; $added++
+        $seen[$key]=$true; $added++; $addedManual++
     }
     Touch-Candidates
     if ($script:Candidates.Count -gt 5000) { [System.Windows.Forms.MessageBox]::Show('В списке больше 5000 записей: таблица может перерисовываться медленнее. Экспортируй результаты или очисти список.','Размер списка','OK','Information') | Out-Null }
@@ -4345,7 +4425,7 @@ $script:GenerateButton.Add_Click({
     } else {
         Add-Diagnostic ("Для платформы {0} добавлено новых ников: {1} из запрошенных {2}. Всего в таблице: {3}." -f $platform, $added, $requestedCount, $script:Candidates.Count)
     }
-    $script:SummaryLabel.Text = "Сгенерировано: $added · автоматическая проверка запускается"
+    if ($addedManual -gt 0) { $script:SummaryLabel.Text = "Сгенерировано: $added · ручных: $addedManual · проверка запускается" } else { $script:SummaryLabel.Text = "Сгенерировано: $added · автоматическая проверка запускается" }
     if ($added -gt 0) { Start-Checking -RetryErrorsOnly $false }
 })
 
@@ -4386,8 +4466,7 @@ $script:CsvButton.Add_Click({
 $script:CopyButton.Add_Click({
     Update-AvailableNames
     if ($script:AvailableNames.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show('Пока нет свободных ников.','Копирование','OK','Information') | Out-Null; return }
-    [System.Windows.Forms.Clipboard]::SetText(($script:AvailableNames -join [Environment]::NewLine))
-    $script:SummaryLabel.Text = "Скопировано свободных ников: $($script:AvailableNames.Count)"
+    if (Copy-UufTextToClipboard -Text ($script:AvailableNames -join [Environment]::NewLine) -Context 'копирование свободных ников') { $script:SummaryLabel.Text = "Скопировано свободных ников: $($script:AvailableNames.Count)" }
 })
 $script:ClearButton.Add_Click({
     if (Test-CheckRunning) { return }
@@ -4402,7 +4481,7 @@ $script:ClearButton.Add_Click({
     Add-Diagnostic ('Таблица очищена. Список проверенных имён сохранён ({0}); управлять им можно в окне «Проверенные ники».' -f $script:CheckedNames.Count)
 })
 $script:CopyLogButton.Add_Click({
-    if (-not [string]::IsNullOrWhiteSpace($script:DiagnosticBox.Text)) { [System.Windows.Forms.Clipboard]::SetText($script:DiagnosticBox.Text) }
+    if (-not [string]::IsNullOrWhiteSpace($script:DiagnosticBox.Text)) { Copy-UufTextToClipboard -Text $script:DiagnosticBox.Text -Context 'копирование журнала' | Out-Null }
 })
 $script:ClearLogButton.Add_Click({ $script:DiagnosticBox.Clear(); Add-Diagnostic 'Журнал очищен.' })
 $script:StatusFilterBox.Add_SelectedIndexChanged({ Update-ResultGrid })
