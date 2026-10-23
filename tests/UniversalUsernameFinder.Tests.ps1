@@ -1441,3 +1441,57 @@ Describe 'Версия 2.9.1: дорисовка вкладок, возобно�
         $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[0-9]'''
     }
 }
+
+Describe 'Версия 2.9.2: установщик зависимостей и программа полного удаления' {
+    It 'установщик проверяет .NET, PowerShell и TLS и регистрирует удаление в реестре' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $installText.Contains('function Test-UufDependencies') | Should -BeTrue
+        $installText.Contains('394802') | Should -BeTrue
+        $installText.Contains('SchUseStrongCrypto') | Should -BeTrue
+        $installText.Contains('[switch]$SkipDependencyCheck') | Should -BeTrue
+        $installText.Contains('[switch]$NoTrust') | Should -BeTrue
+        $installText.Contains('CurrentVersion\Uninstall\UniversalUsernameFinder') | Should -BeTrue
+        $installText.Contains('UninstallString') | Should -BeTrue
+        $installText.Contains('Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name Publisher -Value ''Hasberd''') | Should -BeTrue
+    }
+    It 'доверие сертификату включено по умолчанию, старый ключ совместим, удаление делегируется' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $installText.Contains('if (-not $NoTrust) {') | Should -BeTrue
+        $installText.Contains('[switch]$TrustSelfSigned') | Should -BeTrue
+        $installText.Contains('& $uninstallerSource') | Should -BeTrue
+        $installText.Contains('Copy-Item -LiteralPath $uninstallerSource -Destination $targetUninstaller -Force') | Should -BeTrue
+    }
+    It 'Uninstall-UUF.ps1 стирает файлы, ярлыки, реестр, доверие сертификата и данные' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $uninstallerPath = [System.IO.Path]::Combine($repoRoot, 'build', 'Uninstall-UUF.ps1')
+        Test-Path -LiteralPath $uninstallerPath | Should -BeTrue
+        $uninstallText = [System.IO.File]::ReadAllText($uninstallerPath, [System.Text.Encoding]::UTF8)
+        $uninstallText.Contains('function Remove-UufCertificateTrust') | Should -BeTrue
+        $uninstallText.Contains("'CN=Hasberd*'") | Should -BeTrue
+        $uninstallText.Contains('[switch]$KeepData') | Should -BeTrue
+        $uninstallText.Contains('rd /s /q') | Should -BeTrue
+        $uninstallText.Contains('Remove-UufDirectory -Path $dataDirectory -Label ''Данные''') | Should -BeTrue
+    }
+    It 'bat-обёртки есть и у установки, и у удаления; артефакт их содержит' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        Test-Path ([System.IO.Path]::Combine($repoRoot, 'build', 'Uninstall-UUF.bat')) | Should -BeTrue
+        $uninstallBatText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Uninstall-UUF.bat'))
+        $uninstallBatText.Contains('Uninstall-UUF.ps1') | Should -BeTrue
+        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
+        $ciText.Contains('build/Uninstall-UUF.ps1') | Should -BeTrue
+        $ciText.Contains('build/Uninstall-UUF.bat') | Should -BeTrue
+    }
+    It 'README описывает автодоверие, проверку зависимостей и полное удаление' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $readmeText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'README.md'), [System.Text.Encoding]::UTF8)
+        $readmeText.Contains('Uninstall-UUF.bat') | Should -BeTrue
+        $readmeText.Contains('Приложения и возможности') | Should -BeTrue
+        $readmeText.Contains('-NoTrust') | Should -BeTrue
+        $readmeText.Contains('394802') | Should -BeFalse
+    }
+    It 'версия поднята до 2.9.2' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.2'''
+    }
+}

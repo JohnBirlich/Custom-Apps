@@ -396,5 +396,7 @@ jobs:
             dist/*.cer
             build/Install-UUF.ps1
             build/Install-UUF.bat
+            build/Uninstall-UUF.ps1
+            build/Uninstall-UUF.bat
           if-no-files-found: error
           retention-days: 90
