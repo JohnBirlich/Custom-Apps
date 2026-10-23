@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -247,6 +247,9 @@ jobs:
     name: Build Windows executable (ps2exe)
     runs-on: windows-latest
     needs: quality
+    # Publish GitHub Release needs write access to the repository.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
 
@@ -426,3 +429,52 @@ jobs:
             build/Uninstall-UUF.bat
           if-no-files-found: error
           retention-days: 90
+
+      # Publish GitHub Release on tag push (v*): binaries, hashes and installers become
+      # one-click release assets. Re-running the same tag overwrites the files instead
+      # of failing. The tag commit's dist/ is exactly what this run built, so the
+      # release always matches the tag without manual artifact handling.
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GITHUB_TOKEN: *** secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          assets=()
+          for f in dist/UUF.exe dist/UUF.exe.sha256 dist/AppUninstaller.exe dist/AppUninstaller.exe.sha256 dist/UUF-signing.cer build/Install-UUF.ps1 build/Install-UUF.bat build/Uninstall-UUF.ps1 build/Uninstall-UUF.bat; do
+            if [ -f "$f" ]; then assets+=("$f"); fi
+          done
+          NOTES_FILE="$(mktemp)"
+          cat > "$NOTES_FILE" <<'UUFINISHED'
+          ## Universal Username Finder __TAG__
+
+          Подбор свободных ников (Roblox, Steam, GitHub, Telegram, Google, Mail.ru, VK, Discord, Outlook и др.), генератор имён, проверка формата, локальный сейф и история.
+
+          ### Быстрая установка
+          1. Распакуйте **все** файлы в одну папку.
+          2. Двойной клик по `Install-UUF.bat` — установщик проверит зависимости (.NET 4.6.2+, PowerShell 5.1, TLS), положит программу в `%LOCALAPPDATA%\Programs\UniversalUsernameFinder`, сам добавит сертификат Hasberd в доверенные, снимет метку интернета и зарегистрирует приложение в «Приложениях и возможностях».
+          3. Запуск — ярлыком с рабочего стола.
+
+          ### Файлы
+          | Файл | Назначение |
+          |------|-----------|
+          | `UUF.exe` | приложение (подписано Authenticode, издатель Hasberd) |
+          | `AppUninstaller.exe` | программа полного удаления (файлы, ярлыки, реестр, доверие сертификату, данные — с подтверждением) |
+          | `Install-UUF.ps1` / `.bat` | установщик (батник — для двойного клика) |
+          | `Uninstall-UUF.ps1` / `.bat` | резервный исходник деинсталлятора |
+          | `UUF.exe.sha256`, `AppUninstaller.exe.sha256` | контрольные хэши официальной сборки |
+          | `UUF-signing.cer` | публичный ключ самоподписанного сертификата издателя |
+
+          Если SmartScreen показывает красное окно для только что скачанного файла — «Подробнее → Выполнить в любом случае» (или просто запустите установщик: после него предупреждений нет).
+          UUFINISHED
+          sed -i "s/__TAG__/${TAG}/" "$NOTES_FILE"
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release edit "${TAG}" --title "Universal Username Finder ${TAG}" --notes-file "$NOTES_FILE"
+            if [ ${#assets[@]} -gt 0 ]; then gh release upload "${TAG}" "${assets[@]}" --clobber; fi
+            echo "Release ${TAG} updated (re-run on an existing tag)."
+          else
+            gh release create "${TAG}" --title "Universal Username Finder ${TAG}" --notes-file "$NOTES_FILE" --latest "${assets[@]}"
+            echo "Release ${TAG} created with ${#assets[@]} assets."
+          fi
