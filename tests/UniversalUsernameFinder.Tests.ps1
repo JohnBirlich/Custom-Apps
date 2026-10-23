@@ -1535,3 +1535,25 @@ Describe 'Версия 2.9.3: полное удаление — самостоя
         $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.3'''
     }
 }
+
+Describe 'Релизный конвейер: GitHub Release по тегу' {
+    It 'CI публикует релиз только для тегов v* и берёт в ассеты бинарники с хэшами' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
+        $ciText.Contains('Publish GitHub Release') | Should -BeTrue
+        $ciText.Contains("startsWith(github.ref, 'refs/tags/v')") | Should -BeTrue
+        $ciText.Contains('gh release create') | Should -BeTrue
+        $ciText.Contains('gh release upload') | Should -BeTrue
+        $ciText.Contains('dist/AppUninstaller.exe.sha256') | Should -BeTrue
+        $ciText.Contains('contents: write') | Should -BeTrue
+    }
+    It 'job build получает write-права только для публикации релиза' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
+        $buildStart = $ciText.IndexOf('  build:')
+        $buildStart | Should -BeGreaterThan 0
+        $block = $ciText.Substring($buildStart, 400)
+        $block.Contains('permissions:') | Should -BeTrue
+        $block.Contains('contents: write') | Should -BeTrue
+    }
+}
