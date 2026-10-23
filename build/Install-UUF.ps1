@@ -28,7 +28,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$installerVersion = '2.9.2'
+$installerVersion = '2.9.3'
 
 # --- Любая непройденная ошибка печатается в окно и ждёт Enter: двойной клик по .ps1 не должен закрывать PowerShell мгновенно.
 trap {
@@ -44,7 +44,8 @@ $appName = 'Universal Username Finder'
 $targetDirectory = Join-Path $env:LOCALAPPDATA 'Programs\UniversalUsernameFinder'
 $targetExe = Join-Path $targetDirectory 'UUF.exe'
 $targetCertificatePath = Join-Path $targetDirectory 'UUF-signing.cer'
-$targetUninstaller = Join-Path $targetDirectory 'Uninstall-UUF.ps1'
+$targetUninstaller = Join-Path $targetDirectory 'AppUninstaller.exe'
+$targetUninstallerScript = Join-Path $targetDirectory 'Uninstall-UUF.ps1'
 $dataDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
 $desktopDirectory = [Environment]::GetFolderPath('Desktop')
 $programsDirectory = [Environment]::GetFolderPath('Programs')
@@ -59,6 +60,13 @@ function Write-Step {
 
 function Request-ExitPause {
     if (-not $Silent -and $Host.Name -eq 'ConsoleHost') { $null = Read-Host 'Нажмите Enter, чтобы закрыть окно' }
+}
+
+function Get-UninstallerExeSource {
+    foreach ($candidate in @((Join-Path $installerDirectory 'AppUninstaller.exe'), (Join-Path (Split-Path -Parent $installerDirectory) 'dist\AppUninstaller.exe'), (Join-Path $installerDirectory 'dist\AppUninstaller.exe'))) {
+        if ([System.IO.File]::Exists($candidate)) { return $candidate }
+    }
+    return ''
 }
 
 function Get-UninstallerSource {
@@ -200,8 +208,17 @@ function Remove-UufRegistryEntry {
 }
 
 if ($Uninstall) {
+    $uninstallerExe = ''
+    if ([System.IO.File]::Exists($targetUninstaller)) { $uninstallerExe = $targetUninstaller }
+    else { $uninstallerExe = Get-UninstallerExeSource }
+    if ($uninstallerExe) {
+        $uufUninstallArgs = @()
+        if ([bool]$RemoveData) { $uufUninstallArgs += '-RemoveData' } else { $uufUninstallArgs += '-KeepData' }
+        if ($Silent) { $uufUninstallArgs += '-Silent' }
+        & $uninstallerExe @uufUninstallArgs
+        exit $LASTEXITCODE
+    }
     $uninstallerSource = Get-UninstallerSource
-    if ([System.IO.File]::Exists($targetUninstaller)) { $uninstallerSource = $targetUninstaller }
     if ($uninstallerSource) {
         & $uninstallerSource -KeepData:(-not [bool]$RemoveData) -Silent:$Silent
         exit $LASTEXITCODE
@@ -262,17 +279,23 @@ if ([System.IO.File]::Exists($certificateSource)) {
     Copy-Item -LiteralPath $certificateSource -Destination $targetCertificatePath -Force
 }
 
-# --- Кладём деинсталлятор рядом с программой: им пользуется и «Приложения и возможности», и папка установки
+# --- Кладём программу полного удаления рядом с приложением: AppUninstaller.exe — основной вариант,
+# Uninstall-UUF.ps1/.bat — резервный исходник на случай, если .exe будет заблокирован антивирусом.
+$uninstallerExeSource = Get-UninstallerExeSource
+if ($uninstallerExeSource) {
+    Copy-Item -LiteralPath $uninstallerExeSource -Destination $targetUninstaller -Force
+    Write-Step 'Программа полного удаления AppUninstaller.exe установлена рядом с UUF.exe.'
+}
 $uninstallerSource = Get-UninstallerSource
 if ($uninstallerSource) {
-    Copy-Item -LiteralPath $uninstallerSource -Destination $targetUninstaller -Force
+    Copy-Item -LiteralPath $uninstallerSource -Destination $targetUninstallerScript -Force
     $uninstallerBatSource = $uninstallerSource -replace '\.ps1$','.bat'
     if ([System.IO.File]::Exists($uninstallerBatSource)) {
         Copy-Item -LiteralPath $uninstallerBatSource -Destination (Join-Path $targetDirectory 'Uninstall-UUF.bat') -Force
     }
-    Write-Step 'Программа полного удаления установлена рядом с UUF.exe (Uninstall-UUF.bat).'
-} else {
-    Write-Host '  ВНИМАНИЕ: Uninstall-UUF.ps1 не найден рядом с установщиком — полное удаление доступно только ярлыком из «Приложений» или командой -Uninstall.' -ForegroundColor Yellow
+}
+if (-not [System.IO.File]::Exists($targetUninstaller) -and -not [System.IO.File]::Exists($targetUninstallerScript)) {
+    Write-Host '  ВНИМАНИЕ: ни AppUninstaller.exe, ни Uninstall-UUF.ps1 не найдены рядом с установщиком — полное удаление доступно только командой -Uninstall.' -ForegroundColor Yellow
 }
 
 New-InstallShortcut -Directory $desktopDirectory
@@ -322,14 +345,21 @@ try {
     New-Item -Path $uninstallRegistryKey -Force | Out-Null
     $sizeBytes = 0L
     foreach ($installedFile in @(Get-ChildItem -LiteralPath $targetDirectory -File -ErrorAction SilentlyContinue)) { $sizeBytes += [int64]$installedFile.Length }
-    $uninstallCommand = '"' + $powershellPath + '" -NoProfile -ExecutionPolicy Bypass -File "' + $targetUninstaller + '"'
+    $uninstallCommand = ''
+    if ([System.IO.File]::Exists($targetUninstaller)) { $uninstallCommand = '"' + $targetUninstaller + '"' }
+    elseif ([System.IO.File]::Exists($targetUninstallerScript)) { $uninstallCommand = '"' + $powershellPath + '" -NoProfile -ExecutionPolicy Bypass -File "' + $targetUninstallerScript + '"' }
+    else { $uninstallCommand = '"' + $powershellPath + '" -NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $targetDirectory 'Install-UUF.ps1') + '" -Uninstall -RemoveData' }
     Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name DisplayName -Value $appName
     Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name Publisher -Value 'Hasberd'
     Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name DisplayVersion -Value $displayVersion
     Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name InstallLocation -Value $targetDirectory
     Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name DisplayIcon -Value $targetExe
     Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name UninstallString -Value $uninstallCommand
-    Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name QuietUninstallString -Value ($uninstallCommand + ' -Silent')
+        if ([System.IO.File]::Exists($targetUninstaller) -or [System.IO.File]::Exists($targetUninstallerScript)) {
+        Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name QuietUninstallString -Value ($uninstallCommand + ' -Silent')
+    } else {
+        Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name QuietUninstallString -Value ($uninstallCommand + ' -RemoveData -Silent')
+    }
     Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name NoModify -Value 1 -Type DWord
     Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name NoRepair -Value 1 -Type DWord
     Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name EstimatedSize -Value ([int][Math]::Round($sizeBytes / 1KB))
@@ -361,6 +391,8 @@ Write-Host ('Готово! UUF установлен: ' + $targetExe)
 Write-Host ('Подпись exe: ' + $signatureStatus)
 Write-Host ('Ярлык «' + $appName + '» лежит на рабочем столе и в меню «Пуск».')
 Write-Host ('Данные (история, настройки, сейф, журнал): ' + $dataDirectory)
-Write-Host ('Полное удаление: «' + (Join-Path $targetDirectory 'Uninstall-UUF.bat') + '» или «Приложения и возможности» → Universal Username Finder → Удалить.')
+$uninstallerHint = 'AppUninstaller.exe'
+if (-not [System.IO.File]::Exists($targetUninstaller)) { $uninstallerHint = 'Uninstall-UUF.bat' }
+Write-Host ('Полное удаление: двойным щелчком по «' + (Join-Path $targetDirectory $uninstallerHint) + '» или через «Приложения и возможности» → Universal Username Finder → Удалить.')
 Request-ExitPause
 exit 0

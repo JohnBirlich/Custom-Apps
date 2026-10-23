@@ -1461,7 +1461,7 @@ Describe 'Версия 2.9.2: установщик зависимостей и �
         $installText.Contains('if (-not $NoTrust) {') | Should -BeTrue
         $installText.Contains('[switch]$TrustSelfSigned') | Should -BeTrue
         $installText.Contains('& $uninstallerSource') | Should -BeTrue
-        $installText.Contains('Copy-Item -LiteralPath $uninstallerSource -Destination $targetUninstaller -Force') | Should -BeTrue
+        $installText.Contains('Copy-Item -LiteralPath $uninstallerExeSource -Destination $targetUninstaller -Force') | Should -BeTrue
     }
     It 'Uninstall-UUF.ps1 стирает файлы, ярлыки, реестр, доверие сертификата и данные' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
@@ -1472,6 +1472,7 @@ Describe 'Версия 2.9.2: установщик зависимостей и �
         $uninstallText.Contains("'CN=Hasberd*'") | Should -BeTrue
         $uninstallText.Contains('[switch]$KeepData') | Should -BeTrue
         $uninstallText.Contains('rd /s /q') | Should -BeTrue
+        $uninstallText.Contains('while (Get-Process -Id $p -ErrorAction SilentlyContinue)') | Should -BeTrue
         $uninstallText.Contains('Remove-UufDirectory -Path $dataDirectory -Label ''Данные''') | Should -BeTrue
     }
     It 'bat-обёртки есть и у установки, и у удаления; артефакт их содержит' {
@@ -1491,7 +1492,46 @@ Describe 'Версия 2.9.2: установщик зависимостей и �
         $readmeText.Contains('-NoTrust') | Should -BeTrue
         $readmeText.Contains('394802') | Should -BeFalse
     }
-    It 'версия поднята до 2.9.2' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.2'''
+    It 'версия не ниже 2.9.2' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[2-9]'''
+    }
+}
+
+Describe 'Версия 2.9.3: полное удаление — самостоятельный AppUninstaller.exe' {
+    It 'деинсталлятор собирается ps2exe из исходника удаления' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $builderPath = [System.IO.Path]::Combine($repoRoot, 'build', 'Build-Uninstaller.ps1')
+        Test-Path -LiteralPath $builderPath | Should -BeTrue
+        $builderText = [System.IO.File]::ReadAllText($builderPath, [System.Text.Encoding]::UTF8)
+        $builderText.Contains('AppUninstaller.exe') | Should -BeTrue
+        $builderText.Contains('Uninstall-UUF.ps1') | Should -BeTrue
+        $builderText.Contains('Invoke-ps2exe') | Should -BeTrue
+    }
+    It 'AppUninstaller.exe подписывается общим сертификатом и попадает в артефакт с хэшем' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
+        $ciText.Contains('Compile AppUninstaller.exe') | Should -BeTrue
+        $ciText.Contains('dist/AppUninstaller.exe') | Should -BeTrue
+        $ciText.Contains('dist/AppUninstaller.exe.sha256') | Should -BeTrue
+        $ciText.Contains('-ExtraExePaths') | Should -BeTrue
+        $signText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Sign-Uuf.ps1'), [System.Text.Encoding]::UTF8)
+        $signText.Contains('[string[]]$ExtraExePaths = @()') | Should -BeTrue
+    }
+    It 'установщик кладёт AppUninstaller.exe и регистрирует его кнопкой удаления' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $installText.Contains('Join-Path $targetDirectory ''AppUninstaller.exe''') | Should -BeTrue
+        $installText.Contains('Get-UninstallerExeSource') | Should -BeTrue
+        $installText.Contains('& $uninstallerExe @uufUninstallArgs') | Should -BeTrue
+        $installText.Contains('$uninstallCommand = ''"'' + $targetUninstaller + ''"''') | Should -BeTrue
+    }
+    It 'README ведёт полное удаление через AppUninstaller.exe' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $readmeText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'README.md'), [System.Text.Encoding]::UTF8)
+        $readmeText.Contains('AppUninstaller.exe') | Should -BeTrue
+        $readmeText.Contains('Build-Uninstaller.ps1') | Should -BeTrue
+    }
+    It 'версия поднята до 2.9.3' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.3'''
     }
 }

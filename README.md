@@ -40,13 +40,13 @@ UUF — приложение для Windows, которое придумывае
 
 ## Установка на рабочий стол
 
-Артефакт `UniversalUsernameFinder-windows` из GitHub Actions (или папка `dist\` после локальной сборки) содержит `UUF.exe`, установщик `Install-UUF.ps1` (с обёрткой `Install-UUF.bat`) и программу полного удаления `Uninstall-UUF.ps1` (с обёрткой `Uninstall-UUF.bat`). Распакуйте все файлы в одну папку и дважды щёлкните `Install-UUF.bat` — или выполните:
+Артефакт `UniversalUsernameFinder-windows` из GitHub Actions (или папка `dist\` после локальной сборки) содержит `UUF.exe`, установщик `Install-UUF.ps1` (с обёрткой `Install-UUF.bat`) и **программу полного удаления `AppUninstaller.exe`** (собрана из `build/Uninstall-UUF.ps1`, подписана тем же сертификатом; резервные исходники — `Uninstall-UUF.ps1`/`.bat`). Распакуйте все файлы в одну папку и дважды щёлкните `Install-UUF.bat` — или выполните:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1
 ```
 
-В архиве: `UUF.exe` (подписан Authenticode, SHA-256 + метка времени), `UUF.exe.sha256` (хэш официальной сборки) и, при самоподписанном режиме, `UUF-signing.cer` (публичный ключ издателя). Установщик проверит системные зависимости (.NET Framework 4.6.2+, Windows PowerShell 5.1, TLS 1.2 для старых Windows), положит программу в `%LOCALAPPDATA%\Programs\UniversalUsernameFinder\UUF.exe`, скопирует туда сертификат (если есть) и добавит его в «Доверенные корневые» и «Доверенные издатели» текущего пользователя автоматически (отключается ключом `-NoTrust`), снимет метку интернета со всех файлов, создаст ярлыки на рабочем столе и в меню «Пуск» и зарегистрирует программу в «Приложения и возможности». Все данные программы — история `username_history.json`, настройки, зашифрованный сейф и журнал — живут в `%LOCALAPPDATA%\UniversalUsernameFinder`, поэтому переустановка или перенос `.exe` их не затирают. Полное удаление: двойной щелчок по `Uninstall-UUF.bat` (или «Приложения и возможности» → Universal Username Finder → Удалить) — стирает программу, ярлыки, запись в реестре, доверие сертификату и, после подтверждения, данные. Без данных: `.\Install-UUF.ps1 -Uninstall`.
+В архиве: `UUF.exe` (подписан Authenticode, SHA-256 + метка времени), `UUF.exe.sha256` (хэш официальной сборки) и, при самоподписанном режиме, `UUF-signing.cer` (публичный ключ издателя). Установщик проверит системные зависимости (.NET Framework 4.6.2+, Windows PowerShell 5.1, TLS 1.2 для старых Windows), положит программу в `%LOCALAPPDATA%\Programs\UniversalUsernameFinder\UUF.exe`, скопирует туда сертификат (если есть) и добавит его в «Доверенные корневые» и «Доверенные издатели» текущего пользователя автоматически (отключается ключом `-NoTrust`), снимет метку интернета со всех файлов, создаст ярлыки на рабочем столе и в меню «Пуск» и зарегистрирует программу в «Приложения и возможности». Все данные программы — история `username_history.json`, настройки, зашифрованный сейф и журнал — живут в `%LOCALAPPDATA%\UniversalUsernameFinder`, поэтому переустановка или перенос `.exe` их не затирают. Полное удаление: двойной щелчок по `AppUninstaller.exe` (он же кладётся в папку программы; или «Приложения и возможности» → Universal Username Finder → Удалить) — стирает программу, ярлыки, запись в реестре, доверие сертификату и, после подтверждения, данные. Без данных: `.\Install-UUF.ps1 -Uninstall`.
 
 ## Сборка .exe
 
@@ -80,7 +80,7 @@ powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1
 
 - `UniversalUsernameFinder.ps1` — всё приложение: словарь, генератор, интерфейс, воркеры проверки.
 - `tests/UniversalUsernameFinder.Tests.ps1` — тесты Pester.
-- `build/` — сборка `.exe` через ps2exe, установщик `Install-UUF.ps1`/`.bat` (зависимости, доверие сертификату, ярлыки, регистрация в «Приложениях») и полное удаление `Uninstall-UUF.ps1`/`.bat`.
+- `build/` — сборка `.exe` через ps2exe (`Build-Exe.ps1` → `UUF.exe`, `Build-Uninstaller.ps1` → `AppUninstaller.exe`), установщик `Install-UUF.ps1`/`.bat` (зависимости, доверие сертификату, ярлыки, регистрация в «Приложениях») и исходник полного удаления `Uninstall-UUF.ps1`/`.bat`.
 - `assets/` — логотип и иконка.
 - `.github/workflows/ci.yml` — прогон CI.
 

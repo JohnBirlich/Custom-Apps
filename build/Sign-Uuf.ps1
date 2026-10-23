@@ -27,7 +27,9 @@ param(
     # Сервер метки времени RFC 3161; при недоступности подпись ставится без неё.
     [string]$TimestampUrl = 'http://timestamp.digicert.com',
     # Разрешить сгенерировать самоподписанный сертификат, если PFX не задан.
-    [switch]$SelfSign
+    [switch]$SelfSign,
+    # Дополнительные файлы (например dist\AppUninstaller.exe): подписываются тем же сертификатом.
+    [string[]]$ExtraExePaths = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -127,6 +129,27 @@ try {
     if (-not $signature.SignerCertificate) { throw 'signtool завершился без ошибок, но подпись не обнаружена' }
     if ($signature.SignatureStatus -ne 'Valid') {
         Write-Host 'Справка: статус не Valid ожидаем для самоподписанного сертификата — файл целостен, но издатель не в списке доверенных на этой машине.'
+    }
+    foreach ($extraPath in @($ExtraExePaths)) {
+        $extraFull = ''
+        try { $extraFull = [System.IO.Path]::GetFullPath([string]$extraPath) } catch { }
+        if (-not $extraFull -or -not [System.IO.File]::Exists($extraFull)) {
+            Write-Host ('::warning::Дополнительный файл для подписи не найден: ' + $extraPath)
+            continue
+        }
+        $extraArgs = @('sign', '/fd', 'SHA256', '/f', $PfxPath)
+        if (-not [string]::IsNullOrWhiteSpace($pfxPlainPassword)) { $extraArgs += @('/p', $pfxPlainPassword) }
+        $extraArgs += @('/d', 'Universal Username Finder', '/tr', $TimestampUrl, '/td', 'SHA256', $extraFull)
+        & $signtool @extraArgs | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            $extraRetry = @('sign', '/fd', 'SHA256', '/f', $PfxPath)
+            if (-not [string]::IsNullOrWhiteSpace($pfxPlainPassword)) { $extraRetry += @('/p', $pfxPlainPassword) }
+            $extraRetry += @('/d', 'Universal Username Finder', $extraFull)
+            & $signtool @extraRetry | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw ('signtool для ' + $extraFull + ' завершился с кодом ' + $LASTEXITCODE) }
+        }
+        $extraSignature = Get-AuthenticodeSignature -FilePath $extraFull
+        Write-Host ('Дополнительная подпись: ' + [System.IO.Path]::GetFileName($extraFull) + ' — ' + $extraSignature.SignatureStatus)
     }
     $cerPath = Join-Path $distDirectory 'UUF-signing.cer'
     if (-not $certGeneratedInMemory) {

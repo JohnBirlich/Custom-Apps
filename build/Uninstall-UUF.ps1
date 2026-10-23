@@ -9,11 +9,15 @@
 #   - данные приложения: историю ников, настройки, зашифрованный сейф и журнал
 #     (%LOCALAPPDATA%\UniversalUsernameFinder) — по умолчанию спрашивает подтверждение.
 #
-# Запуск: двойной щелчок по Uninstall-UUF.bat, кнопка «Удалить» в «Приложениях» или
+# Запуск: двойной щелчок по AppUninstaller.exe (собранный из этого скрипта вариант —
+# именно он кладётся в папку программы и регистрируется в «Приложениях»),
+# по Uninstall-UUF.bat (резерв) или командой:
 # powershell -NoProfile -ExecutionPolicy Bypass -File .\Uninstall-UUF.ps1 [-KeepData] [-Silent]
 
 [CmdletBinding()]
 param(
+    # Удалить данные без подтверждения (установщик передаёт этот ключ вместе с -Uninstall -RemoveData).
+    [switch]$RemoveData,
     # Оставить историю, настройки, сейф и журнал (по умолчанию при запуске спрашивается).
     [switch]$KeepData,
     # Без вопросов и пауз: удаляет всё сразу (для QuietUninstallString из реестра).
@@ -116,13 +120,19 @@ function Remove-UufDirectory {
         Write-Step ($Label + ' удалено: ' + $Path)
         return $true
     } catch {
-        # --- Этот скрипт лежит внутри папки и может быть залочен при самоудалении: дочищаем detached-командой
-        Write-Step ($Label + ' занят — поставил доочистку через 3 секунды (' + $Path + ')')
+        # --- Этот файл может лежать внутри удаляемой папки (самоудаление AppUninstaller.exe):
+        # планируем доочистчика, который подождёт завершения текущего процесса и сотрёт папку.
+        Write-Step ($Label + ' занят — папка будет удалена автоматически сразу после закрытия этого окна')
         try {
-            $delayThen = 'ping -n 3 127.0.0.1 >nul & rd /s /q "' + $Path + '"'
-            Start-Process -FilePath $env:ComSpec -ArgumentList @('/c', $delayThen) -WindowStyle Hidden
+            $escaped = $Path.Replace('"','""')
+            $waitCommand = 'param($p) while (Get-Process -Id $p -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 500 }; Start-Sleep -Seconds 1; Remove-Item -LiteralPath "' + $escaped + '" -Recurse -Force -ErrorAction SilentlyContinue; if (Test-Path "' + $escaped + '") { cmd /c rd /s /q "' + $escaped + '" }'
+            Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-Command', $waitCommand, $PID)
         } catch {
-            Write-Host ('  Доудали вручную: rmdir /s /q "' + $Path + '"') -ForegroundColor Yellow
+            try {
+                Start-Process -FilePath $env:ComSpec -ArgumentList @('/c', ('ping -n 6 127.0.0.1 >nul & rd /s /q "' + $Path + '"')) -WindowStyle Hidden
+            } catch {
+                Write-Host ('  Доудали вручную: rmdir /s /q "' + $Path + '"') -ForegroundColor Yellow
+            }
         }
         return $false
     }
@@ -135,7 +145,9 @@ Write-Host ('  Данные:    ' + $dataDirectory)
 Write-Host ''
 
 $removeData = $true
-if ($KeepData) {
+if ($RemoveData) {
+    $removeData = $true
+} elseif ($KeepData) {
     $removeData = $false
 } elseif (-not $Silent) {
     $answer = Read-Host 'Удалить также историю, настройки, сейф и журнал? [Д/н]'

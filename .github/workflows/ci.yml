@@ -293,6 +293,28 @@ jobs:
             exit 1
           }
 
+      - name: Compile AppUninstaller.exe
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            & (Join-Path $PWD 'build\Build-Uninstaller.ps1') -SkipInstall
+            $uninstaller = Join-Path $PWD 'dist\AppUninstaller.exe'
+            if (-not (Test-Path -LiteralPath $uninstaller)) {
+              Write-Host '::error::Uninstaller executable was not created: dist\AppUninstaller.exe'
+              exit 1
+            }
+            $sizeKb = [int][Math]::Round((Get-Item -LiteralPath $uninstaller).Length / 1KB)
+            Write-Host ('Uninstaller size: ' + $sizeKb + ' KB')
+            if ($sizeKb -lt 15) {
+              Write-Host ('::error::Uninstaller is suspiciously small: ' + $sizeKb + ' KB')
+              exit 1
+            }
+          } catch {
+            Write-Host ('::error::UNINSTALLER BUILD EXCEPTION: ' + $_.Exception.ToString())
+            exit 1
+          }
+
       # Проверка содержимого: .exe извлекает встроенный скрипт параметром -extract,
       # поэтому разбираем его парсером и убеждаемся, что внутри тот же корректный код.
       - name: Verify embedded script
@@ -364,7 +386,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           try {
-            & (Join-Path $PWD 'build\Sign-Uuf.ps1') -SelfSign
+            & (Join-Path $PWD 'build\Sign-Uuf.ps1') -SelfSign -ExtraExePaths @((Join-Path $PWD 'dist\AppUninstaller.exe'))
           } catch {
             Write-Host ('::error::SIGN STEP EXCEPTION: ' + $_.Exception.ToString())
             exit 1
@@ -377,10 +399,12 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           try {
-            $exe = Join-Path $PWD 'dist\UUF.exe'
-            $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
-            [System.IO.File]::WriteAllText((Join-Path $PWD 'dist\UUF.exe.sha256'), ($hash + '  UUF.exe'), (New-Object System.Text.UTF8Encoding -ArgumentList $false))
-            Write-Host ('SHA256 UUF.exe: ' + $hash)
+            foreach ($hashed in @(@{Path='dist\UUF.exe'; Name='UUF.exe'}, @{Path='dist\AppUninstaller.exe'; Name='AppUninstaller.exe'})) {
+              $target = Join-Path $PWD $hashed.Path
+              $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
+              [System.IO.File]::WriteAllText((Join-Path $PWD ($hashed.Path + '.sha256')), ($hash + '  ' + $hashed.Name), (New-Object System.Text.UTF8Encoding -ArgumentList $false))
+              Write-Host ('SHA256 ' + $hashed.Name + ': ' + $hash)
+            }
           } catch {
             Write-Host ('::error::CHECKSUM STEP EXCEPTION: ' + $_.Exception.ToString())
             exit 1
@@ -393,6 +417,8 @@ jobs:
           path: |
             dist/UUF.exe
             dist/UUF.exe.sha256
+            dist/AppUninstaller.exe
+            dist/AppUninstaller.exe.sha256
             dist/*.cer
             build/Install-UUF.ps1
             build/Install-UUF.bat
