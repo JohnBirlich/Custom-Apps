@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.9.3'
+$script:AppVersion = '2.10.0'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -588,7 +588,7 @@ function Test-UsernameFormat {
             $discordNameForFormat = $Username.ToLowerInvariant()
             return ($Username.Length -ge 2 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_.]+$' -and $Username -notmatch '(^\.|\.$|\.\.)' -and $discordNameForFormat -notin @('discord','clyde','nitro','here','everyone','system'))
         }
-        'YouTube' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9._-]+$' -and $Username -notmatch '(^\.|\.$|\.\.)') }
+        'YouTube' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$' -and $Username -notmatch '\.\.') }
         'Telegram' { return ($Username.Length -ge 5 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z][A-Za-z0-9_]*$') }
         'Steam' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9_-]*$') }
         default { return ($Username.Length -ge 3 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_.-]+$') }
@@ -1351,7 +1351,7 @@ $script:HistoryButton.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
 $script:HistoryButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $header.Controls.Add($script:HistoryButton)
 $script:AccountButton = New-Object System.Windows.Forms.Button
-$script:AccountButton.Text = 'Пароль / регистрация'
+$script:AccountButton.Text = 'Регистрация и пароль'
 $script:AccountButton.Location = New-Object System.Drawing.Point(1307, 34)
 $script:AccountButton.Size = New-Object System.Drawing.Size(167, 38)
 $script:AccountButton.Anchor = 'Top, Right'
@@ -1487,7 +1487,7 @@ function Set-UufTabStyle {
         try {
             if ($null -eq $tabArgs -or $null -eq $tabArgs.Graphics) { return }
             if ($null -eq $tabSender -or $tabSender.TabPages.Count -lt 1) { return }
-            $tabIndex = [int]$tabArgs.TabIndex
+            $tabIndex = [int]$tabArgs.Index
             if ($tabIndex -lt 0 -or $tabIndex -ge $tabSender.TabPages.Count) { return }
             $tabBounds = $tabArgs.Bounds
             $tabG = $tabArgs.Graphics
@@ -1691,6 +1691,7 @@ $script:SaveButton = Add-UiButton '↓  TXT свободные' 14 1117 170 $fal
 $script:CsvButton = Add-UiButton '↓  CSV все результаты' 194 1117 170 $false 33
 $script:CopyButton = Add-UiButton '⧉  Копировать свободные' 14 1157 350 $false 33
 $script:CheckedNamesButton = Add-UiButton '≡  Проверенные ники (0)' 14 1197 350 $false 33
+$script:ConnectionTestButton = Add-UiButton '⇄  Проверка соединения' 14 1237 350 $false 33
 
 $right = New-Object System.Windows.Forms.Panel
 $right.Location = New-Object System.Drawing.Point(418, 104)
@@ -1937,6 +1938,15 @@ $script:DiagnosticBox.ForeColor = [System.Drawing.Color]::FromArgb(255,198,112)
 $script:DiagnosticBox.Font = New-Object System.Drawing.Font('Consolas',8.5)
 $script:DiagnosticBox.Text = 'Готово. Здесь отображаются события, ошибки сети и ответы API.'
 $right.Controls.Add($script:DiagnosticBox)
+$script:DiagnosticHeader = $diagnosticHeader
+$script:DiagnosticsExpanded = $false
+$script:DiagnosticsToggleButton = Add-UiButton '▲  Развернуть журнал' 880 716 144 $false 26 $right
+$script:DiagnosticsToggleButton.Anchor = 'Bottom, Right'
+$script:DiagnosticsToggleButton.Add_Click({
+    $script:DiagnosticsExpanded = -not $script:DiagnosticsExpanded
+    if ($script:DiagnosticsExpanded) { $script:DiagnosticsToggleButton.Text = '▼  Вернуть стандартно' } else { $script:DiagnosticsToggleButton.Text = '▲  Развернуть журнал' }
+    Set-UufRightLayout
+})
 $script:CopyLogButton = Add-UiButton 'Копировать журнал' 14 844 184 $false 28 $right
 $script:CopyLogButton.Anchor = 'Bottom, Left'
 $script:ClearLogButton = Add-UiButton 'Очистить журнал' 208 844 184 $false 28 $right
@@ -1949,8 +1959,18 @@ $script:SummaryLabel.Anchor = 'Bottom, Left, Right'
 $script:SummaryLabel.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
 $script:SummaryLabel.TextAlign = 'MiddleRight'
 $right.Controls.Add($script:SummaryLabel)
+# --- Нижняя плашка: VPN/Proxy только для платформ, где возможны региональные блокировки
+$script:VpnNoticePlatforms = @('YouTube','Telegram','Outlook','Google','Discord')
+$script:VpnNoticeText = 'Проверка некоторых платформ возможно потребует VPN/Proxy, если вы проживаете в странах СНГ, где работают блокировки.'
+function Update-VpnNotice {
+    if ($null -eq $script:FooterNotice -or $null -eq $script:PlatformBox) { return }
+    $noticePlatform = [string]$script:PlatformBox.SelectedItem
+    $needNotice = ($script:VpnNoticePlatforms -contains $noticePlatform)
+    $script:FooterNotice.Visible = $needNotice
+    if ($needNotice) { $script:FooterNotice.Text = '!  ' + $script:VpnNoticeText }
+}
 $footer = New-Object System.Windows.Forms.Label
-$footer.Text = '!  «Свободен» означает, что платформа не нашла занятым это имя публичным способом; финальное подтверждение — форма регистрации. Неясные ответы остаются в «Не подтверждено».'
+$footer.Text = ''
 $footer.Location = New-Object System.Drawing.Point(14,878)
 $footer.Size = New-Object System.Drawing.Size(1008,34)
 $footer.Anchor = 'Bottom, Left, Right'
@@ -1960,11 +1980,40 @@ $footer.Font = New-Object System.Drawing.Font('Segoe UI',9.5,[System.Drawing.Fon
 $footer.TextAlign = 'MiddleLeft'
 $footer.Padding = New-Object System.Windows.Forms.Padding(8,0,4,0)
 $right.Controls.Add($footer)
+$script:FooterNotice = $footer
+Update-VpnNotice
+# --- Раскладка правой панели: журнал разворачивается вверх над таблицей и возвращается в стандартное положение
+function Set-UufRightLayout {
+    if ($null -eq $script:DiagnosticBox -or $null -eq $script:Grid -or $null -eq $script:DiagnosticHeader) { return }
+    $layoutPanel = $script:DiagnosticBox.Parent
+    $panelHeight = [int]$layoutPanel.ClientSize.Height
+    $panelWidth = [int]$layoutPanel.ClientSize.Width
+    if ($panelHeight -lt 420 -or $panelWidth -lt 520) { return }
+    $contentWidth = $panelWidth - 32
+    $standardGridHeight = $panelHeight - 358
+    $expandPx = 0
+    if ($script:DiagnosticsExpanded) { $expandPx = [Math]::Max(0, [Math]::Min(300, $standardGridHeight - 180)) }
+    $script:Grid.Location = New-Object System.Drawing.Point(14,146)
+    $script:Grid.Size = New-Object System.Drawing.Size($contentWidth, ($standardGridHeight - $expandPx))
+    $headerTop = $panelHeight - 206 - $expandPx
+    $boxTop = $panelHeight - 184 - $expandPx
+    $script:DiagnosticHeader.Location = New-Object System.Drawing.Point(14,$headerTop)
+    $script:DiagnosticBox.Location = New-Object System.Drawing.Point(14,$boxTop)
+    $script:DiagnosticBox.Size = New-Object System.Drawing.Size($contentWidth, ($panelHeight - 88 - $boxTop))
+    if ($script:DiagnosticsToggleButton) { $script:DiagnosticsToggleButton.Location = New-Object System.Drawing.Point(($contentWidth - 130), ($headerTop - 3)) }
+    if ($script:CopyLogButton) { $script:CopyLogButton.Location = New-Object System.Drawing.Point(14,($panelHeight - 82)) }
+    if ($script:ClearLogButton) { $script:ClearLogButton.Location = New-Object System.Drawing.Point(208,($panelHeight - 82)) }
+    if ($script:SummaryLabel) { $script:SummaryLabel.Location = New-Object System.Drawing.Point(402,($panelHeight - 82)); $script:SummaryLabel.Size = New-Object System.Drawing.Size([Math]::Max(200,$contentWidth - 388),28) }
+    if ($script:FooterNotice) { $script:FooterNotice.Location = New-Object System.Drawing.Point(14,($panelHeight - 48)); $script:FooterNotice.Size = New-Object System.Drawing.Size($contentWidth,34) }
+}
+
 # --- Правая панель: подгонка под клиентское окно после добавления детей — якоря Bottom поднимают журнал и футер вверх
 try {
     $uufClientFit = $script:Form.ClientSize
     $right.Size = New-Object System.Drawing.Size([Math]::Max(520,[int]$uufClientFit.Width - 440),[Math]::Max(320,[int]$uufClientFit.Height - 114))
 } catch { }
+$right.Add_Resize({ Set-UufRightLayout })
+Set-UufRightLayout
 
 $script:AvailableNames = New-Object System.Collections.Generic.List[string]
 $script:PlatformAvailableNames = New-Object System.Collections.Generic.List[string]
@@ -2170,6 +2219,17 @@ function Get-AccountSafetyText {
     return ($lines -join "`r`n")
 }
 
+# --- Случайные имя и фамилия для формы регистрации Google (только для Google)
+$script:GoogleFirstNames = @('Alex','Daniel','Maria','Sophie','Liam','Emma','Lucas','Olivia','Ethan','Mia','Noah','Anna','Leo','Clara','Max','Julia','Ryan','Nora','Adam','Lena','Oscar','Eva','Henry','Ruby')
+$script:GoogleLastNames = @('Miller','Schmidt','Brown','Novak','Weber','Clark','Wagner','Hughes','Fischer','Bennett','Hoffmann','Reed','Keller','Morgan','Becker','Carter','Lang','Foster','Wolf','Hayes','Berger','Ward','Krause','Shaw')
+function Set-RandomGoogleNameFields {
+    if ($null -eq $script:GoogleFirstNameBox -or $null -eq $script:GoogleLastNameBox) { return }
+    $firstPick = $script:GoogleFirstNames[(Get-Random -Minimum 0 -Maximum $script:GoogleFirstNames.Count)]
+    $lastPick = $script:GoogleLastNames[(Get-Random -Minimum 0 -Maximum $script:GoogleLastNames.Count)]
+    $script:GoogleFirstNameBox.Text = [string]$firstPick
+    $script:GoogleLastNameBox.Text = [string]$lastPick
+}
+
 function Update-AccountPlatformUi {
     $platform = [string]$script:PlatformBox.SelectedItem
     if ([string]::IsNullOrWhiteSpace($platform)) { return }
@@ -2181,14 +2241,19 @@ function Update-AccountPlatformUi {
     if ($script:AccountUsernameLabel) { $script:AccountUsernameLabel.Text = 'Никнейм ' + $platform + $suffix }
     if ($script:OpenRegisterButton) { $script:OpenRegisterButton.Text = 'Открыть ' + $platform + ' для регистрации' }
     if ($script:SafetyInfoLabel) { $script:SafetyInfoLabel.Text = Get-AccountSafetyText -Platform $platform }
+    $isGoogleAccount = ($platform -eq 'Google')
+    foreach ($googleNameControl in @($script:GoogleNameLabel, $script:GoogleFirstNameBox, $script:GoogleLastNameBox, $script:GoogleRandomNameButton)) {
+        if ($googleNameControl) { $googleNameControl.Visible = $isGoogleAccount }
+    }
+    if ($isGoogleAccount -and $script:GoogleFirstNameBox -and [string]::IsNullOrWhiteSpace($script:GoogleFirstNameBox.Text)) { Set-RandomGoogleNameFields }
 }
 
 function Open-AccountTools {
     $script:AccountForm = New-Object System.Windows.Forms.Form
     $script:AccountForm.Text = 'UUF — регистрация'
     $script:AccountForm.StartPosition = 'CenterParent'
-    $script:AccountForm.Size = New-Object System.Drawing.Size(780, 610)
-    $script:AccountForm.MinimumSize = New-Object System.Drawing.Size(780, 610)
+    $script:AccountForm.Size = New-Object System.Drawing.Size(780, 690)
+    $script:AccountForm.MinimumSize = New-Object System.Drawing.Size(780, 690)
     $script:AccountForm.MaximizeBox = $false
     $script:AccountForm.MinimizeBox = $false
     $script:AccountForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
@@ -2198,10 +2263,10 @@ function Open-AccountTools {
 
     $tabs = New-Object System.Windows.Forms.TabControl
     $tabs.Location = New-Object System.Drawing.Point(14, 14)
-    $tabs.Size = New-Object System.Drawing.Size(738, 535)
+    $tabs.Size = New-Object System.Drawing.Size(738, 600)
     $tabs.Anchor = 'Top, Bottom, Left, Right'
     $prepareTab = New-Object System.Windows.Forms.TabPage
-    $prepareTab.Text = 'Пароль и регистрация'
+    $prepareTab.Text = 'Регистрация и пароль'
     $prepareTab.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
     $prepareTab.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $vaultTab = New-Object System.Windows.Forms.TabPage
@@ -2341,6 +2406,38 @@ function Open-AccountTools {
     $safetyInfo.Padding = New-Object System.Windows.Forms.Padding(8, 6, 8, 4)
     $script:SafetyInfoLabel = $safetyInfo
     $prepareTab.Controls.Add($safetyInfo)
+    $script:GoogleNameLabel = New-Object System.Windows.Forms.Label
+    $script:GoogleNameLabel.Text = 'Имя и фамилия для формы Google'
+    $script:GoogleNameLabel.Location = New-Object System.Drawing.Point(18, 486)
+    $script:GoogleNameLabel.Size = New-Object System.Drawing.Size(677, 20)
+    $script:GoogleNameLabel.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
+    $script:GoogleNameLabel.Visible = $false
+    $prepareTab.Controls.Add($script:GoogleNameLabel)
+    $script:GoogleFirstNameBox = New-Object System.Windows.Forms.TextBox
+    $script:GoogleFirstNameBox.Location = New-Object System.Drawing.Point(18, 510)
+    $script:GoogleFirstNameBox.Size = New-Object System.Drawing.Size(220, 28)
+    $script:GoogleFirstNameBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:GoogleFirstNameBox.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $script:GoogleFirstNameBox.Visible = $false
+    $prepareTab.Controls.Add($script:GoogleFirstNameBox)
+    $script:GoogleLastNameBox = New-Object System.Windows.Forms.TextBox
+    $script:GoogleLastNameBox.Location = New-Object System.Drawing.Point(248, 510)
+    $script:GoogleLastNameBox.Size = New-Object System.Drawing.Size(220, 28)
+    $script:GoogleLastNameBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:GoogleLastNameBox.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $script:GoogleLastNameBox.Visible = $false
+    $prepareTab.Controls.Add($script:GoogleLastNameBox)
+    $script:GoogleRandomNameButton = New-Object System.Windows.Forms.Button
+    $script:GoogleRandomNameButton.Text = 'Случайное имя и фамилия'
+    $script:GoogleRandomNameButton.Location = New-Object System.Drawing.Point(478, 508)
+    $script:GoogleRandomNameButton.Size = New-Object System.Drawing.Size(217, 32)
+    $script:GoogleRandomNameButton.FlatStyle = 'Flat'
+    $script:GoogleRandomNameButton.FlatAppearance.BorderSize = 0
+    $script:GoogleRandomNameButton.BackColor = [System.Drawing.Color]::FromArgb(93,73,222)
+    $script:GoogleRandomNameButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $script:GoogleRandomNameButton.Visible = $false
+    $script:GoogleRandomNameButton.Add_Click({ Set-RandomGoogleNameFields })
+    $prepareTab.Controls.Add($script:GoogleRandomNameButton)
 
     $script:AccountListBox = New-Object System.Windows.Forms.ListBox
     $script:AccountListBox.Location = New-Object System.Drawing.Point(18, 18)
@@ -2488,20 +2585,22 @@ function Open-AccountTools {
             return
         }
         try {
+            # --- Формат как в генерации: для почтовых платформ сохраняем адрес целиком (ник@домен)
+            $storedNick = Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name $nick
             $records = @(Get-SavedAccountRecords)
-            $existing = @($records | Where-Object { [string]$_.Username -ieq $nick })
+            $existing = @($records | Where-Object { [string]$_.Username -ieq $storedNick -or [string]$_.Username -ieq $nick })
             if ($existing.Count -gt 0) {
-                $choice = [System.Windows.Forms.MessageBox]::Show("Запись для ника $nick уже существует. Перезаписать пароль?", 'Запись уже есть', 'YesNo', 'Question')
+                $choice = [System.Windows.Forms.MessageBox]::Show("Запись для ника $storedNick уже существует. Перезаписать пароль?", 'Запись уже есть', 'YesNo', 'Question')
                 if ($choice -ne [System.Windows.Forms.DialogResult]::Yes) { return }
-                $records = @($records | Where-Object { [string]$_.Username -ine $nick })
+                $records = @($records | Where-Object { [string]$_.Username -ine $storedNick -and [string]$_.Username -ine $nick })
             }
-            $record = [pscustomobject]@{Username=$nick; Password=$password; Platform=([string]$script:AccountPlatform); CreatedAt=(Get-Date).ToString('o')}
+            $record = [pscustomobject]@{Username=$storedNick; Password=$password; Platform=([string]$script:AccountPlatform); CreatedAt=(Get-Date).ToString('o')}
             $records = @($records) + @($record)
             Save-EncryptedAccountRecords -Records $records
             $script:RegistrationConfirmedCheck.Checked = $false
             Refresh-SavedAccountList
             $script:AccountTabs.SelectedTab = $script:AccountVaultTab
-            [System.Windows.Forms.MessageBox]::Show("Данные для $nick сохранены в зашифрованное хранилище текущего пользователя Windows.", 'Сохранено', 'OK', 'Information') | Out-Null
+            [System.Windows.Forms.MessageBox]::Show("Данные для $storedNick сохранены в зашифрованное хранилище текущего пользователя Windows.", 'Сохранено', 'OK', 'Information') | Out-Null
         } catch {
             Write-AppLog ('Не удалось сохранить учётные данные: ' + $_.Exception.ToString())
             [System.Windows.Forms.MessageBox]::Show('Не удалось сохранить данные. ' + $_.Exception.Message + "`r`n`r`nСм. UniversalUsernameFinder.log.", 'Ошибка сохранения', 'OK', 'Error') | Out-Null
@@ -2866,7 +2965,7 @@ function Refresh-FreeHistoryList {
     if ($script:HistoryListBox.Items.Count -eq 0) {
         $script:HistoryDescription.Text = 'Пока нет имён, которые проверка признала свободными.'
     } else {
-        $script:HistoryDescription.Text = 'Выбери ник и нажми «Повторная проверка». Если он уже занят, он исчезнет из истории и больше не будет генерироваться.'
+        $script:HistoryDescription.Text = 'Выбери один или несколько ников (Ctrl/Shift или «Выделить все») и нажми «Повторная проверка». Если ник уже занят, он исчезнет из истории и больше не будет генерироваться.'
     }
 }
 
@@ -3084,9 +3183,34 @@ function Open-FreeHistoryWindow {
     $script:HistoryListBox.Size = New-Object System.Drawing.Size(480,360)
     $script:HistoryListBox.Anchor = 'Top, Bottom, Left, Right'
     $script:HistoryListBox.DisplayMember = 'Display'
+    $script:HistoryListBox.SelectionMode = 'MultiExtended'
     $script:HistoryListBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
     $script:HistoryListBox.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
     $script:HistoryForm.Controls.Add($script:HistoryListBox)
+    $selectAllHistory = New-Object System.Windows.Forms.Button
+    $selectAllHistory.Text = 'Выделить все'
+    $selectAllHistory.Location = New-Object System.Drawing.Point(16,466)
+    $selectAllHistory.Size = New-Object System.Drawing.Size(84,34)
+    $selectAllHistory.Anchor = 'Bottom, Left'
+    $selectAllHistory.FlatStyle = 'Flat'
+    $selectAllHistory.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $selectAllHistory.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $script:HistoryForm.Controls.Add($selectAllHistory)
+    $clearHistorySelection = New-Object System.Windows.Forms.Button
+    $clearHistorySelection.Text = 'Снять все'
+    $clearHistorySelection.Location = New-Object System.Drawing.Point(104,466)
+    $clearHistorySelection.Size = New-Object System.Drawing.Size(76,34)
+    $clearHistorySelection.Anchor = 'Bottom, Left'
+    $clearHistorySelection.FlatStyle = 'Flat'
+    $clearHistorySelection.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $clearHistorySelection.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $script:HistoryForm.Controls.Add($clearHistorySelection)
+    $selectAllHistory.Add_Click({
+        if ($script:HistoryListBox) { for ($historyIndex = 0; $historyIndex -lt $script:HistoryListBox.Items.Count; $historyIndex++) { $script:HistoryListBox.SetSelected($historyIndex, $true) } }
+    })
+    $clearHistorySelection.Add_Click({
+        if ($script:HistoryListBox) { $script:HistoryListBox.ClearSelected() }
+    })
     $recheck = New-Object System.Windows.Forms.Button
     $recheck.Text = '↻ Повторная проверка'
     $recheck.Location = New-Object System.Drawing.Point(188,466)
@@ -3116,20 +3240,26 @@ function Open-FreeHistoryWindow {
     $open.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $script:HistoryForm.Controls.Add($open)
     $copy.Add_Click({
-        $selected = $script:HistoryListBox.SelectedItem
-        if ($selected) { Copy-UufTextToClipboard -Text ([string]$selected.Name) -Context 'копирование ника из свободных' | Out-Null }
+        $selectedItems = @($script:HistoryListBox.SelectedItems)
+        if ($selectedItems.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show('Сначала выбери ник (или несколько) в списке.','Копирование','OK','Information') | Out-Null; return }
+        $selectedNames = @($selectedItems | ForEach-Object { [string]$_.Name })
+        Copy-UufTextToClipboard -Text ($selectedNames -join [Environment]::NewLine) -Context 'копирование ников из свободных' | Out-Null
     })
     $open.Add_Click({
         $selected = $script:HistoryListBox.SelectedItem
         if ($selected) { Start-Process (Get-PlatformWebsiteUrl -Platform ([string]$selected.Platform) -Username ([string]$selected.Name)) }
     })
     $recheck.Add_Click({
-        $selected = $script:HistoryListBox.SelectedItem
-        if (-not $selected) { [System.Windows.Forms.MessageBox]::Show('Сначала выбери ник в списке.','Повторная проверка','OK','Information') | Out-Null; return }
-        $selectedName = [string]$selected.Name
-        $selectedPlatform = [string]$selected.Platform
+        $selectedItems = @($script:HistoryListBox.SelectedItems)
+        if ($selectedItems.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show('Сначала выбери ник (или несколько) в списке.','Повторная проверка','OK','Information') | Out-Null; return }
+        $selectedPlatforms = @($selectedItems | ForEach-Object { [string]$_.Platform } | Sort-Object -Unique)
+        if ($selectedPlatforms.Count -gt 1) {
+            [System.Windows.Forms.MessageBox]::Show('Повторная проверка работает для ников одной платформы за раз. Выдели ники только одной платформы.','Повторная проверка','OK','Information') | Out-Null
+            return
+        }
+        $selectedPlatform = [string]$selectedPlatforms[0]
         if (-not (Test-SupportedPlatform -Platform $selectedPlatform)) {
-            [System.Windows.Forms.MessageBox]::Show(("Платформа «{0}» больше не поддерживается этой версией программы.`r`n`r`nПовторная проверка доступна для: {1}." -f $selectedPlatform, ($script:SupportedPlatforms -join ', ')),'Повторная проверка','OK','Information') | Out-Null
+            [System.Windows.Forms.MessageBox]::Show(("Платформа «{0}» больше не поддерживается этой версией программы." -f $selectedPlatform),'Повторная проверка','OK','Information') | Out-Null
             Add-Diagnostic ("Повторная проверка отменена: платформа $selectedPlatform не поддерживается.")
             return
         }
@@ -3139,22 +3269,25 @@ function Open-FreeHistoryWindow {
         }
         $script:HistoryForm.Close()
         $script:PlatformBox.SelectedItem = $selectedPlatform
-        $candidate = Find-Candidate -Name $selectedName -Platform $selectedPlatform
-        if (-not $candidate) {
-            $candidate = [pscustomobject]@{Name=$selectedName; Platform=$selectedPlatform; Meaning='Повторная проверка из истории'; Category='История свободных'; Structure=(Get-NickStructure -Name $selectedName); Status='Ожидает'; Time=''; Reason='Запрошена повторная проверка'; Checked=$false}
-            [void]$script:Candidates.Add($candidate)
-            Register-Candidate $candidate
+        foreach ($selectedItem in $selectedItems) {
+            $selectedName = [string]$selectedItem.Name
+            $candidate = Find-Candidate -Name $selectedName -Platform $selectedPlatform
+            if (-not $candidate) {
+                $candidate = [pscustomobject]@{Name=$selectedName; Platform=$selectedPlatform; Meaning='Повторная проверка из истории'; Category='История свободных'; Structure=(Get-NickStructure -Name $selectedName); Status='Ожидает'; Time=''; Reason='Запрошена повторная проверка'; Checked=$false}
+                [void]$script:Candidates.Add($candidate)
+                Register-Candidate $candidate
+            }
+            $candidate.Status = 'Ожидает'
+            $candidate.Time = ''
+            $candidate.Reason = 'Запрошена повторная проверка'
+            $candidate.Checked = $false
+            $script:CheckedNames.Remove((Get-HistoryKey -Name $selectedName -Platform $selectedPlatform))
         }
-        $candidate.Status = 'Ожидает'
-        $candidate.Time = ''
-        $candidate.Reason = 'Запрошена повторная проверка'
-        $candidate.Checked = $false
         Touch-Candidates
-        $key = Get-HistoryKey -Name $selectedName -Platform $selectedPlatform
-        $script:CheckedNames.Remove($key)
         Update-ResultGrid
-        Add-Diagnostic "Повторная проверка: $selectedName ($selectedPlatform)."
-        Start-Checking -RetryErrorsOnly $false
+        Add-Diagnostic ("Повторная проверка: {0} ник(ов), платформа {1}." -f $selectedItems.Count, $selectedPlatform)
+        # Возобновляем только выбранные ники (статус «Ожидает»), остальные таблицы не трогаем
+        Start-Checking -RetryErrorsOnly $false -ResumePending $true
     })
     Set-ButtonEdgeStyle -Root $script:HistoryForm
     $historyOrderedPlatforms = @($script:SupportedPlatforms)
@@ -3180,188 +3313,417 @@ function Open-FreeHistoryWindow {
     [void]$script:HistoryForm.ShowDialog($script:Form)
 }
 
+# --- Проверка соединения: доступность платформ, время ответа и HTTP-статус
+# Пинг здесь — время HTTP-ответа (ICMP-ping веб-сервисы часто блокируют). Запросы только GET, без входа и без обхода защит.
+$script:ConnectionEndpoints = @(
+    [pscustomobject]@{Platform='Telegram';  Url='https://t.me/'},
+    [pscustomobject]@{Platform='YouTube';   Url='https://www.youtube.com/'},
+    [pscustomobject]@{Platform='Google';    Url='https://accounts.google.com/'},
+    [pscustomobject]@{Platform='Outlook';   Url='https://signup.live.com/'},
+    [pscustomobject]@{Platform='Discord';   Url='https://discord.com/api/v9/gateway'},
+    [pscustomobject]@{Platform='GitHub';    Url='https://api.github.com/zen'},
+    [pscustomobject]@{Platform='Steam';     Url='https://steamcommunity.com/'},
+    [pscustomobject]@{Platform='Roblox';    Url='https://www.roblox.com/'},
+    [pscustomobject]@{Platform='VK';        Url='https://vk.com/'},
+    [pscustomobject]@{Platform='Mail.ru';   Url='https://account.mail.ru/'}
+)
+# Описания HTTP-кодов по MDN: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status
+$script:HttpStatusNotes = @{
+    200 = 'OK — запрос выполнен';
+    201 = 'Created — ресурс создан';
+    204 = 'No Content — успех без тела ответа';
+    301 = 'Moved Permanently — адрес перенесён навсегда';
+    302 = 'Found — временное перенаправление';
+    303 = 'See Other — смотри другой адрес';
+    304 = 'Not Modified — ресурс не изменился';
+    307 = 'Temporary Redirect — временное перенаправление';
+    308 = 'Permanent Redirect — постоянное перенаправление';
+    400 = 'Bad Request — неверный запрос';
+    401 = 'Unauthorized — нужна аутентификация';
+    403 = 'Forbidden — доступ запрещён сервером';
+    404 = 'Not Found — ресурс не найден';
+    405 = 'Method Not Allowed — метод не разрешён';
+    408 = 'Request Timeout — сервер не дождался запроса';
+    409 = 'Conflict — конфликт с состоянием ресурса';
+    410 = 'Gone — ресурс удалён';
+    418 = 'I''m a teapot — сервер отказывается варить кофе';
+    429 = 'Too Many Requests — превышен лимит запросов';
+    500 = 'Internal Server Error — ошибка на стороне сервера';
+    501 = 'Not Implemented — метод не поддерживается';
+    502 = 'Bad Gateway — плохой ответ вышестоящего сервера';
+    503 = 'Service Unavailable — сервис временно недоступен';
+    504 = 'Gateway Timeout — вышестоящий сервер не ответил вовремя'
+}
+
+function Get-ConnectionVerdict {
+    param([int]$Code, [string]$ErrorText)
+    if ($Code -le 0) {
+        if ($ErrorText -match 'timed out|timeout|время|таймаут') { return [pscustomobject]@{Result='Долго отвечает'; Note=('таймаут: ' + $ErrorText)} }
+        $noteText = 'соединение не установлено'
+        if ($ErrorText) { $noteText = $ErrorText }
+        return [pscustomobject]@{Result='Нет связи'; Note=$noteText}
+    }
+    $codeNote = 'HTTP ' + $Code
+    if ($script:HttpStatusNotes.ContainsKey($Code)) { $codeNote = [string]$script:HttpStatusNotes[$Code] }
+    if ($Code -ge 200 -and $Code -lt 400) { return [pscustomobject]@{Result='pass'; Note='Clear'} }
+    if ($Code -ge 400 -and $Code -lt 500) { return [pscustomobject]@{Result='denied'; Note=$codeNote} }
+    if ($Code -ge 500) { return [pscustomobject]@{Result='error'; Note=$codeNote} }
+    return [pscustomobject]@{Result='unknown'; Note=$codeNote}
+}
+
+# Скрипт фонового запроса: выполняется в отдельном runspace, окно не зависает
+$script:ConnectionScript = @'
+param($Url, $TimeoutSec, $Proxy, $UserAgent, $Queue, $Platform)
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
+$code = 0
+$errorText = ''
+$watch = [System.Diagnostics.Stopwatch]::StartNew()
+try {
+    $requestArgs = @{ Uri = $Url; Method = 'Get'; TimeoutSec = $TimeoutSec; UseBasicParsing = $true; Headers = @{ 'User-Agent' = $UserAgent }; MaximumRedirection = 0 }
+    if ($Proxy) { $requestArgs.Proxy = $Proxy }
+    $response = Invoke-WebRequest @requestArgs
+    $code = [int]$response.StatusCode
+} catch {
+    try { if ($null -ne $_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode } } catch { $code = 0 }
+    if ($code -eq 0) {
+        $inner = $_.Exception
+        while ($null -ne $inner.InnerException) { $inner = $inner.InnerException }
+        $errorText = [string]$inner.Message
+    }
+}
+$watch.Stop()
+$null = $Queue.Enqueue([pscustomobject]@{ Platform = $Platform; Code = $code; Ms = [int]$watch.ElapsedMilliseconds; Error = $errorText })
+'@
+
+function Stop-ConnectionTest {
+    if ($script:ConnTimer) { try { $script:ConnTimer.Stop() } catch { } }
+    foreach ($connPs in @($script:ConnPowerShells)) { try { if ($connPs) { $connPs.Stop(); $connPs.Dispose() } } catch { } }
+    foreach ($connRs in @($script:ConnRunspaces)) { try { if ($connRs) { $connRs.Close(); $connRs.Dispose() } } catch { } }
+    $script:ConnPowerShells = New-Object 'System.Collections.Generic.List[object]'
+    $script:ConnRunspaces = New-Object 'System.Collections.Generic.List[object]'
+}
+
+function Get-ConnectionReportLines {
+    $reportLines = New-Object 'System.Collections.Generic.List[string]'
+    $reportIndex = 0
+    if ($null -eq $script:ConnGrid) { return @() }
+    foreach ($reportRow in $script:ConnGrid.Rows) {
+        $reportIndex++
+        $pingCell = [string]$reportRow.Cells['Ping'].Value
+        $resultCell = [string]$reportRow.Cells['Result'].Value
+        $noteCell = [string]$reportRow.Cells['Note'].Value
+        $reportLines.Add(("{0}. {1}.api - {2}, ping: {3}, Error: {4}" -f $reportIndex, [string]$reportRow.Cells['Platform'].Value, $resultCell, $pingCell, $noteCell))
+    }
+    return @($reportLines)
+}
+
+function Start-ConnectionTest {
+    if ($null -eq $script:ConnGrid) { return }
+    Stop-ConnectionTest
+    $script:ConnGrid.Rows.Clear()
+    $connProxy = ''
+    try { $connProxy = [string]$script:ProxyBox.Text.Trim() } catch { $connProxy = '' }
+    if ($connProxy -and $connProxy -notmatch '^[A-Za-z][A-Za-z0-9+.-]*://') { $connProxy = 'http://' + $connProxy }
+    $connUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36'
+    $script:ConnQueue = [System.Collections.Concurrent.ConcurrentQueue[object]]::new()
+    $script:ConnTotal = @($script:ConnectionEndpoints).Count
+    $script:ConnDone = 0
+    foreach ($connEndpoint in $script:ConnectionEndpoints) {
+        [void]$script:ConnGrid.Rows.Add([object[]]@([string]$connEndpoint.Platform, [string]$connEndpoint.Url, 'проверяется…', '—', '—', ''))
+        $connRunspace = [RunspaceFactory]::CreateRunspace()
+        $connRunspace.Open()
+        $connPowerShell = [PowerShell]::Create()
+        $connPowerShell.Runspace = $connRunspace
+        [void]$connPowerShell.AddScript($script:ConnectionScript).AddArgument([string]$connEndpoint.Url).AddArgument(8).AddArgument($connProxy).AddArgument($connUserAgent).AddArgument($script:ConnQueue).AddArgument([string]$connEndpoint.Platform)
+        $null = $connPowerShell.BeginInvoke()
+        $script:ConnPowerShells.Add($connPowerShell)
+        $script:ConnRunspaces.Add($connRunspace)
+    }
+    if ($null -eq $script:ConnTimer) {
+        $script:ConnTimer = New-Object System.Windows.Forms.Timer
+        $script:ConnTimer.Interval = 150
+        $script:ConnTimer.Add_Tick({
+            $connEntry = $null
+            while ($script:ConnQueue -and $script:ConnQueue.TryDequeue([ref]$connEntry)) {
+                if ($null -eq $connEntry) { continue }
+                $verdict = Get-ConnectionVerdict -Code ([int]$connEntry.Code) -ErrorText ([string]$connEntry.Error)
+                $pingText = ('{0}ms' -f [int]$connEntry.Ms)
+                if ([int]$connEntry.Code -le 0) { $pingText = 'нет ответа' }
+                $codeText = '—'
+                if ([int]$connEntry.Code -gt 0) { $codeText = [string]$connEntry.Code }
+                foreach ($connRow in $script:ConnGrid.Rows) {
+                    if ([string]$connRow.Cells['Platform'].Value -eq [string]$connEntry.Platform) {
+                        $connRow.Cells['Result'].Value = $verdict.Result
+                        $connRow.Cells['Ping'].Value = $pingText
+                        $connRow.Cells['Code'].Value = $codeText
+                        $connRow.Cells['Note'].Value = [string]$verdict.Note
+                        if ($verdict.Result -eq 'pass') { $connRow.Cells['Result'].Style.ForeColor = [System.Drawing.Color]::FromArgb(110,220,150) }
+                        elseif ($verdict.Result -eq 'denied' -or $verdict.Result -eq 'error' -or $verdict.Result -eq 'Нет связи' -or $verdict.Result -eq 'Долго отвечает') { $connRow.Cells['Result'].Style.ForeColor = [System.Drawing.Color]::FromArgb(255,138,128) }
+                        break
+                    }
+                }
+                $script:ConnDone++
+                Add-Diagnostic ('Соединение: {0}.api - {1}, ping: {2}, HTTP: {3}' -f [string]$connEntry.Platform, $verdict.Result, $pingText, $codeText)
+                $connEntry = $null
+            }
+            if ($script:ConnTotal -gt 0 -and $script:ConnDone -ge $script:ConnTotal) {
+                $script:ConnTimer.Stop()
+                if ($script:ConnStatus) { $script:ConnStatus.Text = ('Готово: проверено платформ — {0}. Пинг — время HTTP-ответа.' -f $script:ConnDone) }
+                Stop-ConnectionTest
+            }
+        })
+    }
+    if ($script:ConnStatus) { $script:ConnStatus.Text = 'Проверка идёт…' }
+    $script:ConnTimer.Start()
+}
+
+function Open-ConnectionTestWindow {
+    $connForm = New-Object System.Windows.Forms.Form
+    $connForm.Text = 'Проверка соединения'
+    $connForm.StartPosition = 'CenterParent'
+    $connForm.Size = New-Object System.Drawing.Size(900,640)
+    $connForm.MinimumSize = New-Object System.Drawing.Size(760,600)
+    $connForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
+    $connForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $connForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
+    Set-WindowChrome -Window $connForm
+    $connInfo = New-Object System.Windows.Forms.Label
+    $connInfo.Text = 'Тестовый запрос к публичным адресам платформ. «pass» — сервер ответил (2xx/3xx), «denied» — отказ (4xx), «error» — ошибка сервера (5xx), «Нет связи» — соединение не открылось. Пинг — время ответа сервера.'
+    $connInfo.Location = New-Object System.Drawing.Point(16,12)
+    $connInfo.Size = New-Object System.Drawing.Size(856,44)
+    $connInfo.Anchor = 'Top, Left, Right'
+    $connInfo.ForeColor = [System.Drawing.Color]::FromArgb(190,202,221)
+    $connForm.Controls.Add($connInfo)
+    $script:ConnGrid = New-Object System.Windows.Forms.DataGridView
+    $script:ConnGrid.Location = New-Object System.Drawing.Point(16,62)
+    $script:ConnGrid.Size = New-Object System.Drawing.Size(856,280)
+    $script:ConnGrid.Anchor = 'Top, Left, Right'
+    $script:ConnGrid.BackgroundColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:ConnGrid.BorderStyle = 'None'
+    $script:ConnGrid.GridColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $script:ConnGrid.EnableHeadersVisualStyles = $false
+    $script:ConnGrid.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(30,38,52)
+    $script:ConnGrid.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
+    $script:ConnGrid.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:ConnGrid.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
+    $script:ConnGrid.ReadOnly = $true
+    $script:ConnGrid.AllowUserToAddRows = $false
+    $script:ConnGrid.AllowUserToDeleteRows = $false
+    $script:ConnGrid.RowHeadersVisible = $false
+    $script:ConnGrid.SelectionMode = 'FullRowSelect'
+    $script:ConnGrid.AutoSizeColumnsMode = 'Fill'
+    foreach ($colSpec in @(@('Platform','Платформа',110),@('Url','Адрес',250),@('Result','Результат',120),@('Ping','Пинг',90),@('Code','HTTP',60),@('Note','Error (пояснение HTTP-кода)',226))) {
+        $column = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+        $column.Name = $colSpec[0]
+        $column.HeaderText = $colSpec[1]
+        $column.FillWeight = [int]$colSpec[2]
+        [void]$script:ConnGrid.Columns.Add($column)
+    }
+    $connForm.Controls.Add($script:ConnGrid)
+    $legendBox = New-Object System.Windows.Forms.TextBox
+    $legendBox.Multiline = $true
+    $legendBox.ReadOnly = $true
+    $legendBox.ScrollBars = 'Vertical'
+    $legendBox.Location = New-Object System.Drawing.Point(16,352)
+    $legendBox.Size = New-Object System.Drawing.Size(856,200)
+    $legendBox.Anchor = 'Top, Bottom, Left, Right'
+    $legendBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $legendBox.ForeColor = [System.Drawing.Color]::FromArgb(190,202,221)
+    $legendBox.Font = New-Object System.Drawing.Font('Consolas',8.5)
+    $legendLines = @('Таблица HTTP-кодов (MDN Web Docs):')
+    foreach ($legendCode in @($script:HttpStatusNotes.Keys | Sort-Object)) { $legendLines += ('{0} — {1}' -f $legendCode, $script:HttpStatusNotes[$legendCode]) }
+    $legendBox.Text = ($legendLines -join [Environment]::NewLine)
+    $connForm.Controls.Add($legendBox)
+    $connRunButton = New-Object System.Windows.Forms.Button
+    $connRunButton.Text = '↻ Проверить снова'
+    $connRunButton.Location = New-Object System.Drawing.Point(16,566)
+    $connRunButton.Size = New-Object System.Drawing.Size(160,34)
+    $connRunButton.Anchor = 'Bottom, Left'
+    $connRunButton.FlatStyle = 'Flat'
+    $connRunButton.BackColor = [System.Drawing.Color]::FromArgb(93,73,222)
+    $connRunButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $connForm.Controls.Add($connRunButton)
+    $connCopyButton = New-Object System.Windows.Forms.Button
+    $connCopyButton.Text = 'Копировать отчёт'
+    $connCopyButton.Location = New-Object System.Drawing.Point(184,566)
+    $connCopyButton.Size = New-Object System.Drawing.Size(160,34)
+    $connCopyButton.Anchor = 'Bottom, Left'
+    $connCopyButton.FlatStyle = 'Flat'
+    $connCopyButton.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $connCopyButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $connForm.Controls.Add($connCopyButton)
+    $script:ConnStatus = New-Object System.Windows.Forms.Label
+    $script:ConnStatus.Location = New-Object System.Drawing.Point(358,570)
+    $script:ConnStatus.Size = New-Object System.Drawing.Size(514,26)
+    $script:ConnStatus.Anchor = 'Bottom, Left, Right'
+    $script:ConnStatus.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
+    $script:ConnStatus.TextAlign = 'MiddleRight'
+    $connForm.Controls.Add($script:ConnStatus)
+    $connRunButton.Add_Click({ Start-ConnectionTest })
+    $connCopyButton.Add_Click({
+        $reportText = (Get-ConnectionReportLines) -join [Environment]::NewLine
+        if ($reportText) { Copy-UufTextToClipboard -Text $reportText -Context 'копирование отчёта о соединении' | Out-Null }
+    })
+    $connForm.Add_Shown({ Start-ConnectionTest })
+    $connForm.Add_FormClosed({
+        Stop-ConnectionTest
+        $script:ConnGrid = $null
+        $script:ConnStatus = $null
+    })
+    Set-ButtonEdgeStyle -Root $connForm
+    [void]$connForm.ShowDialog($script:Form)
+}
+
 # --- Помощь
+# --- Помощь: пять страниц, оформленных карточками в стиле внутренних кнопок (тёмная тема, сине-фиолетовые акценты)
+function Add-HelpCard {
+    param([System.Windows.Forms.Panel]$CardHost, [string]$Heading, [string]$Body, [System.Drawing.Font]$HeadingFont, [System.Drawing.Font]$BodyFont)
+    $Body = $Body.Replace('<br>', [Environment]::NewLine)
+    $card = New-Object System.Windows.Forms.Panel
+    $card.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
+    $accent = New-Object System.Windows.Forms.Panel
+    $accent.Dock = 'Left'
+    $accent.Width = 4
+    $accent.BackColor = [System.Drawing.Color]::FromArgb(93,73,222)
+    $headingLabel = New-Object System.Windows.Forms.Label
+    $headingLabel.Text = $Heading
+    $headingLabel.Location = New-Object System.Drawing.Point(18,10)
+    $headingLabel.Size = New-Object System.Drawing.Size(600,22)
+    $headingLabel.Font = $HeadingFont
+    $headingLabel.ForeColor = [System.Drawing.Color]::FromArgb(147,189,255)
+    $bodyLabel = New-Object System.Windows.Forms.Label
+    $bodyLabel.Text = $Body
+    $bodyLabel.Location = New-Object System.Drawing.Point(18,36)
+    $bodyLabel.Size = New-Object System.Drawing.Size(600,20)
+    $bodyLabel.Font = $BodyFont
+    $bodyLabel.ForeColor = [System.Drawing.Color]::FromArgb(208,216,230)
+    $card.Controls.Add($bodyLabel)
+    $card.Controls.Add($headingLabel)
+    $card.Controls.Add($accent)
+    $card.Tag = $bodyLabel
+    $CardHost.Controls.Add($card)
+}
+
+function Set-HelpCardLayout {
+    param([System.Windows.Forms.Panel]$CardHost)
+    $cardWidth = [Math]::Max(300, $CardHost.ClientSize.Width - 40)
+    $bodyWidth = $cardWidth - 40
+    $y = 12
+    foreach ($card in @($CardHost.Controls)) {
+        $bodyLabel = $card.Tag
+        if ($null -eq $bodyLabel) { continue }
+        $measured = [System.Windows.Forms.TextRenderer]::MeasureText([string]$bodyLabel.Text, $bodyLabel.Font, (New-Object System.Drawing.Size($bodyWidth, 5000)), [System.Windows.Forms.TextFormatFlags]::WordBreak)
+        $bodyHeight = [int]$measured.Height + 6
+        $bodyLabel.Size = New-Object System.Drawing.Size($bodyWidth, $bodyHeight)
+        foreach ($inner in @($card.Controls)) { if ($inner -is [System.Windows.Forms.Label] -and $inner -ne $bodyLabel) { $inner.Size = New-Object System.Drawing.Size($bodyWidth, 22) } }
+        $card.Size = New-Object System.Drawing.Size($cardWidth, (46 + $bodyHeight))
+        $card.Location = New-Object System.Drawing.Point(16,$y)
+        $y += $card.Height + 12
+    }
+    $CardHost.AutoScrollMinSize = New-Object System.Drawing.Size(0, ($y + 8))
+}
+
 function Show-UsernameFinderHelp {
     $helpForm = New-Object System.Windows.Forms.Form
     $helpForm.Text = 'UUF — помощь'
     $helpForm.StartPosition = 'CenterParent'
-    $helpForm.Size = New-Object System.Drawing.Size(880,700)
+    $helpForm.Size = New-Object System.Drawing.Size(900,720)
     $helpForm.MinimumSize = New-Object System.Drawing.Size(640,520)
     $helpForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
+    $helpForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $helpForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
     Set-WindowChrome -Window $helpForm
 
-    $guideText = @'
-КАК ПОЛЬЗОВАТЬСЯ
-
-1. Платформа. Выбери сервис в списке слева. Программа сразу подставит минимальную и максимальную длину по правилам платформы, а для почтовых сервисов (Google, Mail.ru, Outlook) ник будет показан и проверен как адрес: ник@gmail.com, ник@mail.ru, ник@outlook.com.
-
-2. Категории. В списке «Единые категории» 46 тем, отсортированных по алфавиту; отметь нужные или нажми «Выделить все». Категории влияют на словарные источники генерации. Две сборки про имена: «Имя, Фамилия» (John, Birlich, Mark, Cukerberk, Mask, Ilon) и «Русские слова латиницей» (Privet, Phizik, Shizik, Cloun, Debil).
-
-3. Настройки генерации. Каждая галочка работает самостоятельно: включена — источник участвует, выключена — не участвует. «Однословные ники», «Два осмысленных слова», «Выдуманные слова», «Выдуманные сочетания», «Замена символами», «Редкие короткие (3-6)», «Случайные символы», «Использовать цифры», «Разделитель _», «Только короткие», «Исключать проверенные», «Генерация по порядку». При снятой галочке «Генерация по порядку» строки выводятся и проверяются вразнобой: порядок очереди проверки заново перемешивается при каждом запуске.
-
-4. Свои слова. Слова из поля «Свои слова через запятую» работают якорем: каждый сгенерированный ник содержит хотя бы одно из них, а слова категорий и стиля становятся второй частью.
-
-5. Генерация и проверка. Нажми «Сгенерировать и проверить»: таблица очистится, появится запрошенное количество ников и проверка начнётся сама. Кнопка «Найти свободные» проверяет уже имеющуюся таблицу повторно. «Остановить проверку» прерывает прогон без потери результатов.
-
-6. Результаты. Статусы: «Свободен» — публичная проверка не нашла имя занятым; «Занят», «Недопустимый», «Не подтверждено» (ответ платформы не удалось прочитать однозначно), «Ошибка сети». При наведении на ячейки «Статус» и «Причина» появляется подсказка, почему у имени такой статус и что с этим делать. Фильтр статуса, поиск и сортировка работают во время проверки; прокрутка таблицы не сбрасывается.
-
-7. История и проверенные. «Последние свободные ники» хранит найденные свободные адреса с сортировкой по нику, платформе или времени и повторной проверкой. «Проверенные ники» — постоянный список всего, что уже проверялось: он исключает повторы при включённой галочке «Исключать проверенные» и переживает перезапуск программы.
-
-8. Пароль и регистрация. Кнопка «Пароль / регистрация» открывает окно под текущую платформу: заголовок, подпись ника и кнопка «Открыть <платформа> для регистрации» соответствуют выбранному сервису. Сайт открывается в окне инкогнито (Chrome, Edge, Brave или Vivaldi); если ни один не найден — в браузере по умолчанию. Пароль содержит заглавные и строчные буквы, цифры и спецсимвол.
-
-9. Steam. Публичная проверка адреса steamcommunity.com/id/<ник>: страница профиля существует — имя занято. Занятость публичного адреса не равна занятости логина аккаунта Steam; категории и настройки генерации применяются как обычно.
-
-10. Стандартный набор. При каждом запуске выставлены: все категории, стиль «без стиля», 40 ников, длина 3–25, однословные, редкие короткие, выдуманные слова, случайные символы, исключать проверенные, только короткие, пауза 700 мс, 2 потока. Остальное выключено. Сохраняются между запусками только положение окна, фильтр статусов и сортировка.
-'@
-
-    $howText = @'
-КАК ЭТО РАБОТАЕТ
-
-Генерация. Кандидатов собирает один генератор из восьми источников: одиночные слова категорий, пары осмысленных слов, выдуманные слова из слогов, выдуманные сочетания, замена букв цифрами (leet), редкие короткие слова, случайные наборы символов и цифры у готовых ников. Каждый включённый источник получает равную долю запрошенного количества; исчерпанный источник добирается остальными, поэтому число строк всегда совпадает с запросом. Свои слова — якоря: они входят в каждый ник. Уже проверенные и занятые имена отсеиваются внутри генератора.
-
-Проверка. Запросы идут в несколько потоков (до 8, рекомендуется 2–4): все потоки разбирают одну общую очередь ников, поэтому медленный ответ не блокирует остальных. Пауза адаптивная: при HTTP 429 и 403 она растёт с учётом Retry-After, после серии успехов постепенно снижается. Под полосой прогресса показывается оценка остатка времени и время завершения. Прогон завершается, когда закончили все потоки.
-
-Платформы. Для каждой платформы используется свой регистрационный или публичный интерфейс: Roblox — валидатор регистрации, Google — валидатор доступности Gmail (резервно форма входа), Mail.ru — API существования адреса, Discord — endpoint уникального имени, Outlook — счётчик существования аккаунта Microsoft (IfExistsResult=0 — существует, 1 — не найден) с резервной проверкой формы регистрации, VK и YouTube — публичные страницы, Telegram — страница t.me, Steam — публичные профили steamcommunity.com/id, GitHub — сессия регистрации. Если сайт платформы недоступен из региона (t.me и YouTube в РФ блокируются), заполните поле «Прокси» над таблицей — все проверки пойдут через ваш HTTP-прокси.
-
-Хранилище. username_history.json держит список проверенных ников и историю свободных; accounts.dat — сохранённые пары ник/пароль, зашифрованные Windows DPAPI для текущего пользователя; settings.json — только положение окна, фильтр статусов и сортировку. Журнал UniversalUsernameFinder.log пишется в ту же папку %LOCALAPPDATA%\UniversalUsernameFinder, поэтому сборка или перенос программы его не затирают; в portable-режиме возможен журнал рядом с exe.
-
-Оболочка. UUF.exe собирается из этого скрипта модулем ps2exe: скрипт встроен в exe в открытом виде, поэтому .ps1 остаётся единственным источником правды, а exe — удобная оболочка запуска, а не защита кода.
-'@
-
-    $stylesBuilder = New-Object System.Text.StringBuilder
-    [void]$stylesBuilder.AppendLine('СТИЛИ')
-    [void]$stylesBuilder.AppendLine('Стиль добавляет к нику характерные слова своего словаря. Примеры собраны из словарей стиля и категорий.')
-    [void]$stylesBuilder.AppendLine('')
-    $styleExamples = @{
-        'Минималистичный' = 'NeoFrost, ZenRaven'
-        'Киберспортивный' = 'ClutchVortex, RiftStrafe'
-        'Футуристический' = 'QuantumPulse, VectorNova'
-        'Тёмный' = 'NoctisShadow, ObsidianVoid'
-        'Эстетичный' = 'LunarVelvet, AstraLuma'
-        'Редкий' = 'NyxVex, RynZed'
-        'Короткий' = 'KaiZen, LuxNyx'
-        'Двусловный' = 'NovaEcho, PulseOrbit (два слова даже при снятой галочке «Два осмысленных слова»)'
-        'Аниме' = 'KaiRyu, SoraKage'
-        'Готический' = 'RavenCrypt, NocturneVeil'
-        'Древний мир' = 'AtlasTitan, PharaohLegion'
-        'Космический' = 'QuasarPulsar, VegaStardust'
-        'Латинский' = 'RexLux, FortisVeritas'
-        'Милый' = 'CandyMochi, HoneyBerry'
-        'Морской' = 'AnchorTide, CorsairFjord'
-        'Неоновый' = 'NeonSynth, ChromeLaser'
-        'Природный' = 'WillowCreek, CoralMeadow'
-        'Скандинавский' = 'RuneSkald, FenrirTorvald'
-        'Хардкорный' = 'ReaperHavoc, MayhemBrutal'
-        '— без стиля —' = 'словари стилей не применяются: ник собирается только из категорий, своих слов и источников'
-    }
-    foreach ($styleName in @($script:StyleBox.Items | ForEach-Object { [string]$_ })) {
-        $styleExample = if ($styleExamples.ContainsKey($styleName)) { $styleExamples[$styleName] } else { 'слова стиля добавляются к никам из выбранных категорий' }
-        [void]$stylesBuilder.AppendLine(('• {0} — {1}' -f $styleName, $styleExample))
-    }
-    [void]$stylesBuilder.AppendLine('')
-    [void]$stylesBuilder.AppendLine('КАТЕГОРИИ И ПРИМЕРЫ СЛОВ')
-    foreach ($categoryName in @($script:WordCategories | Sort-Object)) {
-        $words = @($script:MeaningGroups[[string]$categoryName])
-        $sample = @($words | Select-Object -First 8) -join ', '
-        [void]$stylesBuilder.AppendLine(('• {0}: {1}' -f $categoryName, $sample))
-    }
-    $stylesText = $stylesBuilder.ToString()
-
-    $platformsBuilder = New-Object System.Text.StringBuilder
-    [void]$platformsBuilder.AppendLine('ПЛАТФОРМЫ: ПРАВИЛА, ДОМЕНЫ И РЕГИСТРАЦИЯ')
-    [void]$platformsBuilder.AppendLine('')
-    $checkNotes = @{
-        'Roblox' = 'регистрационный валидатор имён'
-        'Google' = 'валидатор доступности Gmail, резервно форма входа; ник проверяется как адрес gmail.com'
-        'Mail.ru' = 'API существования адреса; ник проверяется как адрес mail.ru'
-        'VK' = 'публичная страница и resolveScreenName'
-        'Discord' = 'endpoint уникального имени'
-        'Outlook' = 'счётчик GetCredentialType от Microsoft (IfExistsResult 0/1) и резервная проверка формы регистрации signup.live.com; ник проверяется как адрес outlook.com'
-        'Telegram' = 'публичная страница t.me'
-        'Steam' = 'публичная страница steamcommunity.com/id/<ник>; занятость vanity-адреса не равна занятости логина аккаунта'
-        'GitHub' = 'сессия страницы регистрации'
-        'YouTube' = 'публичная страница канала по handle'
-    }
-    foreach ($platformName in $script:SupportedPlatforms) {
-        $rule = Get-PlatformLengthRule -Platform $platformName
-        $domain = Get-PlatformDomain -Platform $platformName
-        $domainText = if ($domain) { ('домен @{0}' -f $domain) } else { 'без домена' }
-        [void]$platformsBuilder.AppendLine(('• {0}: {1}' -f $platformName, (Get-PlatformFormatHint -Platform $platformName)))
-        [void]$platformsBuilder.AppendLine(('  длина {0}–{1}, {2}, регистрация {3}, проверка: {4}' -f $rule.Min, $rule.Max, $domainText, (Get-RegistrationUrl -Platform $platformName), $checkNotes[[string]$platformName]))
-    }
-    $platformsText = $platformsBuilder.ToString()
-
     $helpTabs = New-Object System.Windows.Forms.TabControl
-    $helpTabs.Dock = 'Fill'
-    $helpTabs.Font = New-Object System.Drawing.Font('Segoe UI',9.5)
-    Set-UufTabStyle -Tabs $helpTabs -TabWidth 180
-    $helpBodyFont = New-Object System.Drawing.Font('Segoe UI', 10)
-    $helpLeadFont = New-Object System.Drawing.Font('Segoe UI Semibold', 10.5, [System.Drawing.FontStyle]::Bold)
-    $helpHeadingFont = New-Object System.Drawing.Font('Segoe UI Semibold', 12.5, [System.Drawing.FontStyle]::Bold)
-    foreach ($page in @(@('Инструкция', $guideText), @('Как работает', $howText), @('Стили и категории', $stylesText), @('Платформы и домены', $platformsText))) {
+    $helpTabs.Location = New-Object System.Drawing.Point(12,12)
+    $helpTabs.Size = New-Object System.Drawing.Size(860,650)
+    $helpTabs.Anchor = 'Top, Bottom, Left, Right'
+    $helpTabs.Font = New-Object System.Drawing.Font('Segoe UI',9.5,[System.Drawing.FontStyle]::Bold)
+    Set-UufTabStyle -Tabs $helpTabs -TabWidth 150
+
+    $headingFont = New-Object System.Drawing.Font('Segoe UI Semibold',11,[System.Drawing.FontStyle]::Bold)
+    $bodyFont = New-Object System.Drawing.Font('Segoe UI',9.5)
+    $exampleFont = New-Object System.Drawing.Font('Consolas',9.5)
+
+    $helpPages = @(
+        @{ Title = 'Дисклеймер'; Cards = @(
+            @('Назначение программы', 'UUF (Universal Username Finder) помогает подбирать свободные никнеймы и логины для регистрации на популярных платформах и проверять, занято ли имя, по открытым публичным признакам: страницам регистрации и публичным API.'),
+            @('Что программа не делает', 'Программа не взламывает аккаунты, не подбирает пароли, не входит в чужие учётные записи, не крадёт логины и пароли и не отправляет письма или сообщения от вашего имени.'),
+            @('Как устроена проверка', 'Проверка безопасна: это обычные запросы, похожие на открытие страницы регистрации в браузере. Программа не обходит CAPTCHA, блокировки и защитные механизмы платформ. Если платформа ограничила запросы, проверка приостанавливается.'),
+            @('Пользовательское соглашение', 'Используя программу, вы подтверждаете, что сами соблюдаете правила платформ и законы своей страны. Не используйте результаты для выдачи себя за другого человека, спама, мошенничества или обхода ограничений сервисов. Ответственность за дальнейшее использование ника и аккаунта лежит на пользователе.'),
+            @('Хранение данных', 'Пароли, созданные в программе, сохраняются только локально в зашифрованном хранилище текущего пользователя Windows.'),
+            @('Точность результатов', 'Статус «свободен» показывает состояние на момент проверки. Платформа может изменить правила или занять ник раньше вас, поэтому перед регистрацией проверяйте ник на сайте платформы.')
+        ) },
+        @{ Title = 'Пользование'; Cards = @(
+            @('1. Выбор платформы', 'Выберите платформу в списке «Платформа». У каждой платформы свои правила формата: длина, допустимые символы, запрещённые слова.'),
+            @('2. Настройка генерации', 'Отметьте стили в блоке «Настройки генерации», задайте количество и границы длины. Ручные ники и свои слова добавляются в генерацию, только если поля заполнены.'),
+            @('3. Запуск', 'Нажмите «▶ Найти свободные». Генерация и проверка идут в фоне, таблица заполняется по мере работы. Остановить можно кнопкой «■ Остановить проверку».'),
+            @('4. Возобновление', 'После остановки кнопка станет «▶ Возобновить проверку (N)», где N — сколько ников ещё не проверено. Продолжаются только ники со статусом «Ожидает»: уже проверенные не повторяются.'),
+            @('5. Свободные ники', 'Свободные ники попадают в «Последние свободные ники». Там можно выделить один или несколько ников («Выделить все» / «Снять все»), скопировать их, открыть сайт или повторить проверку.'),
+            @('6. Регистрация и пароль', 'Кнопка «Регистрация и пароль» открывает генератор пароля, страницу регистрации, поля имени и фамилии (для Google) и сохранение записи в зашифрованное хранилище. «Сохранённые аккаунты» открывает список сохранённых записей.'),
+            @('7. Проверка соединения', 'Кнопка «Проверка соединения» показывает доступность платформ: результат, время ответа (пинг) и HTTP-код.'),
+            @('8. Журнал', 'Кнопка «Развернуть журнал» поднимает журнал над таблицей, «Вернуть стандартно» возвращает прежнее положение.')
+        ) },
+        @{ Title = 'Как устроено?'; Cards = @(
+            @('Генерация', 'Программа собирает кандидатов из выбранных источников: однословные ники, сочетания слов, выдуманные слова, замену символов, цифры. Каждый кандидат проходит проверку формата выбранной платформы. Ники, не подходящие по формату, отбрасываются сразу, без запроса к сайту.'),
+            @('Проверка', 'Для каждого ника программа делает обычный запрос к публичному признаку платформы (страница регистрации или публичный API) и разбирает ответ. Проверка идёт в фоне с паузой между запросами, которую можно настроить.'),
+            @('Статусы', 'Ожидает — ещё не проверен. Проверяется — запрос выполняется. Свободен / Занят — результат проверки. Недопустимый — не проходит формат платформы. Ошибка сети — сайт не ответил, ник можно проверить снова.'),
+            @('Защита от повторов', 'Опция «Исключать проверенные» не даёт проверять один и тот же ник дважды. Свободные ники сохраняются в историю «Последние свободные ники».'),
+            @('Ограничения и CAPTCHA', 'Если платформа показывает CAPTCHA или ограничивает частоту запросов, программа не обходит это. Проверка приостанавливается: попробуйте позже, увеличьте задержку или проверьте другую платформу.'),
+            @('Почему возможны сбои', 'Некоторые платформы отвечают не сразу или по-разному в разных странах. Для YouTube, Telegram, Outlook, Google и Discord в нижней плашке появляется подсказка про VPN/Proxy.')
+        ) },
+        @{ Title = 'Настройки'; Cards = @(
+            @('Однословные ники', 'Один смысловой корень, без лишних частей.<br>  Пример: lonelesee, fine, group'),
+            @('Два осмысленных слова', 'Два понятных слова подряд. С разделителем «_» — через подчёркивание.<br>  Пример: darkriver, bluefox, silent_lake'),
+            @('Выдуманные слова', 'Произносимые несуществующие слова.<br>  Пример: lorvesh, mavitel, quendra'),
+            @('Выдуманные сочетания', 'Пары выдуманных частей.<br>  Пример: vorntiel, kasmora'),
+            @('Замена символами', 'Буквы заменяются похожими цифрами и знаками (leet).<br>  Пример: fine → f1n3, group → gr0up'),
+            @('Редкие короткие (3-6)', 'Ники длиной 3–6 символов. Такие имена обычно заняты первыми, свободных мало.<br>  Пример: xqv7, zorn, kvei'),
+            @('Использовать цифры', 'Добавляет цифры к нику.<br>  Пример: lonelesee24'),
+            @('Разделитель _', 'Вставляет подчёркивание между частями. Не работает для Google и GitHub: эти платформы его не допускают.<br>  Пример: lone_see'),
+            @('Случайные символы', 'Случайные буквы и цифры.<br>  Пример: k7qzd2'),
+            @('Тонкая настройка', 'Количество — сколько ников выдать. Мин. и макс. длина — границы длины. «Только короткие (≤12)» оставляет ники не длиннее 12 символов.<br>Важно: если «Только короткие» включено, а минимальная длина больше 12, ников не будет. Программа предупредит и не запустит генерацию.'),
+            @('Свои слова и ручные ники', 'Свои слова — через запятую, точку с запятой или пробел, из них собираются варианты. Ручные ники — по одному на строке или через запятую, проверяются как есть. Пустое поле ничего не добавляет.'),
+            @('Если не выбран ни один источник', 'Программа сообщит об этом в журнале и возьмёт однословные ники как запасной вариант.'),
+            @('Скорость и сеть', 'Задержка — пауза между запросами, мс: больше значит мягче для сайтов. Таймаут — сколько ждать ответ. Потоки — число одновременных проверок. Прокси — адрес вида http://host:port, если нужен.')
+        ) },
+        @{ Title = 'Правила ввода'; Cards = @(
+            @('Общие правила', 'Вводите латиницу, цифры и символы, которые допускает платформа. Кириллица и пробелы внутри ника не принимаются.'),
+            @('Свои слова', 'Через запятую, точку с запятой или пробел.<br>  Пример: anna, blue;cloud fox'),
+            @('Ручные ники', 'По одному на строке или через запятую.<br>  Пример: alex_1990, my.nick'),
+            @('Google', 'От 6 до 30 символов: латиница, цифры и точка. Точка не в начале, не в конце и не подряд. Подчёркивание не допускается.'),
+            @('YouTube (правила YTKits)', 'От 3 до 30 символов: латиница, цифры, точка, подчёркивание и дефис. Начинается и заканчивается буквой или цифрой.'),
+            @('Telegram', 'От 5 до 32 символов: латиница, цифры и подчёркивание. Начинается с буквы.'),
+            @('Outlook', 'От 3 до 64 символов: латиница, цифры, точка, подчёркивание и дефис. Не заканчивается точкой, подчёркиванием или дефисом и не содержит их подряд.'),
+            @('GitHub', 'От 1 до 39 символов: латиница, цифры и дефис. Не начинается и не заканчивается дефисом, двух дефисов подряд нет.'),
+            @('Остальные платформы', 'Обычно 3–32 символа: латиница, цифры, подчёркивание, точка и дефис.')
+        ) }
+    )
+
+    $cardHostList = @()
+    foreach ($page in $helpPages) {
         $tabPage = New-Object System.Windows.Forms.TabPage
-        $tabPage.Text = [string]$page[0]
-        $tabPage.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
-        $pageBox = New-Object System.Windows.Forms.RichTextBox
-        $pageBox.ReadOnly = $true
-        $pageBox.BorderStyle = 'None'
-        $pageBox.DetectUrls = $false
-        $pageBox.Dock = 'Fill'
-        $pageBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-        $pageBox.ForeColor = [System.Drawing.Color]::FromArgb(208,216,230)
-        $pageBox.Font = $helpBodyFont
-        $pageBox.RightMargin = 820
-        $pageBox.SelectionBullet = $false
-        foreach ($helpLine in (([string]$page[1]) -split "`n")) {
-            $helpLine = $helpLine.TrimEnd([char]13)
-            $pageBox.SelectionStart = $pageBox.TextLength
-            $pageBox.SelectionLength = 0
-            $pageBox.SelectionIndent = 14
-            $pageBox.SelectionHangingIndent = 0
-            $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-            $pageBox.SelectionFont = $helpBodyFont
-            $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(208,216,230)
-            if ($helpLine.Trim() -eq '') {
-                $pageBox.SelectionIndent = 0
-                $pageBox.AppendText("`n")
-            } elseif ($helpLine -match '^[A-ZА-ЯЁ0-9][A-ZА-ЯЁ0-9 ,.:;«»()—…\-]+$') {
-                $pageBox.SelectionIndent = 0
-                $pageBox.SelectionFont = $helpHeadingFont
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(147,189,255)
-                $pageBox.AppendText($helpLine.Trim())
-                $pageBox.AppendText("`n")
-            } elseif ($helpLine -match '^\d+\. ') {
-                $pageBox.SelectionIndent = 30
-                $pageBox.SelectionHangingIndent = 14
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(222,228,238)
-                $pageBox.AppendText($helpLine + "`n")
-            } elseif ($helpLine.StartsWith('• ')) {
-                $pageBox.SelectionIndent = 26
-                $pageBox.SelectionHangingIndent = 12
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(186,194,207)
-                $pageBox.AppendText($helpLine + "`n")
-            } elseif ($helpLine.StartsWith('  ')) {
-                $pageBox.SelectionIndent = 38
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(168,178,196)
-                $pageBox.AppendText($helpLine.Trim() + "`n")
-            } elseif ($helpLine -match '^([А-ЯЁA-Z][\w\-]{2,20}\.)\s') {
-                $leadWord = [string]$matches[1]
-                $pageBox.SelectionFont = $helpLeadFont
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(235,240,248)
-                $pageBox.AppendText($leadWord)
-                $pageBox.SelectionFont = $helpBodyFont
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(208,216,230)
-                $pageBox.AppendText($helpLine.Substring($leadWord.Length) + "`n")
-            } else {
-                $pageBox.AppendText($helpLine + "`n")
-            }
+        $tabPage.Text = [string]$page.Title
+        $tabPage.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+        $cardHost = New-Object System.Windows.Forms.Panel
+        $cardHost.Dock = 'Fill'
+        $cardHost.AutoScroll = $true
+        $cardHost.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+        foreach ($cardItem in $page.Cards) {
+            Add-HelpCard -CardHost $cardHost -Heading ([string]$cardItem[0]) -Body ([string]$cardItem[1]) -HeadingFont $headingFont -BodyFont $bodyFont
         }
-        $pageBox.Select(0, 0)
-        $tabPage.Controls.Add($pageBox)
+        $cardHost.Add_Resize({ param($sender, $eventArgs) Set-HelpCardLayout -CardHost $sender })
+        $tabPage.Controls.Add($cardHost)
         $helpTabs.TabPages.Add($tabPage) | Out-Null
+        $cardHostList += $cardHost
     }
+    # Список панелей хранится в Tag элементов — обработчики берут его через sender, без общих переменных
+    $helpTabs.Tag = $cardHostList
+    $helpTabs.Add_SelectedIndexChanged({ param($sender, $eventArgs) foreach ($hostPanel in @($sender.Tag)) { Set-HelpCardLayout -CardHost $hostPanel } })
     $helpForm.Controls.Add($helpTabs)
+    $helpForm.Tag = $helpTabs
+    $helpForm.Add_Shown({ param($sender, $eventArgs) foreach ($hostPanel in @($sender.Tag.Tag)) { Set-HelpCardLayout -CardHost $hostPanel } })
+    Set-ButtonEdgeStyle -Root $helpForm
     [void]$helpForm.ShowDialog($script:Form)
 }
 
@@ -3430,15 +3792,8 @@ function Reset-CheckControls {
     if ($script:ThreadsBox) { $script:ThreadsBox.Enabled = $true }
     if ($script:PlatformBox) { $script:PlatformBox.Enabled = $true }
     if ($script:ProxyBox) { $script:ProxyBox.Enabled = $true }
-    $resumePending = $false
-    if ($null -ne $script:Candidates -and $script:Candidates.Count -gt 0) {
-        $excludeGateOn = ($script:ExcludeCheckedCheck -and $script:ExcludeCheckedCheck.Checked)
-        foreach ($resumeCand in $script:Candidates) {
-            $resumeStatus = [string]$resumeCand.Status
-            if ($resumeStatus -eq 'Ожидает' -or $resumeStatus -eq 'Ошибка сети' -or (-not $excludeGateOn -and $resumeStatus -ne 'Проверяется' -and $resumeStatus -ne 'Недопустимый')) { $resumePending = $true; break }
-        }
-    }
-    if ($resumePending) { $script:StartButton.Visible = $true; $script:StartButton.Text = '▶  Возобновить проверку' } else { $script:StartButton.Visible = $false; $script:StartButton.Text = '▶  Найти свободные' }
+    $pendingLeft = Get-PendingCandidateCount
+    if ($pendingLeft -gt 0) { $script:StartButton.Visible = $true; $script:StartButton.Text = ('▶  Возобновить проверку ({0})' -f $pendingLeft) } else { $script:StartButton.Visible = $false; $script:StartButton.Text = '▶  Найти свободные' }
 }
 
 function Close-CheckRunspace {
@@ -3551,13 +3906,26 @@ function Update-ResultGrid {
 }
 
 # --- Запуск прогона проверки
+function Get-PendingCandidateCount {
+    $pendingPlatform = [string]$script:PlatformBox.SelectedItem
+    $pendingCount = 0
+    foreach ($pendingCandidate in $script:Candidates) {
+        if ([string]$pendingCandidate.Platform -eq $pendingPlatform -and [string]$pendingCandidate.Status -eq 'Ожидает') { $pendingCount++ }
+    }
+    return $pendingCount
+}
+
 function Start-Checking {
-    param([bool]$RetryErrorsOnly = $false)
+    param([bool]$RetryErrorsOnly = $false, [bool]$ResumePending = $false)
     if (Test-CheckRunning) { return }
     $eligible = New-Object System.Collections.ArrayList
     $selectedPlatform = [string]$script:PlatformBox.SelectedItem
     foreach ($candidate in $script:Candidates) {
         if ([string]$candidate.Platform -ne $selectedPlatform) { continue }
+        if ($ResumePending) {
+            if ([string]$candidate.Status -eq 'Ожидает') { [void]$eligible.Add($candidate) }
+            continue
+        }
         $historyKey = (($selectedPlatform + '|' + [string]$candidate.Name).ToLowerInvariant())
         if ($RetryErrorsOnly) {
             if ($candidate.Status -eq 'Ошибка сети') { [void]$eligible.Add($candidate) }
@@ -3568,7 +3936,7 @@ function Start-Checking {
         if ($candidate.Status -eq 'Ожидает' -or $candidate.Status -eq 'Ошибка сети' -or -not $script:ExcludeCheckedCheck.Checked) { [void]$eligible.Add($candidate) }
     }
     if ($eligible.Count -eq 0) {
-        $msg = if ($RetryErrorsOnly) { 'Ошибок для повторной проверки нет.' } else { 'Нет подходящих ников. Сначала сгенерируй варианты или отключи исключение уже проверенных.' }
+        $msg = if ($ResumePending) { 'Нечего возобновлять: все ники уже проверены или отсеяны.' } elseif ($RetryErrorsOnly) { 'Ошибок для повторной проверки нет.' } else { 'Нет подходящих ников. Сначала сгенерируй варианты или отключи исключение уже проверенных.' }
         [System.Windows.Forms.MessageBox]::Show($msg,'Проверка','OK','Information') | Out-Null
         return
     }
@@ -3593,6 +3961,7 @@ function Start-Checking {
     if ($threadCount -gt 8) { $threadCount = 8 }
     if ($threadCount -gt $validCandidates.Count) { $threadCount = [Math]::Max(1,$validCandidates.Count) }
     $script:WorkerThreadCount = $threadCount
+    if ($ResumePending) { Add-Diagnostic 'Возобновление проверки: продолжаю с ников, которые ещё не проверены. Уже проверенные не повторяются.' }
     Add-Diagnostic ("Начата проверка: {0} ников; пауза {1} мс; тайм-аут {2} мс; потоков {3}; платформа {4}." -f $validCandidates.Count,[int]$script:DelayBox.Value,[int]$script:TimeoutBox.Value,$threadCount,$selectedPlatform)
     if ($script:OrderedCheck.Checked) { Add-Diagnostic 'Порядок проверки: по порядку — галочка «Генерация по порядку» включена, строки и очередь идут сверху вниз.' }
     else { Add-Diagnostic 'Порядок проверки: вразнобой — и порядок строк, и очередь проверки перемешаны; статусы появятся в случайных строках.' }
@@ -3613,7 +3982,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.9.3' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.0' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -4078,14 +4447,18 @@ try {
                     $escapedHandle = [regex]::Escape($name)
                     $matchingCanonical = $content -match ('(?is)"canonicalBaseUrl"\s*:\s*"/@' + $escapedHandle + '"') -or $content -match ('(?is)<link[^>]+rel="canonical"[^>]+href="https?://www\.youtube\.com/@' + $escapedHandle + '"') -or $content -match ('(?is)property="og:url"[^>]+content="https?://www\.youtube\.com/@' + $escapedHandle + '"') -or $content -match ('(?is)"canonicalChannelUrl"\s*:\s*"https?://www\.youtube\.com/@' + $escapedHandle + '"')
                     $channelMetadata = $content -match '(?is)"channelMetadataRenderer"\s*:\s*\{'
-                    if ($httpStatus -eq 200 -and $matchingCanonical -and $channelMetadata) { $status='Занят'; $reason='YouTube вернул страницу канала, canonical handle совпадает с запрошенным'; $consecutiveErrors=0 }
-                    elseif (($httpStatus -eq 404 -or $content -match '(?i)channelNotFound|This page isn.t available|channel does not exist') -and -not $channelMetadata) { $status='Свободен'; $reason='YouTube не нашёл канал с этим handle'; $consecutiveErrors=0 }
-                    else { $status='Не подтверждено'; $reason='Публичная страница не подтвердила ни существование канала с этим canonical handle, ни регистрационную доступность'; $consecutiveErrors=0 }
+                    # --- Категории как в YTKits: «Канал найден» — занято; «Не найден» — свободно (подтверждается в Studio); иное — «Неизвестно»
+                    $ytNotFound = ($httpStatus -eq 404) -or ($content -match '(?i)channelNotFound|This page isn.t available|channel does not exist|"errorScreen"|Страница недоступна')
+                    if ($httpStatus -eq 200 -and $matchingCanonical -and $channelMetadata) { $status='Занят'; $reason='YouTube: канал найден, canonical handle совпадает с запрошенным'; $consecutiveErrors=0 }
+                    elseif ($ytNotFound -and -not $channelMetadata) { $status='Свободен'; $reason='YouTube: канал с этим handle не найден — подтверди в YouTube Studio (резерв и ограничения видны только там)'; $consecutiveErrors=0 }
+                    else { $status='Не подтверждено'; $reason='YouTube: результат неизвестен — страница не подтвердила ни канал с этим handle, ни его отсутствие; повтори позже или проверь на youtube.com/handle'; $consecutiveErrors=0 }
                 }
 # --- Telegram Api
                 'Telegram' {
                     # --- Публичный метод: t.me и зеркала telegram.dog/telegram.me — первый однозначный ответ выигрывает, как в веб-версии
-                    $normalizedHandle = [regex]::Escape($name)
+                    # Занятый ник отдаёт заголовок профиля (tgme_page_title) или счётчики канала/группы (подписчики, участники).
+                    # Свободный ник отдаёт страницу-заглушку «If you have Telegram, you can contact @ник» без заголовка профиля.
+                    # og:title «Telegram: Contact @ник» есть на обеих страницах, поэтому по нему статус не определяем.
                     $tgResolved = $false
                     $tgLastNote = ''
                     foreach ($tgBase in @('https://t.me/','https://telegram.dog/','https://telegram.me/')) {
@@ -4096,15 +4469,16 @@ try {
                         $r = Get-HttpResult -Url ($tgBase + [uri]::EscapeDataString($name)) -Timeout $tgTimeoutSec -Headers $browserHeaders
                         $httpStatus = [int]$r.Code
                         $content = [string]$r.Content
-                        $profileOwner = ($content -match ('(?is)class="tgme_page_extra"[^>]*>\s*@?' + $normalizedHandle + '\s*</')) -or ($content -match ('(?is)<meta property="og:title" content="Telegram\s*:\s*Contact @?' + $normalizedHandle + '"'))
-                        $freeHintPage = $content -match '(?i)if you have a telegram account|reserve this username|doesn.t seem to exist|username not found|tgme_page_error'
-                        $reservedPage = $content -match '(?i)username has been reserved|reserved for payment|this username is reserved|has been frozen'
                         $blockedPage = $content -match '(?i)доступ к странице ограничен|access is restricted|reestr|roskomnadzor'
+                        $profileTitle = $content -match '(?is)class="tgme_page_title"[^>]*>\s*(<span[^>]*>\s*)?[^<\s]'
+                        $channelCounters = $content -match '(?i)class="tgme_page_extra"[^<]*(subscribers|members|monthly listeners|online)'
+                        $reservedPage = $content -match '(?i)username has been reserved|reserved for payment|this username is reserved|has been frozen'
+                        $freePage = $content -match '(?i)if you have (a )?telegram( account|,)|reserve this username|doesn.t seem to exist|username not found|tgme_page_error'
                         if ($blockedPage) { $tgLastNote = $tgName + ' блокируется провайдером — задай «Прокси» над таблицей или включи VPN'; continue }
                         if ($httpStatus -eq 404) { $status='Свободен'; $reason='Telegram: ' + $tgName + ' вернул 404 — страница @' + $name + ' никем не занята'; $consecutiveErrors=0; $tgResolved=$true; break }
-                        if ($httpStatus -eq 200 -and $freeHintPage -and -not $reservedPage) { $status='Свободен'; $reason='Telegram: страница @' + $name + ' на ' + $tgName + ' предлагает настроить или забронировать ник — тег свободен'; $consecutiveErrors=0; $tgResolved=$true; break }
                         if ($httpStatus -eq 200 -and $reservedPage) { $status='Занят'; $reason='Telegram: тег @' + $name + ' зарезервирован платформой (резерв или платный ник) — регистрация закрыта'; $consecutiveErrors=0; $tgResolved=$true; break }
-                        if ($httpStatus -eq 200 -and $profileOwner) { $status='Занят'; $reason='Telegram: ' + $tgName + ' отдаёт публичную страницу @' + $name; $consecutiveErrors=0; $tgResolved=$true; break }
+                        if ($httpStatus -eq 200 -and ($profileTitle -or $channelCounters)) { $status='Занят'; $reason='Telegram: ' + $tgName + ' отдаёт публичную страницу профиля или канала @' + $name; $consecutiveErrors=0; $tgResolved=$true; break }
+                        if ($httpStatus -eq 200 -and $freePage) { $status='Свободен'; $reason='Telegram: страница @' + $name + ' на ' + $tgName + ' без профиля и предлагает открыть чат — тег свободен'; $consecutiveErrors=0; $tgResolved=$true; break }
                         if ($httpStatus -eq 200) { $tgLastNote = $tgName + ' ответил без распознаваемых маркеров профиля'; continue }
                         if ($httpStatus -eq 0) { $tgLastNote = $tgName + ' недоступен: соединение не установлено (сетевая блокировка) — поставь «Прокси» над таблицей или включи VPN' } else { $tgLastNote = $tgName + ' вернул неожиданный HTTP ' + $httpStatus }
                     }
@@ -4364,7 +4738,7 @@ $script:PollTimer.Add_Tick({
             Add-Diagnostic $message
             [System.Windows.Forms.MessageBox]::Show("Произошла ошибка при проверке.`r`n`r`n$message`r`n`r`nПодробности: UniversalUsernameFinder.log",'Ошибка проверки','OK','Error') | Out-Null
         } elseif ($completed -and $completed.Cancelled) {
-            $script:SummaryLabel.Text = "Остановлено · проверено: $($completed.Checked) · свободно: $($script:AvailableNames.Count)"
+            $script:SummaryLabel.Text = "Остановлено · проверено: $($completed.Checked) · свободно: $($script:AvailableNames.Count) · осталось: $(Get-PendingCandidateCount) — нажми «Возобновить проверку»"
             Add-Diagnostic $script:SummaryLabel.Text
         } elseif ($completed -and $completed.StopReason) {
             $script:SummaryLabel.Text = "Остановлено: $($completed.StopReason) · проверено: $($completed.Checked) · свободно: $($script:AvailableNames.Count)"
@@ -4387,6 +4761,17 @@ $script:GenerateButton.Add_Click({
     $customWords = Get-TextBoxValue $script:CustomBox
     $excludeTokens = @($script:ExcludeBox.Text -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     $requestedCount = [int]$script:CountBox.Value
+    # --- Конфликты настроек: предупреждаем до генерации, а не молча теряем ники
+    $enabledSources = @($script:OneWordCheck, $script:TwoWordsCheck, $script:InventedWordsCheck, $script:InventedPairsCheck, $script:LeetCheck, $script:RareShortCheck, $script:RandomCharsCheck, $script:NumbersCheck) | Where-Object { $_.Checked }
+    if (@($enabledSources).Count -eq 0) { Add-Diagnostic 'Ни один источник генерации не выбран: использую однословные ники как запасной вариант. Включи нужные галочки в «Настройки генерации».' }
+    if ([bool]$script:ShortOnlyCheck.Checked -and [int]$script:MinLengthBox.Value -gt 12) {
+        [System.Windows.Forms.MessageBox]::Show('«Только короткие (≤12)» не совместимо с минимальной длиной больше 12 символов: ников не будет. Уменьши минимальную длину или сними галочку «Только короткие».', 'Настройки', 'OK', 'Warning') | Out-Null
+        return
+    }
+    if ([bool]$script:UnderscoreCheck.Checked -and ($platform -eq 'Google' -or $platform -eq 'GitHub')) {
+        Add-Diagnostic ('Разделитель «_» не допускает платформа ' + $platform + ': ники с подчёркиванием будут отброшены по формату. Сними галочку «Разделитель _».')
+    }
+    Update-VpnNotice
     $script:Candidates.Clear()
     Clear-CandidateIndex
     $script:AvailableNames.Clear()
@@ -4405,7 +4790,8 @@ $script:GenerateButton.Add_Click({
         Add-Diagnostic ("Создано {0} из {1}: пространство имён исчерпано при текущих фильтрах. Отсеяно — по длине {2}, по формату платформы {3}, по словам-исключениям {4}, повторов {5}, уже проверено/занято {6}." -f $candidates.Count, $requestedCount, $poolStats['ByLength'], $poolStats['ByFormat'], $poolStats['ByExcludedToken'], $poolStats['ByDuplicate'], $poolStats['ByAlreadyUsed'])
         Add-Diagnostic ("По источникам — однословные {0}, двусловные {1}, выдуманные {2}, выдуманные сочетания {3}, с заменой символами {4}, редкие короткие {5}, с цифрами {6}." -f $poolStats['Single'], $poolStats['Pair'], $poolStats['Invented'], $poolStats['InventedPair'], $poolStats['Leet'], $poolStats['Rare'], $poolStats['Number'])
     }
-    $manualBoxHasText = -not [string]::IsNullOrWhiteSpace($script:ManualNickBox.Text)
+    $manualNickText = Get-TextBoxValue $script:ManualNickBox
+    $manualBoxHasText = -not [string]::IsNullOrWhiteSpace($manualNickText)
     if ($candidates.Count -eq 0 -and -not $manualBoxHasText) {
         if ($categories.Count -lt 1 -and [string]::IsNullOrWhiteSpace($customWords)) {
             $noVariantHint = 'Не выбрана ни одна категория и не введены свои слова. Нажми «Выделить все» или впиши свои слова через запятую.'
@@ -4435,7 +4821,7 @@ $script:GenerateButton.Add_Click({
         $added++
     }
     if ($dropped -gt 0) { Add-Diagnostic ("Отброшено после генерации: {0} (совпали с уже проверенными или занятыми)." -f $dropped) }
-    foreach ($nickRaw in ($script:ManualNickBox.Text -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+    foreach ($nickRaw in ($manualNickText -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
         $nick = Get-PlatformNickInput -Platform $platform -Raw $nickRaw
         $key = (($platform + '|' + $nick).ToLowerInvariant())
         if ($seen.ContainsKey($key) -or $script:RetiredNames.ContainsKey($key)) { continue }
@@ -4460,7 +4846,7 @@ $script:GenerateButton.Add_Click({
     if ($added -gt 0) { Start-Checking -RetryErrorsOnly $false }
 })
 
-$script:StartButton.Add_Click({ Start-Checking -RetryErrorsOnly $false })
+$script:StartButton.Add_Click({ Start-Checking -RetryErrorsOnly $false -ResumePending $true })
 $script:RetryButton.Add_Click({ Start-Checking -RetryErrorsOnly $true })
 $script:StopButton.Add_Click({
     if ($script:Cancellation -and -not $script:Cancellation.IsCancellationRequested) {
@@ -4546,6 +4932,7 @@ $script:Grid.Add_SelectionChanged({
         }
     } catch { }
 })
+$script:PlatformBox.Add_SelectedIndexChanged({ Update-VpnNotice })
 $script:PlatformBox.Add_SelectedIndexChanged({
     if ($script:PlatformBox.SelectedItem) {
         $selectedPlatform = [string]$script:PlatformBox.SelectedItem
@@ -4575,6 +4962,7 @@ $script:PlatformBox.Add_SelectedIndexChanged({
 $script:ApiDocsButton.Add_Click({ Show-UsernameFinderHelp })
 $script:HistoryButton.Add_Click({ Open-FreeHistoryWindow })
 $script:CheckedNamesButton.Add_Click({ Open-CheckedNamesWindow })
+$script:ConnectionTestButton.Add_Click({ Open-ConnectionTestWindow })
 Update-CheckedNamesButtonText
 $script:HistoryButton.Text = "Свободные ники ($($script:FreeHistory.Count))"
 $script:AccountButton.Add_Click({ Open-AccountTools })

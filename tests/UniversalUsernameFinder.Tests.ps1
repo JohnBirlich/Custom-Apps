@@ -983,9 +983,11 @@ Describe 'Платформы, домены и интерфейс версии 2.
     }
     It 'помощь стала полноценным разделом с вкладками' {
         $global:UufMainText.Contains('$helpForm.Text = ' + [char]39 + 'UUF — помощь' + [char]39) | Should -BeTrue
-        $global:UufMainText.Contains('КАК ПОЛЬЗОВАТЬСЯ') | Should -BeTrue
-        $global:UufMainText.Contains('КАТЕГОРИИ И ПРИМЕРЫ СЛОВ') | Should -BeTrue
-        $global:UufMainText.Contains('ПЛАТФОРМЫ: ПРАВИЛА, ДОМЕНЫ И РЕГИСТРАЦИЯ') | Should -BeTrue
+        $global:UufMainText.Contains("@{ Title = 'Дисклеймер'") | Should -BeTrue
+        $global:UufMainText.Contains("@{ Title = 'Пользование'") | Should -BeTrue
+        $global:UufMainText.Contains("@{ Title = 'Как устроено?'") | Should -BeTrue
+        $global:UufMainText.Contains("@{ Title = 'Настройки'") | Should -BeTrue
+        $global:UufMainText.Contains("@{ Title = 'Правила ввода'") | Should -BeTrue
     }
     It 'исполняемый файл переименован в UUF и получает иконку' {
         $buildText = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\build\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
@@ -1043,8 +1045,8 @@ Describe 'Изменения версии 2.8.1' {
         $global:UufMainText.Contains('BeginInvoke({ Refresh-FreeHistoryList })') | Should -BeFalse
     }
     It 'помощь выровнена висячими отступами без плашек' {
-        $global:UufMainText.Contains('$pageBox.SelectionHangingIndent = 14') | Should -BeTrue
-        $global:UufMainText.Contains('$pageBox.SelectionHangingIndent = 12') | Should -BeTrue
+        $global:UufMainText.Contains('function Add-HelpCard {') | Should -BeTrue
+        $global:UufMainText.Contains('function Set-HelpCardLayout {') | Should -BeTrue
         $global:UufMainText.Contains('$pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(32,41,56)') | Should -BeFalse
     }
     It 'в интерфейсе не осталось перенесённых якорей и мусора сортировки' {
@@ -1074,7 +1076,8 @@ Describe 'Изменения версии 2.8.2' {
         $global:UufMainText.Contains('$script:CopyLogButton.Anchor = ' + [char]39 + 'Bottom, Left' + [char]39) | Should -BeTrue
         $global:UufMainText.Contains('$script:ClearLogButton.Anchor = ' + [char]39 + 'Bottom, Left' + [char]39) | Should -BeTrue
         $global:UufMainText.Contains('$script:Grid.Size = New-Object System.Drawing.Size(1008,568)') | Should -BeTrue
-        $global:UufMainText.Contains('$script:DiagnosticBox.Location = New-Object System.Drawing.Point(14,742)') | Should -BeTrue
+        $global:UufMainText.Contains('function Set-UufRightLayout {') | Should -BeTrue
+        $global:UufMainText.Contains('$script:DiagnosticsToggleButton = Add-UiButton') | Should -BeTrue
     }
     It 'правила VK и YouTube запрещают повторные точки и точки по краям' {
         Test-UsernameFormat -Username 'good_nick' -Platform 'VK' | Should -BeTrue
@@ -1158,8 +1161,9 @@ Describe 'Изменения версии 2.8.3' {
         $global:UufWorkerText.Contains('property="og:url"[^>]+content="https?://www\.youtube\.com/@') | Should -BeTrue
     }
     It 'Telegram: детерминированный ответ t.me (404 — свободен, профиль — занят)' {
-        $global:UufWorkerText.Contains('$profileOwner = ($content -match') | Should -BeTrue
+        $global:UufWorkerText.Contains('$profileTitle = $content -match') | Should -BeTrue
         $global:UufWorkerText.Contains('if ($httpStatus -eq 200 -and $reservedPage)') | Should -BeTrue
+        $global:UufWorkerText.Contains('if ($httpStatus -eq 200 -and $freePage)') | Should -BeTrue
     }
     It 'региональные блокировки подсказывают прокси, воркер умеет прокси' {
         $global:UufWorkerText.Contains('сайты t.me и YouTube могут быть недоступны из региона') | Should -BeTrue
@@ -1255,7 +1259,7 @@ Describe 'Изменения версии 2.8.6' {
         $installBytes[2] | Should -Be 0xBF
     }
     It 'футер честно описывает смысл статусов' {
-        $global:UufMainText.Contains('финальное подтверждение — форма регистрации') | Should -BeTrue
+        $global:UufMainText.Contains('Проверка некоторых платформ возможно потребует VPN/Proxy, если вы проживаете в странах СНГ, где работают блокировки') | Should -BeTrue
     }
 }
 
@@ -1368,7 +1372,7 @@ Describe 'Версия 2.9.0: ручной ввод, вкладки, зерка�
         $global:UufMainText.Contains("`$Tabs.Appearance = 'FlatButtons'") | Should -BeTrue
         $global:UufMainText.Contains("`$Tabs.DrawMode = 'OwnerDrawFixed'") | Should -BeTrue
         $global:UufMainText.Contains('Set-UufTabStyle -Tabs $tabs -TabWidth 190') | Should -BeTrue
-        $global:UufMainText.Contains('Set-UufTabStyle -Tabs $helpTabs -TabWidth 180') | Should -BeTrue
+        $global:UufMainText.Contains('Set-UufTabStyle -Tabs $helpTabs -TabWidth 150') | Should -BeTrue
     }
     It 'буфер обмена через безопасную функцию с повторами, прямых вызовов не осталось' {
         $global:UufMainText.Contains('function Copy-UufTextToClipboard {') | Should -BeTrue
@@ -1531,7 +1535,69 @@ Describe 'Версия 2.9.3: полное удаление — самостоя
         $readmeText.Contains('AppUninstaller.exe') | Should -BeTrue
         $readmeText.Contains('Build-Uninstaller.ps1') | Should -BeTrue
     }
-    It 'версия поднята до 2.9.3' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.3'''
+    It 'версия поднята до 2.10.0' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.0'''
+    }
+}
+
+Describe 'Версия 2.10.0: поправки 1-16' {
+    It 'YouTube: правила YTKits — латиница, цифры, точка, подчёркивание, дефис; начало и конец буква или цифра' {
+        Test-UsernameFormat -Username 'cool.handle_1' -Platform 'YouTube' | Should -BeTrue
+        Test-UsernameFormat -Username 'ab' -Platform 'YouTube' | Should -BeFalse
+        Test-UsernameFormat -Username '.start' -Platform 'YouTube' | Should -BeFalse
+        Test-UsernameFormat -Username 'end-' -Platform 'YouTube' | Should -BeFalse
+        Test-UsernameFormat -Username 'a..b' -Platform 'YouTube' | Should -BeFalse
+        Test-UsernameFormat -Username ('a' * 31) -Platform 'YouTube' | Should -BeFalse
+    }
+    It 'пункт 1: пустое поле ручных ников читается через Get-TextBoxValue, служебный текст не попадает' {
+        $global:UufMainText.Contains('$manualNickText = Get-TextBoxValue $script:ManualNickBox') | Should -BeTrue
+    }
+    It 'пункт 6: VPN-подсказка только для YouTube, Telegram, Outlook, Google и Discord' {
+        $global:UufMainText.Contains("`$script:VpnNoticePlatforms = @('YouTube','Telegram','Outlook','Google','Discord')") | Should -BeTrue
+        $global:UufMainText.Contains('function Update-VpnNotice {') | Should -BeTrue
+        $global:UufMainText.Contains('$footer.Text = ' + [char]39 + [char]39) | Should -BeTrue
+    }
+    It 'пункт 8: возобновление проверки по ожидающим никам и счётчик осталось' {
+        $global:UufMainText.Contains('function Get-PendingCandidateCount {') | Should -BeTrue
+        $global:UufMainText.Contains('[bool]$ResumePending = $false') | Should -BeTrue
+        $global:UufMainText.Contains('-RetryErrorsOnly $false -ResumePending $true') | Should -BeTrue
+        $global:UufMainText.Contains('осталось: $(Get-PendingCandidateCount)') | Should -BeTrue
+    }
+    It 'пункт 9: в хранилище ник сохраняется с доменом через Get-DisplayNick' {
+        $global:UufMainText.Contains('$storedNick = Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name $nick') | Should -BeTrue
+        $global:UufMainText.Contains('Username=$storedNick') | Should -BeTrue
+    }
+    It 'пункты 10-12: кнопки и разделы помощи названы по ТЗ' {
+        $global:UufMainText.Contains("'Регистрация и пароль'") | Should -BeTrue
+        $global:UufMainText.Contains("'Сохранённые аккаунты'") | Should -BeTrue
+        $global:UufMainText.Contains("@{ Title = 'Дисклеймер'") | Should -BeTrue
+        $global:UufMainText.Contains("@{ Title = 'Правила ввода'") | Should -BeTrue
+    }
+    It 'пункт 13: история свободных — множественный выбор, Выделить все и Снять все' {
+        $global:UufMainText.Contains("`$script:HistoryListBox.SelectionMode = 'MultiExtended'") | Should -BeTrue
+        $global:UufMainText.Contains("'Выделить все'") | Should -BeTrue
+        $global:UufMainText.Contains("'Снять все'") | Should -BeTrue
+        $global:UufMainText.Contains('$selectedItems = @($script:HistoryListBox.SelectedItems)') | Should -BeTrue
+    }
+    It 'пункт 14: поля имени и фамилии и случайный выбор только для Google' {
+        $global:UufMainText.Contains('function Set-RandomGoogleNameFields {') | Should -BeTrue
+        $global:UufMainText.Contains("'Случайное имя и фамилия'") | Should -BeTrue
+        $global:UufMainText.Contains('$isGoogleAccount = ($platform -eq ' + [char]39 + 'Google' + [char]39 + ')') | Should -BeTrue
+    }
+    It 'пункт 15: кнопка «Проверка соединения», таблица HTTP-кодов и формат строки результата' {
+        $global:UufMainText.Contains("'⇄  Проверка соединения' 14 1237 350") | Should -BeTrue
+        $global:UufMainText.Contains('function Open-ConnectionTestWindow {') | Should -BeTrue
+        $global:UufMainText.Contains('$script:HttpStatusNotes = @{') | Should -BeTrue
+        $global:UufMainText.Contains('https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status') | Should -BeTrue
+        $global:UufMainText.Contains('"{0}. {1}.api - {2}, ping: {3}, Error: {4}"') | Should -BeTrue
+    }
+    It 'пункт 16: журнал разворачивается вверх и возвращается в стандартное положение' {
+        $global:UufMainText.Contains("'▲  Развернуть журнал'") | Should -BeTrue
+        $global:UufMainText.Contains("'▼  Вернуть стандартно'") | Should -BeTrue
+        $global:UufMainText.Contains('$expandPx = [Math]::Max(0, [Math]::Min(300, $standardGridHeight - 180))') | Should -BeTrue
+    }
+    It 'пункт 7: предупреждения о конфликтах настроек перед генерацией' {
+        $global:UufMainText.Contains('«Только короткие (≤12)» не совместимо с минимальной длиной больше 12') | Should -BeTrue
+        $global:UufMainText.Contains('Ни один источник генерации не выбран') | Should -BeTrue
     }
 }
