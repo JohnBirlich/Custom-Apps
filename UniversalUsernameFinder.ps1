@@ -3286,7 +3286,7 @@ function Open-FreeHistoryWindow {
         Touch-Candidates
         Update-ResultGrid
         Add-Diagnostic ("Повторная проверка: {0} ник(ов), платформа {1}." -f $selectedItems.Count, $selectedPlatform)
-        # Возобновляем только выбранные ники (статус «Ожидает»), остальные таблицы не трогаем
+        # --- Возобновляем только выбранные ники (статус «Ожидает»), остальные таблицы не трогаем
         Start-Checking -RetryErrorsOnly $false -ResumePending $true
     })
     Set-ButtonEdgeStyle -Root $script:HistoryForm
@@ -3314,7 +3314,7 @@ function Open-FreeHistoryWindow {
 }
 
 # --- Проверка соединения: доступность платформ, время ответа и HTTP-статус
-# Пинг здесь — время HTTP-ответа (ICMP-ping веб-сервисы часто блокируют). Запросы только GET, без входа и без обхода защит.
+# --- Пинг здесь — время HTTP-ответа (ICMP-ping веб-сервисы часто блокируют). Запросы только GET, без входа и без обхода защит.
 $script:ConnectionEndpoints = @(
     [pscustomobject]@{Platform='Telegram';  Url='https://t.me/'},
     [pscustomobject]@{Platform='YouTube';   Url='https://www.youtube.com/'},
@@ -3327,7 +3327,7 @@ $script:ConnectionEndpoints = @(
     [pscustomobject]@{Platform='VK';        Url='https://vk.com/'},
     [pscustomobject]@{Platform='Mail.ru';   Url='https://account.mail.ru/'}
 )
-# Описания HTTP-кодов по MDN: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status
+# --- Описания HTTP-кодов по MDN: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status
 $script:HttpStatusNotes = @{
     200 = 'OK — запрос выполнен';
     201 = 'Created — ресурс создан';
@@ -3371,7 +3371,7 @@ function Get-ConnectionVerdict {
     return [pscustomobject]@{Result='unknown'; Note=$codeNote}
 }
 
-# Скрипт фонового запроса: выполняется в отдельном runspace, окно не зависает
+# --- Скрипт фонового запроса: выполняется в отдельном runspace, окно не зависает
 $script:ConnectionScript = @'
 param($Url, $TimeoutSec, $Proxy, $UserAgent, $Queue, $Platform)
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
@@ -3717,7 +3717,7 @@ function Show-UsernameFinderHelp {
         $helpTabs.TabPages.Add($tabPage) | Out-Null
         $cardHostList += $cardHost
     }
-    # Список панелей хранится в Tag элементов — обработчики берут его через sender, без общих переменных
+    # --- Список панелей хранится в Tag элементов — обработчики берут его через sender, без общих переменных
     $helpTabs.Tag = $cardHostList
     $helpTabs.Add_SelectedIndexChanged({ param($sender, $eventArgs) foreach ($hostPanel in @($sender.Tag)) { Set-HelpCardLayout -CardHost $hostPanel } })
     $helpForm.Controls.Add($helpTabs)
@@ -4456,9 +4456,9 @@ try {
 # --- Telegram Api
                 'Telegram' {
                     # --- Публичный метод: t.me и зеркала telegram.dog/telegram.me — первый однозначный ответ выигрывает, как в веб-версии
-                    # Занятый ник отдаёт заголовок профиля (tgme_page_title) или счётчики канала/группы (подписчики, участники).
-                    # Свободный ник отдаёт страницу-заглушку «If you have Telegram, you can contact @ник» без заголовка профиля.
-                    # og:title «Telegram: Contact @ник» есть на обеих страницах, поэтому по нему статус не определяем.
+                    # --- Занятый ник отдаёт заголовок профиля (tgme_page_title) или счётчики канала/группы (подписчики, участники).
+                    # --- Свободный ник отдаёт страницу-заглушку «If you have Telegram, you can contact @ник» без заголовка профиля.
+                    # --- og:title «Telegram: Contact @ник» есть на обеих страницах, поэтому по нему статус не определяем.
                     $tgResolved = $false
                     $tgLastNote = ''
                     foreach ($tgBase in @('https://t.me/','https://telegram.dog/','https://telegram.me/')) {

@@ -1176,7 +1176,7 @@ Describe 'Изменения версии 2.8.3' {
 
 Describe 'Доработка версии 2.8.4' {
     It 'версия не ниже 2.8.4 в скрипте' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.[89]\.\d'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:[89]|10)\.\d'''
     }
     It 'журнал печатает режим очереди проверки' {
         $global:UufMainText.Contains('Порядок проверки: вразнобой') | Should -BeTrue
@@ -1202,7 +1202,7 @@ Describe 'Исправление версии 2.8.5' {
 
 Describe 'Изменения версии 2.8.6' {
     It 'версия не ниже 2.8.6 в скрипте' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.[89]\.\d'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:[89]|10)\.\d'''
     }
     It 'статуса «Вероятно свободен» в проверках больше нет' {
         $global:UufWorkerText.Contains('Вероятно свободен') | Should -BeFalse
@@ -1358,7 +1358,7 @@ Describe 'Версия 2.8.9: SmartScreen-нюансы' {
         $readmeText.Contains('Установить сертификат') | Should -BeTrue
     }
     It 'версия поднята' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[0-9]'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.[0-9])'''
     }
 }
 
@@ -1400,7 +1400,7 @@ Describe 'Версия 2.9.0: ручной ввод, вкладки, зерка�
         $global:UufWorkerText.Contains('форма регистрации подтвердила доступность') | Should -BeTrue
     }
     It 'версия поднята до 2.9.0' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[0-9]'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.[0-9])'''
     }
 }
 
@@ -1442,7 +1442,7 @@ Describe 'Версия 2.9.1: дорисовка вкладок, возобно�
         $ciText.Contains('build/Install-UUF.bat') | Should -BeTrue
     }
     It 'версия поднята до 2.9.1' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[0-9]'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.[0-9])'''
     }
 }
 
@@ -1497,7 +1497,7 @@ Describe 'Версия 2.9.2: установщик зависимостей и �
         $readmeText.Contains('394802') | Should -BeFalse
     }
     It 'версия не ниже 2.9.2' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[2-9]'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[2-9]|10\.[0-9])'''
     }
 }
 
@@ -1550,54 +1550,54 @@ Describe 'Версия 2.10.0: поправки 1-16' {
         Test-UsernameFormat -Username ('a' * 31) -Platform 'YouTube' | Should -BeFalse
     }
     It 'пункт 1: пустое поле ручных ников читается через Get-TextBoxValue, служебный текст не попадает' {
-        $global:UufMainText.Contains('$manualNickText = Get-TextBoxValue $script:ManualNickBox') | Should -BeTrue
+        $global:UufFullText.Contains('$manualNickText = Get-TextBoxValue $script:ManualNickBox') | Should -BeTrue
     }
     It 'пункт 6: VPN-подсказка только для YouTube, Telegram, Outlook, Google и Discord' {
-        $global:UufMainText.Contains("`$script:VpnNoticePlatforms = @('YouTube','Telegram','Outlook','Google','Discord')") | Should -BeTrue
-        $global:UufMainText.Contains('function Update-VpnNotice {') | Should -BeTrue
-        $global:UufMainText.Contains('$footer.Text = ' + [char]39 + [char]39) | Should -BeTrue
+        $global:UufFullText.Contains("`$script:VpnNoticePlatforms = @('YouTube','Telegram','Outlook','Google','Discord')") | Should -BeTrue
+        $global:UufFullText.Contains('function Update-VpnNotice {') | Should -BeTrue
+        $global:UufFullText.Contains('$footer.Text = ' + [char]39 + [char]39) | Should -BeTrue
     }
     It 'пункт 8: возобновление проверки по ожидающим никам и счётчик осталось' {
-        $global:UufMainText.Contains('function Get-PendingCandidateCount {') | Should -BeTrue
-        $global:UufMainText.Contains('[bool]$ResumePending = $false') | Should -BeTrue
-        $global:UufMainText.Contains('-RetryErrorsOnly $false -ResumePending $true') | Should -BeTrue
-        $global:UufMainText.Contains('осталось: $(Get-PendingCandidateCount)') | Should -BeTrue
+        $global:UufFullText.Contains('function Get-PendingCandidateCount {') | Should -BeTrue
+        $global:UufFullText.Contains('[bool]$ResumePending = $false') | Should -BeTrue
+        $global:UufFullText.Contains('-RetryErrorsOnly $false -ResumePending $true') | Should -BeTrue
+        $global:UufFullText.Contains('осталось: $(Get-PendingCandidateCount)') | Should -BeTrue
     }
     It 'пункт 9: в хранилище ник сохраняется с доменом через Get-DisplayNick' {
-        $global:UufMainText.Contains('$storedNick = Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name $nick') | Should -BeTrue
-        $global:UufMainText.Contains('Username=$storedNick') | Should -BeTrue
+        $global:UufFullText.Contains('$storedNick = Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name $nick') | Should -BeTrue
+        $global:UufFullText.Contains('Username=$storedNick') | Should -BeTrue
     }
     It 'пункты 10-12: кнопки и разделы помощи названы по ТЗ' {
-        $global:UufMainText.Contains("'Регистрация и пароль'") | Should -BeTrue
-        $global:UufMainText.Contains("'Сохранённые аккаунты'") | Should -BeTrue
-        $global:UufMainText.Contains("@{ Title = 'Дисклеймер'") | Should -BeTrue
-        $global:UufMainText.Contains("@{ Title = 'Правила ввода'") | Should -BeTrue
+        $global:UufFullText.Contains("'Регистрация и пароль'") | Should -BeTrue
+        $global:UufFullText.Contains("'Сохранённые аккаунты'") | Should -BeTrue
+        $global:UufFullText.Contains("@{ Title = 'Дисклеймер'") | Should -BeTrue
+        $global:UufFullText.Contains("@{ Title = 'Правила ввода'") | Should -BeTrue
     }
     It 'пункт 13: история свободных — множественный выбор, Выделить все и Снять все' {
-        $global:UufMainText.Contains("`$script:HistoryListBox.SelectionMode = 'MultiExtended'") | Should -BeTrue
-        $global:UufMainText.Contains("'Выделить все'") | Should -BeTrue
-        $global:UufMainText.Contains("'Снять все'") | Should -BeTrue
-        $global:UufMainText.Contains('$selectedItems = @($script:HistoryListBox.SelectedItems)') | Should -BeTrue
+        $global:UufFullText.Contains("`$script:HistoryListBox.SelectionMode = 'MultiExtended'") | Should -BeTrue
+        $global:UufFullText.Contains("'Выделить все'") | Should -BeTrue
+        $global:UufFullText.Contains("'Снять все'") | Should -BeTrue
+        $global:UufFullText.Contains('$selectedItems = @($script:HistoryListBox.SelectedItems)') | Should -BeTrue
     }
     It 'пункт 14: поля имени и фамилии и случайный выбор только для Google' {
-        $global:UufMainText.Contains('function Set-RandomGoogleNameFields {') | Should -BeTrue
-        $global:UufMainText.Contains("'Случайное имя и фамилия'") | Should -BeTrue
-        $global:UufMainText.Contains('$isGoogleAccount = ($platform -eq ' + [char]39 + 'Google' + [char]39 + ')') | Should -BeTrue
+        $global:UufFullText.Contains('function Set-RandomGoogleNameFields {') | Should -BeTrue
+        $global:UufFullText.Contains("'Случайное имя и фамилия'") | Should -BeTrue
+        $global:UufFullText.Contains('$isGoogleAccount = ($platform -eq ' + [char]39 + 'Google' + [char]39 + ')') | Should -BeTrue
     }
     It 'пункт 15: кнопка «Проверка соединения», таблица HTTP-кодов и формат строки результата' {
-        $global:UufMainText.Contains("'⇄  Проверка соединения' 14 1237 350") | Should -BeTrue
-        $global:UufMainText.Contains('function Open-ConnectionTestWindow {') | Should -BeTrue
-        $global:UufMainText.Contains('$script:HttpStatusNotes = @{') | Should -BeTrue
-        $global:UufMainText.Contains('https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status') | Should -BeTrue
-        $global:UufMainText.Contains('"{0}. {1}.api - {2}, ping: {3}, Error: {4}"') | Should -BeTrue
+        $global:UufFullText.Contains("'⇄  Проверка соединения' 14 1237 350") | Should -BeTrue
+        $global:UufFullText.Contains('function Open-ConnectionTestWindow {') | Should -BeTrue
+        $global:UufFullText.Contains('$script:HttpStatusNotes = @{') | Should -BeTrue
+        $global:UufFullText.Contains('https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status') | Should -BeTrue
+        $global:UufFullText.Contains('"{0}. {1}.api - {2}, ping: {3}, Error: {4}"') | Should -BeTrue
     }
     It 'пункт 16: журнал разворачивается вверх и возвращается в стандартное положение' {
-        $global:UufMainText.Contains("'▲  Развернуть журнал'") | Should -BeTrue
-        $global:UufMainText.Contains("'▼  Вернуть стандартно'") | Should -BeTrue
-        $global:UufMainText.Contains('$expandPx = [Math]::Max(0, [Math]::Min(300, $standardGridHeight - 180))') | Should -BeTrue
+        $global:UufFullText.Contains("'▲  Развернуть журнал'") | Should -BeTrue
+        $global:UufFullText.Contains("'▼  Вернуть стандартно'") | Should -BeTrue
+        $global:UufFullText.Contains('$expandPx = [Math]::Max(0, [Math]::Min(300, $standardGridHeight - 180))') | Should -BeTrue
     }
     It 'пункт 7: предупреждения о конфликтах настроек перед генерацией' {
-        $global:UufMainText.Contains('«Только короткие (≤12)» не совместимо с минимальной длиной больше 12') | Should -BeTrue
-        $global:UufMainText.Contains('Ни один источник генерации не выбран') | Should -BeTrue
+        $global:UufFullText.Contains('«Только короткие (≤12)» не совместимо с минимальной длиной больше 12') | Should -BeTrue
+        $global:UufFullText.Contains('Ни один источник генерации не выбран') | Should -BeTrue
     }
 }
