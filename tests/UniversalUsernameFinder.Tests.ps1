@@ -1536,7 +1536,7 @@ Describe 'Версия 2.9.3: полное удаление — самостоя
         $readmeText.Contains('Build-Uninstaller.ps1') | Should -BeTrue
     }
     It 'версия поднята до 2.10.0' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.0'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.[0-9]'''
     }
 }
 
@@ -1599,5 +1599,26 @@ Describe 'Версия 2.10.0: поправки 1-16' {
     It 'пункт 7: предупреждения о конфликтах настроек перед генерацией' {
         $global:UufFullText.Contains('«Только короткие (≤12)» не совместимо с минимальной длиной больше 12') | Should -BeTrue
         $global:UufFullText.Contains('Ни один источник генерации не выбран') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.1: Telegram, белый фон и вкладки помощи' {
+    It 'Telegram: открытая страница без профиля даёт «Свободен», а не «Не подтверждено»' {
+        $global:UufWorkerText.Contains('$tgNoProfileSeen = $true') | Should -BeTrue
+        $global:UufWorkerText.Contains('if (-not $tgResolved -and $tgNoProfileSeen) { $status=''Свободен''') | Should -BeTrue
+    }
+    It 'помощь: подписи карточек с тёмным фоном, без белых полей' {
+        $global:UufMainText.Contains('$headingLabel.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)') | Should -BeTrue
+        $global:UufMainText.Contains('$bodyLabel.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)') | Should -BeTrue
+        $global:UufMainText.Contains('$tabPage.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)') | Should -BeTrue
+    }
+    It 'помощь: вкладки растягиваются на всю полосу, текст крупнее' {
+        $global:UufMainText.Contains('function Set-HelpTabSize {') | Should -BeTrue
+        $global:UufMainText.Contains("Segoe UI Semibold',11.5") | Should -BeTrue
+        $global:UufMainText.Contains("`$helpTabs.SizeMode = 'Fixed'") | Should -BeTrue
+    }
+    It 'помощь: полосы прокрутки в тёмной теме через uxtheme' {
+        $global:UufMainText.Contains('public static extern int SetWindowTheme') | Should -BeTrue
+        $global:UufMainText.Contains("'DarkMode_Explorer'") | Should -BeTrue
     }
 }
