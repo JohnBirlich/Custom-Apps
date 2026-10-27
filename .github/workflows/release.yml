@@ -18,6 +18,8 @@ on:
 
 permissions:
   contents: write
+  # Нужно для gh run download: скачивание артефакта сборки этого же прогона
+  actions: read
 
 jobs:
   ci:
