@@ -4,6 +4,8 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  # Вызов из release.yml: тот же CI перед прикреплением файлов к релизу
+  workflow_call:
 
 # Сообщения шагов намеренно ASCII: inline-скрипт шага Windows PowerShell 5.1 может
 # читаться как ANSI, и кириллица в нём превращается в нечитаемые символы.

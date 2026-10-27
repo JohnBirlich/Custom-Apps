@@ -84,6 +84,13 @@ powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1
 
 Если сигнатурный движок всё-таки помечает файл (например Dr.Web `Trojan.Siggen32.*` — это семейные эвристики на PS-загрузчики, они не зависят от подписи): отправьте сборку вендору как ложное срабатывание — Dr.Web принимает образцы на `doctor@drweb.com` (архив с паролем `virus`, укажите MD5/SHA-256 файла из `UUF.exe.sha256` и ссылку на репозиторий), Malwarebytes — через службу поддержки, Microsoft — формой «Submit a file for analysis». До принятия отчёта помогает исключение папки `%LOCALAPPDATA%\Programs\UniversalUsernameFinder`. Полная альтернатива `.exe` — запуск того же исходника: `powershell -ExecutionPolicy Bypass -File .\UniversalUsernameFinder.ps1`; скрипт без оболочки ни один движок не помечает.
 
+## Выпуск релиза
+
+1. На GitHub: Releases → Draft a new release → тег `vX.Y.Z` (создаётся при публикации), целевая ветка `main`.
+2. Нажмите **Publish release**.
+3. Workflow `Release` (`.github/workflows/release.yml`) запускает полный CI из `ci.yml` (синтаксис, анализатор, Pester, сборка и подпись `.exe`) и прикладывает к релизу `UUF.exe`, `AppUninstaller.exe`, их `.sha256`, `UUF-signing.cer` и скрипты установки. Если CI падает, файлы не прикрепляются.
+4. Вручную пересобрать и прикрепить файлы к уже существующему тегу можно через Actions → Release → Run workflow, указав тег.
+
 ## Тесты и CI
 
 Тесты Pester лежат в `tests/UniversalUsernameFinder.Tests.ps1` и запускаются локально и в GitHub Actions. Прогон CI разбирает скрипт парсером в Windows PowerShell 5.1 и PowerShell 7, проверяет кодировку UTF-8 BOM, прогоняет PSScriptAnalyzer и тесты, собирает `.exe` и проверяет встроенный скрипт извлечением.
