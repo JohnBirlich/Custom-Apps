@@ -1,0 +1,64 @@
+# Выпуск релиза: при публикации релиза на GitHub сборка берётся из ci.yml
+# (те же проверки, та же подпись Authenticode), и готовые файлы прикладываются
+# к этому релизу. Вручную можно прикрепить файлы к существующему тегу через
+# workflow_dispatch.
+#
+# Сообщения шагов — ASCII (см. комментарий в ci.yml).
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Тег существующего релиза, к которому прикрепить файлы'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  ci:
+    name: CI and build
+    uses: ./.github/workflows/ci.yml
+
+  attach:
+    name: Attach files to release
+    runs-on: ubuntu-latest
+    needs: ci
+    steps:
+      - name: Resolve release tag
+        id: tag
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ -n "$EVENT_TAG" ]; then
+            echo "tag=$EVENT_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" -n UniversalUsernameFinder-windows -D release-files
+
+      - name: Upload files to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          echo "Files to attach:"
+          find release-files -type f -print
+          for required in UUF.exe UUF.exe.sha256 AppUninstaller.exe AppUninstaller.exe.sha256; do
+            if [ -z "$(find release-files -type f -name "$required" -print -quit)" ]; then
+              echo "::error::missing $required in build artifact"
+              exit 1
+            fi
+          done
+          find release-files -type f -print0 | xargs -0 gh release upload "$TAG" --clobber
+          echo "Attached to release $TAG"
