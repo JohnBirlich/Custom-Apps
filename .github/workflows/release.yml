@@ -50,7 +50,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          gh run download "$GITHUB_RUN_ID" -n UniversalUsernameFinder-windows -D release-files > download.log 2>&1
+          gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n UniversalUsernameFinder-windows -D release-files > download.log 2>&1
           rc=$?
           if [ "$rc" -ne 0 ]; then
             echo "::error::artifact download failed (rc=$rc): $(tr '\n' ' ' < download.log | cut -c1-900)"
@@ -71,7 +71,7 @@ jobs:
               exit 1
             fi
           done
-          find release-files -type f -print0 | xargs -0 gh release upload "$TAG" --clobber > upload.log 2>&1
+          find release-files -type f -print0 | xargs -0 gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber > upload.log 2>&1
           rc=$?
           if [ "$rc" -ne 0 ]; then
             echo "::error::release upload failed (rc=$rc): $(tr '\n' ' ' < upload.log | cut -c1-900)"
