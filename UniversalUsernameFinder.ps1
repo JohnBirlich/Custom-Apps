@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.10.0'
+$script:AppVersion = '2.10.1'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -1247,6 +1247,19 @@ public static class UufUser32 {
 }
 '@
     $script:UufDwmAvailable = $true
+} catch { }
+$script:UufThemeAvailable = $false
+try {
+    $null = Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class UufTheme {
+    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+    public static extern int SetWindowTheme(IntPtr hwnd, string subAppName, string subIdList);
+}
+'@
+    $script:UufThemeAvailable = $true
 } catch { }
 
 function Set-WindowChrome {
@@ -3575,6 +3588,15 @@ function Open-ConnectionTestWindow {
 }
 
 # --- Помощь
+# --- Вкладки помощи растягиваются на всю ширину полосы; текст крупнее и центрирован в кнопке
+function Set-HelpTabSize {
+    param($Tabs)
+    if ($null -eq $Tabs) { return }
+    $tabCount = [Math]::Max(1, [int]$Tabs.TabCount)
+    $tabWidth = [Math]::Max(60, [int][Math]::Floor(([int]$Tabs.ClientSize.Width - 6) / $tabCount))
+    $Tabs.ItemSize = New-Object System.Drawing.Size($tabWidth, 44)
+}
+
 # --- Помощь: пять страниц, оформленных карточками в стиле внутренних кнопок (тёмная тема, сине-фиолетовые акценты)
 function Add-HelpCard {
     param([System.Windows.Forms.Panel]$CardHost, [string]$Heading, [string]$Body, [System.Drawing.Font]$HeadingFont, [System.Drawing.Font]$BodyFont)
@@ -3591,12 +3613,14 @@ function Add-HelpCard {
     $headingLabel.Size = New-Object System.Drawing.Size(600,22)
     $headingLabel.Font = $HeadingFont
     $headingLabel.ForeColor = [System.Drawing.Color]::FromArgb(147,189,255)
+    $headingLabel.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
     $bodyLabel = New-Object System.Windows.Forms.Label
     $bodyLabel.Text = $Body
     $bodyLabel.Location = New-Object System.Drawing.Point(18,36)
     $bodyLabel.Size = New-Object System.Drawing.Size(600,20)
     $bodyLabel.Font = $BodyFont
     $bodyLabel.ForeColor = [System.Drawing.Color]::FromArgb(208,216,230)
+    $bodyLabel.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
     $card.Controls.Add($bodyLabel)
     $card.Controls.Add($headingLabel)
     $card.Controls.Add($accent)
@@ -3638,8 +3662,10 @@ function Show-UsernameFinderHelp {
     $helpTabs.Location = New-Object System.Drawing.Point(12,12)
     $helpTabs.Size = New-Object System.Drawing.Size(860,650)
     $helpTabs.Anchor = 'Top, Bottom, Left, Right'
-    $helpTabs.Font = New-Object System.Drawing.Font('Segoe UI',9.5,[System.Drawing.FontStyle]::Bold)
+    $helpTabs.Font = New-Object System.Drawing.Font('Segoe UI Semibold',11.5,[System.Drawing.FontStyle]::Bold)
     Set-UufTabStyle -Tabs $helpTabs -TabWidth 150
+    $helpTabs.SizeMode = 'Fixed'
+    $helpTabs.Add_Resize({ param($resizeSender, $resizeArgs) Set-HelpTabSize -Tabs $resizeSender })
 
     $headingFont = New-Object System.Drawing.Font('Segoe UI Semibold',11,[System.Drawing.FontStyle]::Bold)
     $bodyFont = New-Object System.Drawing.Font('Segoe UI',9.5)
@@ -3713,6 +3739,7 @@ function Show-UsernameFinderHelp {
             Add-HelpCard -CardHost $cardHost -Heading ([string]$cardItem[0]) -Body ([string]$cardItem[1]) -HeadingFont $headingFont -BodyFont $bodyFont
         }
         $cardHost.Add_Resize({ param($sender, $eventArgs) Set-HelpCardLayout -CardHost $sender })
+        $cardHost.Add_HandleCreated({ param($handleSender, $handleArgs) if ($script:UufThemeAvailable) { try { $null = [UufTheme]::SetWindowTheme($handleSender.Handle, 'DarkMode_Explorer', $null) } catch { } } })
         $tabPage.Controls.Add($cardHost)
         $helpTabs.TabPages.Add($tabPage) | Out-Null
         $cardHostList += $cardHost
@@ -3722,7 +3749,7 @@ function Show-UsernameFinderHelp {
     $helpTabs.Add_SelectedIndexChanged({ param($sender, $eventArgs) foreach ($hostPanel in @($sender.Tag)) { Set-HelpCardLayout -CardHost $hostPanel } })
     $helpForm.Controls.Add($helpTabs)
     $helpForm.Tag = $helpTabs
-    $helpForm.Add_Shown({ param($sender, $eventArgs) foreach ($hostPanel in @($sender.Tag.Tag)) { Set-HelpCardLayout -CardHost $hostPanel } })
+    $helpForm.Add_Shown({ param($sender, $eventArgs) Set-HelpTabSize -Tabs $sender.Tag; foreach ($hostPanel in @($sender.Tag.Tag)) { Set-HelpCardLayout -CardHost $hostPanel } })
     Set-ButtonEdgeStyle -Root $helpForm
     [void]$helpForm.ShowDialog($script:Form)
 }
@@ -3982,7 +4009,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.0' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.1' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -4460,6 +4487,7 @@ try {
                     # --- Свободный ник отдаёт страницу-заглушку «If you have Telegram, you can contact @ник» без заголовка профиля.
                     # --- og:title «Telegram: Contact @ник» есть на обеих страницах, поэтому по нему статус не определяем.
                     $tgResolved = $false
+                    $tgNoProfileSeen = $false
                     $tgLastNote = ''
                     foreach ($tgBase in @('https://t.me/','https://telegram.dog/','https://telegram.me/')) {
                         if ($Cancellation.IsCancellationRequested) { break }
@@ -4479,9 +4507,11 @@ try {
                         if ($httpStatus -eq 200 -and $reservedPage) { $status='Занят'; $reason='Telegram: тег @' + $name + ' зарезервирован платформой (резерв или платный ник) — регистрация закрыта'; $consecutiveErrors=0; $tgResolved=$true; break }
                         if ($httpStatus -eq 200 -and ($profileTitle -or $channelCounters)) { $status='Занят'; $reason='Telegram: ' + $tgName + ' отдаёт публичную страницу профиля или канала @' + $name; $consecutiveErrors=0; $tgResolved=$true; break }
                         if ($httpStatus -eq 200 -and $freePage) { $status='Свободен'; $reason='Telegram: страница @' + $name + ' на ' + $tgName + ' без профиля и предлагает открыть чат — тег свободен'; $consecutiveErrors=0; $tgResolved=$true; break }
-                        if ($httpStatus -eq 200) { $tgLastNote = $tgName + ' ответил без распознаваемых маркеров профиля'; continue }
+                        if ($httpStatus -eq 200) { $tgNoProfileSeen = $true; $tgLastNote = $tgName + ' ответил без распознаваемых маркеров профиля'; continue }
                         if ($httpStatus -eq 0) { $tgLastNote = $tgName + ' недоступен: соединение не установлено (сетевая блокировка) — поставь «Прокси» над таблицей или включи VPN' } else { $tgLastNote = $tgName + ' вернул неожиданный HTTP ' + $httpStatus }
                     }
+                    # --- Страница открылась, но профиля на ней нет: тег свободен
+                    if (-not $tgResolved -and $tgNoProfileSeen) { $status='Свободен'; $reason='Telegram: страница @' + $name + ' открылась без профиля и без признаков занятости — тег свободен'; $consecutiveErrors=0; $tgResolved=$true }
                     if (-not $tgResolved) { $status='Не подтверждено'; $reason='Telegram: ' + $tgLastNote + '; попробуй повторить или задать прокси'; $consecutiveErrors=0 }
                 }
 # --- Steam Api
