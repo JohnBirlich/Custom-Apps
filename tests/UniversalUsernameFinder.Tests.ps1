@@ -1635,3 +1635,15 @@ Describe 'Версия 2.10.2: установщик не доверяет сер
         $installText.Contains('Unblock-File -LiteralPath $uufFile.FullName') | Should -BeFalse
     }
 }
+
+Describe 'Версия 2.10.5: окно помощи не зацикливается при перекладке' {
+    It 'Set-HelpCardLayout защищён от повторного входа' {
+        $global:UufMainText.Contains('if ($script:HelpLayoutBusy) { return }') | Should -BeTrue
+        $global:UufMainText.Contains('$script:HelpLayoutBusy = $false') | Should -BeTrue
+    }
+    It 'размеры меняются только при реальном изменении' {
+        $global:UufMainText.Contains('if ($CardHost.AutoScrollMinSize -ne $minSize) { $CardHost.AutoScrollMinSize = $minSize }') | Should -BeTrue
+        $global:UufMainText.Contains('if ($Tabs.ItemSize -ne $tabSize) { $Tabs.ItemSize = $tabSize }') | Should -BeTrue
+    }
+}
+
