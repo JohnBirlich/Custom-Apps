@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-# Шрифт интерфейса (Tahoma — шрифт Windows XP, входит в любую версию Windows)
+# --- Шрифт интерфейса: Tahoma (шрифт Windows XP, есть в любой версии Windows)
 $script:UiFontFamily = 'Tahoma'
 $script:AppVersion = '2.10.3'
 
