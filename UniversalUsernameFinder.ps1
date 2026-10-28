@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 # --- Шрифт интерфейса: Tahoma (шрифт Windows XP, есть в любой версии Windows)
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.4'
+$script:AppVersion = '2.10.5'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -3596,7 +3596,8 @@ function Set-HelpTabSize {
     if ($null -eq $Tabs) { return }
     $tabCount = [Math]::Max(1, [int]$Tabs.TabCount)
     $tabWidth = [Math]::Max(60, [int][Math]::Floor(([int]$Tabs.ClientSize.Width - 6) / $tabCount))
-    $Tabs.ItemSize = New-Object System.Drawing.Size($tabWidth, 44)
+    $tabSize = New-Object System.Drawing.Size($tabWidth, 44)
+    if ($Tabs.ItemSize -ne $tabSize) { $Tabs.ItemSize = $tabSize }
 }
 
 # --- Помощь: пять страниц, оформленных карточками в стиле внутренних кнопок (тёмная тема, сине-фиолетовые акценты)
@@ -3632,21 +3633,37 @@ function Add-HelpCard {
 
 function Set-HelpCardLayout {
     param([System.Windows.Forms.Panel]$CardHost)
-    $cardWidth = [Math]::Max(300, $CardHost.ClientSize.Width - 40)
-    $bodyWidth = $cardWidth - 40
-    $y = 12
-    foreach ($card in @($CardHost.Controls)) {
-        $bodyLabel = $card.Tag
-        if ($null -eq $bodyLabel) { continue }
-        $measured = [System.Windows.Forms.TextRenderer]::MeasureText([string]$bodyLabel.Text, $bodyLabel.Font, (New-Object System.Drawing.Size($bodyWidth, 5000)), [System.Windows.Forms.TextFormatFlags]::WordBreak)
-        $bodyHeight = [int]$measured.Height + 6
-        $bodyLabel.Size = New-Object System.Drawing.Size($bodyWidth, $bodyHeight)
-        foreach ($inner in @($card.Controls)) { if ($inner -is [System.Windows.Forms.Label] -and $inner -ne $bodyLabel) { $inner.Size = New-Object System.Drawing.Size($bodyWidth, 22) } }
-        $card.Size = New-Object System.Drawing.Size($cardWidth, (46 + $bodyHeight))
-        $card.Location = New-Object System.Drawing.Point(16,$y)
-        $y += $card.Height + 12
+    # Защита от повторного входа: смена размеров вызывает Resize, который снова вызывает эту функцию (зацикливание окна)
+    if ($script:HelpLayoutBusy) { return }
+    $script:HelpLayoutBusy = $true
+    try {
+        $cardWidth = [Math]::Max(300, $CardHost.ClientSize.Width - 40)
+        $bodyWidth = $cardWidth - 40
+        $y = 12
+        foreach ($card in @($CardHost.Controls)) {
+            $bodyLabel = $card.Tag
+            if ($null -eq $bodyLabel) { continue }
+            $measured = [System.Windows.Forms.TextRenderer]::MeasureText([string]$bodyLabel.Text, $bodyLabel.Font, (New-Object System.Drawing.Size($bodyWidth, 5000)), [System.Windows.Forms.TextFormatFlags]::WordBreak)
+            $bodyHeight = [int]$measured.Height + 6
+            $bodySize = New-Object System.Drawing.Size($bodyWidth, $bodyHeight)
+            if ($bodyLabel.Size -ne $bodySize) { $bodyLabel.Size = $bodySize }
+            foreach ($inner in @($card.Controls)) {
+                if ($inner -is [System.Windows.Forms.Label] -and $inner -ne $bodyLabel) {
+                    $innerSize = New-Object System.Drawing.Size($bodyWidth, 22)
+                    if ($inner.Size -ne $innerSize) { $inner.Size = $innerSize }
+                }
+            }
+            $cardSize = New-Object System.Drawing.Size($cardWidth, (46 + $bodyHeight))
+            if ($card.Size -ne $cardSize) { $card.Size = $cardSize }
+            $cardLocation = New-Object System.Drawing.Point(16,$y)
+            if ($card.Location -ne $cardLocation) { $card.Location = $cardLocation }
+            $y += $card.Height + 12
+        }
+        $minSize = New-Object System.Drawing.Size(0, ($y + 8))
+        if ($CardHost.AutoScrollMinSize -ne $minSize) { $CardHost.AutoScrollMinSize = $minSize }
+    } finally {
+        $script:HelpLayoutBusy = $false
     }
-    $CardHost.AutoScrollMinSize = New-Object System.Drawing.Size(0, ($y + 8))
 }
 
 function Show-UsernameFinderHelp {
@@ -4011,7 +4028,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.4' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.5' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
