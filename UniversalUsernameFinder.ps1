@@ -3418,6 +3418,20 @@ function Stop-ConnectionTest {
     }
 }
 
+function Get-ConnectionReportLines {
+    $reportLines = New-Object 'System.Collections.Generic.List[string]'
+    $reportIndex = 0
+    if ($null -eq $script:ConnGrid) { return @() }
+    foreach ($reportRow in $script:ConnGrid.Rows) {
+        $reportIndex++
+        $pingCell = [string]$reportRow.Cells['Ping'].Value
+        $resultCell = [string]$reportRow.Cells['Result'].Value
+        $noteCell = [string]$reportRow.Cells['Note'].Value
+        $reportLines.Add(("{0}. {1}.api - {2}, ping: {3}, Error: {4}" -f $reportIndex, [string]$reportRow.Cells['Platform'].Value, $resultCell, $pingCell, $noteCell))
+    }
+    return @($reportLines)
+}
+
 function Start-ConnectionTest {
     if ($null -eq $script:ConnGrid) { return }
     Stop-ConnectionTest

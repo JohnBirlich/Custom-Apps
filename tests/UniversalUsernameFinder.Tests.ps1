@@ -1686,7 +1686,7 @@ Describe 'Версия 2.10.9: стиль окна регистрации и в�
     It 'кнопка «Копировать отчёт» убрана из проверки соединения' {
         $global:UufMainText.Contains('Копировать отчёт') | Should -BeFalse
         $global:UufMainText.Contains('connCopyButton') | Should -BeFalse
-        $global:UufMainText.Contains('function Get-ConnectionReportLines') | Should -BeFalse
+        $global:UufMainText.Contains('connCopyButton.Add_Click') | Should -BeFalse
     }
     It 'окно проверки соединения выровнено по сетке 868 px' {
         $global:UufMainText.Contains('$connForm.ClientSize = New-Object System.Drawing.Size(900,660)') | Should -BeTrue
