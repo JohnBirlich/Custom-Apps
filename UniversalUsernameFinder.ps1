@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 # --- Шрифт интерфейса: Tahoma (шрифт Windows XP, есть в любой версии Windows)
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.6'
+$script:AppVersion = '2.10.7'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -3445,33 +3445,39 @@ function Start-ConnectionTest {
         $script:ConnTimer = New-Object System.Windows.Forms.Timer
         $script:ConnTimer.Interval = 150
         $script:ConnTimer.Add_Tick({
-            $connEntry = $null
-            while ($script:ConnQueue -and $script:ConnQueue.TryDequeue([ref]$connEntry)) {
-                if ($null -eq $connEntry) { continue }
-                $verdict = Get-ConnectionVerdict -Code ([int]$connEntry.Code) -ErrorText ([string]$connEntry.Error)
-                $pingText = ('{0}ms' -f [int]$connEntry.Ms)
-                if ([int]$connEntry.Code -le 0) { $pingText = 'нет ответа' }
-                $codeText = '—'
-                if ([int]$connEntry.Code -gt 0) { $codeText = [string]$connEntry.Code }
-                foreach ($connRow in $script:ConnGrid.Rows) {
-                    if ([string]$connRow.Cells['Platform'].Value -eq [string]$connEntry.Platform) {
-                        $connRow.Cells['Result'].Value = $verdict.Result
-                        $connRow.Cells['Ping'].Value = $pingText
-                        $connRow.Cells['Code'].Value = $codeText
-                        $connRow.Cells['Note'].Value = [string]$verdict.Note
-                        if ($verdict.Result -eq 'pass') { $connRow.Cells['Result'].Style.ForeColor = [System.Drawing.Color]::FromArgb(110,220,150) }
-                        elseif ($verdict.Result -eq 'denied' -or $verdict.Result -eq 'error' -or $verdict.Result -eq 'Нет связи' -or $verdict.Result -eq 'Долго отвечает') { $connRow.Cells['Result'].Style.ForeColor = [System.Drawing.Color]::FromArgb(255,138,128) }
-                        break
-                    }
-                }
-                $script:ConnDone++
-                Add-Diagnostic ('Соединение: {0}.api - {1}, ping: {2}, HTTP: {3}' -f [string]$connEntry.Platform, $verdict.Result, $pingText, $codeText)
+            try {
+                if ($null -eq $script:ConnGrid -or $null -eq $script:ConnQueue) { $script:ConnTimer.Stop(); return }
                 $connEntry = $null
-            }
-            if ($script:ConnTotal -gt 0 -and $script:ConnDone -ge $script:ConnTotal) {
-                $script:ConnTimer.Stop()
-                if ($script:ConnStatus) { $script:ConnStatus.Text = ('Готово: проверено платформ — {0}. Пинг — время HTTP-ответа.' -f $script:ConnDone) }
-                Stop-ConnectionTest
+                while ($script:ConnQueue -and $script:ConnQueue.TryDequeue([ref]$connEntry)) {
+                    if ($null -eq $connEntry) { continue }
+                    $verdict = Get-ConnectionVerdict -Code ([int]$connEntry.Code) -ErrorText ([string]$connEntry.Error)
+                    $pingText = ('{0}ms' -f [int]$connEntry.Ms)
+                    if ([int]$connEntry.Code -le 0) { $pingText = 'нет ответа' }
+                    $codeText = '—'
+                    if ([int]$connEntry.Code -gt 0) { $codeText = [string]$connEntry.Code }
+                    foreach ($connRow in $script:ConnGrid.Rows) {
+                        if ([string]$connRow.Cells['Platform'].Value -eq [string]$connEntry.Platform) {
+                            $connRow.Cells['Result'].Value = $verdict.Result
+                            $connRow.Cells['Ping'].Value = $pingText
+                            $connRow.Cells['Code'].Value = $codeText
+                            $connRow.Cells['Note'].Value = [string]$verdict.Note
+                            if ($verdict.Result -eq 'pass') { $connRow.Cells['Result'].Style.ForeColor = [System.Drawing.Color]::FromArgb(110,220,150) }
+                            elseif ($verdict.Result -eq 'denied' -or $verdict.Result -eq 'error' -or $verdict.Result -eq 'Нет связи' -or $verdict.Result -eq 'Долго отвечает') { $connRow.Cells['Result'].Style.ForeColor = [System.Drawing.Color]::FromArgb(255,138,128) }
+                            break
+                        }
+                    }
+                    $script:ConnDone++
+                    Add-Diagnostic ('Соединение: {0}.api - {1}, ping: {2}, HTTP: {3}' -f [string]$connEntry.Platform, $verdict.Result, $pingText, $codeText)
+                    $connEntry = $null
+                }
+                if ($script:ConnTotal -gt 0 -and $script:ConnDone -ge $script:ConnTotal) {
+                    $script:ConnTimer.Stop()
+                    if ($script:ConnStatus) { $script:ConnStatus.Text = ('Готово: проверено платформ — {0}. Пинг — время HTTP-ответа.' -f $script:ConnDone) }
+                    Stop-ConnectionTest
+                }
+            } catch {
+                try { $script:ConnTimer.Stop() } catch { }
+                try { Write-AppLog ('Ошибка проверки соединения: ' + [string]$_.Exception.Message) } catch { }
             }
         })
     }
@@ -4023,7 +4029,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.6' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.7' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {

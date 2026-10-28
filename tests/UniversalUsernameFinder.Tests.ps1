@@ -1657,3 +1657,13 @@ Describe 'Версия 2.10.6: окно помощи без вкладок и б
         $global:UufMainText.Contains('$helpForm.FormBorderStyle = ''FixedSingle''') | Should -BeTrue
     }
 }
+
+Describe 'Версия 2.10.7: закрытие окна проверки соединения без ошибки таймера' {
+    It 'Tick проверяет, что окно закрыто, и останавливает таймер' {
+        $global:UufMainText.Contains('if ($null -eq $script:ConnGrid -or $null -eq $script:ConnQueue) { $script:ConnTimer.Stop(); return }') | Should -BeTrue
+    }
+    It 'ошибка таймера не всплывает в окно, а пишется в журнал' {
+        $global:UufMainText.Contains('Write-AppLog (''Ошибка проверки соединения: '' + [string]$_.Exception.Message)') | Should -BeTrue
+    }
+}
+
