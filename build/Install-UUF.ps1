@@ -2,14 +2,17 @@
 #
 # Установщик сам проверяет зависимости (платформа .NET, Windows PowerShell, TLS),
 # кладёт UUF.exe в %LOCALAPPDATA%\Programs\UniversalUsernameFinder, снимает метку
-# интернета со всех файлов, добавляет сертификат издателя Hasberd в доверенные
-# текущего пользователя (без администратора; отключение — ключ -NoTrust), создаёт
+# интернета с установленного UUF.exe. Сертификат издателя Hasberd НЕ добавляется в
+# доверенные по умолчанию: это делается только по явной команде -TrustCertificate
+# (тогда сертификат попадает в «Доверенные корневые» и «Доверенные издатели» текущего
+# пользователя). Создаёт
 # ярлыки на рабочем столе и в меню «Пуск» и регистрирует программу в
 # «Приложения и возможности», откуда её можно удалить одной кнопкой.
 # Рядом с программой кладётся Uninstall-UUF.ps1 — программа полного удаления.
 #
 # Быстрый старт: двойной щелчок по Install-UUF.bat (или .ps1).
 # Ручной запуск: powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1
+# С доверием сертификату издателя (явный выбор): powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1 -TrustCertificate
 # Быстрое удаление: powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1 -Uninstall
 
 [CmdletBinding()]
@@ -17,9 +20,11 @@ param(
     [string]$ExePath = '',
     [switch]$Uninstall,
     [switch]$RemoveData,
-    # Совместимость со старыми инструкциями: доверие сертификату теперь включено по умолчанию.
-    [switch]$TrustSelfSigned,
-    # Не добавлять UUF-signing.cer в доверенные (если доверяешь сертификат сам).
+    # Явно добавить UUF-signing.cer в «Доверенные корневые» и «Доверенные издатели» текущего пользователя.
+    # По умолчанию не добавляется. Старое имя -TrustSelfSigned остаётся псевдонимом.
+    [Alias('TrustSelfSigned')]
+    [switch]$TrustCertificate,
+    # Устарело: доверие больше не выставляется без -TrustCertificate; ключ принимается для совместимости.
     [switch]$NoTrust,
     # Пропустить проверку .NET / PowerShell / TLS (не рекомендуется).
     [switch]$SkipDependencyCheck,
@@ -301,17 +306,12 @@ if (-not [System.IO.File]::Exists($targetUninstaller) -and -not [System.IO.File]
 New-InstallShortcut -Directory $desktopDirectory
 New-InstallShortcut -Directory $programsDirectory
 
-# --- Метку интернета снимаем со всей папки установки и папки распаковки: иначе SmartScreen цепляет ярлыки и ручные запуски
-foreach ($uufFile in @(Get-ChildItem -LiteralPath $targetDirectory -File -ErrorAction SilentlyContinue)) {
-    try { Unblock-File -LiteralPath $uufFile.FullName } catch { }
-}
-foreach ($uufFile in @(Get-ChildItem -LiteralPath (Split-Path -Parent $exeSourceFull) -File -ErrorAction SilentlyContinue)) {
-    try { Unblock-File -LiteralPath $uufFile.FullName } catch { }
-}
-Write-Step 'Метка интернета снята с файлов установки и папки распаковки.'
+# --- Метку интернета снимаем только с установленного UUF.exe (остальные файлы папки распаковки не трогаем)
+try { Unblock-File -LiteralPath $targetExe } catch { }
+Write-Step 'Метка интернета снята с установленного UUF.exe.'
 
 $trustAppliedNow = $false
-if (-not $NoTrust) {
+if ($TrustCertificate -and -not $NoTrust) {
     $certificateImported = $false
     foreach ($candidatePath in @($targetCertificatePath, (Join-Path (Split-Path -Parent $exeSourceFull) 'UUF-signing.cer'))) {
         if (-not [System.IO.File]::Exists($candidatePath)) { continue }
@@ -329,7 +329,7 @@ if (-not $NoTrust) {
     }
     if (-not $certificateImported) { Write-Host '  UUF-signing.cer не найден рядом с UUF.exe — доверьте сертификат вручную: двойной щелчок по .cer → Установить сертификат → Текущий пользователь → Доверенные корневые центры сертификации.' -ForegroundColor Yellow }
 } else {
-    Write-Step 'Доверие сертификату пропущено (-NoTrust).'
+    Write-Step 'Сертификат издателя не добавлен в доверенные (по умолчанию). Чтобы добавить, запустите с ключом -TrustCertificate.'
 }
 
 # --- Регистрируем программу в «Приложения и возможности» (HKCU): удаление оттуда вызывает Uninstall-UUF.ps1
@@ -382,7 +382,7 @@ try {
     } elseif ($trustAppliedNow) {
         Write-Step 'Сертификат добавлен в доверенные; если окно SmartScreen для уже скачанного файла осталось, выполните: Unblock-File "' + $targetExe + '" и перезапустите браузер перед новой загрузкой.'
     } elseif ([System.IO.File]::Exists($targetCertificatePath)) {
-        Write-Host ('Издатель не в доверенных. Решается одной командой: powershell -ExecutionPolicy Bypass -File "' + (Join-Path $targetDirectory 'Install-UUF.ps1') + '" -TrustSelfSigned — либо двойным щелчком по UUF-signing.cer → «Установить сертификат» → «Локальный компьютер» → «Доверенные корневые центры сертификации» (потребуются права администратора).') -ForegroundColor Yellow
+        Write-Host ('Издатель не в доверенных. Решается одной командой: powershell -ExecutionPolicy Bypass -File "' + (Join-Path $targetDirectory 'Install-UUF.ps1') + '" -TrustCertificate — либо двойным щелчком по UUF-signing.cer → «Установить сертификат» → «Локальный компьютер» → «Доверенные корневые центры сертификации» (потребуются права администратора).') -ForegroundColor Yellow
     }
 } catch { }
 

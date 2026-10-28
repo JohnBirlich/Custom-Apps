@@ -1323,14 +1323,14 @@ Describe 'Версия 2.8.8: статистика по размеру окна 
     It 'установщик умеет доверять сертификату и снимать доверие' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
-        $installText.Contains('[switch]$TrustSelfSigned') | Should -BeTrue
+        $installText.Contains('[switch]$TrustCertificate') | Should -BeTrue
         $installText.Contains('Import-Certificate -FilePath $candidatePath -CertStoreLocation ''Cert:\CurrentUser\TrustedPublisher''') | Should -BeTrue
         $installText.Contains("'Cert:\CurrentUser\Root'") | Should -BeTrue
     }
     It 'README объясняет SmartScreen и отчёт Dr.Web' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $readmeText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'README.md'), [System.Text.Encoding]::UTF8)
-        $readmeText.Contains('-TrustSelfSigned') | Should -BeTrue
+        $readmeText.Contains('-TrustCertificate') | Should -BeTrue
         $readmeText.Contains('doctor@drweb.com') | Should -BeTrue
         $readmeText.Contains('Подробнее → Выполнить в любом случае') | Should -BeTrue
     }
@@ -1340,7 +1340,7 @@ Describe 'Версия 2.8.9: SmartScreen-нюансы' {
     It 'установщик разблокирует папку распаковки и диагностирует подпись' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
-        $installText.Contains('Unblock-File -LiteralPath $uufFile.FullName') | Should -BeTrue
+        $installText.Contains('Unblock-File -LiteralPath $targetExe') | Should -BeTrue
         $installText.Contains('$trustAppliedNow') | Should -BeTrue
         $installText.Contains('Внимание: файл не подписан') | Should -BeTrue
         $installText.Contains('Подпись проверена: издатель Hasberd') | Should -BeTrue
@@ -1462,8 +1462,8 @@ Describe 'Версия 2.9.2: установщик зависимостей и �
     It 'доверие сертификату включено по умолчанию, старый ключ совместим, удаление делегируется' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
-        $installText.Contains('if (-not $NoTrust) {') | Should -BeTrue
-        $installText.Contains('[switch]$TrustSelfSigned') | Should -BeTrue
+        $installText.Contains('if ($TrustCertificate -and -not $NoTrust) {') | Should -BeTrue
+        $installText.Contains('[switch]$TrustCertificate') | Should -BeTrue
         $installText.Contains('& $uninstallerSource') | Should -BeTrue
         $installText.Contains('Copy-Item -LiteralPath $uninstallerExeSource -Destination $targetUninstaller -Force') | Should -BeTrue
     }
@@ -1493,7 +1493,7 @@ Describe 'Версия 2.9.2: установщик зависимостей и �
         $readmeText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'README.md'), [System.Text.Encoding]::UTF8)
         $readmeText.Contains('Uninstall-UUF.bat') | Should -BeTrue
         $readmeText.Contains('Приложения и возможности') | Should -BeTrue
-        $readmeText.Contains('-NoTrust') | Should -BeTrue
+        $readmeText.Contains('-TrustCertificate') | Should -BeTrue
         $readmeText.Contains('394802') | Should -BeFalse
     }
     It 'версия не ниже 2.9.2' {
@@ -1620,5 +1620,18 @@ Describe 'Версия 2.10.1: Telegram, белый фон и вкладки п�
     It 'помощь: полосы прокрутки в тёмной теме через uxtheme' {
         $global:UufMainText.Contains('public static extern int SetWindowTheme') | Should -BeTrue
         $global:UufMainText.Contains("'DarkMode_Explorer'") | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.2: установщик не доверяет сертификату без явного ключа' {
+    It 'bat не передаёт ключ доверия' {
+        $batText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Install-UUF.bat'))
+        $batText.Contains('TrustSelfSigned') | Should -BeFalse
+        $batText.Contains('TrustCertificate') | Should -BeFalse
+    }
+    It 'метка интернета снимается только с установленного UUF.exe' {
+        $installText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $installText.Contains('try { Unblock-File -LiteralPath $targetExe } catch { }') | Should -BeTrue
+        $installText.Contains('Get-ChildItem -LiteralPath $targetDirectory -File') | Should -BeFalse
     }
 }
