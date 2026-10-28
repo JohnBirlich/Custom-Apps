@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 # --- Шрифт интерфейса: Tahoma (шрифт Windows XP, есть в любой версии Windows)
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.7'
+$script:AppVersion = '2.10.8'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -3398,11 +3398,21 @@ $null = $Queue.Enqueue([pscustomobject]@{ Platform = $Platform; Code = $code; Ms
 '@
 
 function Stop-ConnectionTest {
-    if ($script:ConnTimer) { try { $script:ConnTimer.Stop() } catch { } }
-    foreach ($connPs in @($script:ConnPowerShells)) { try { if ($connPs) { $connPs.Stop(); $connPs.Dispose() } } catch { } }
-    foreach ($connRs in @($script:ConnRunspaces)) { try { if ($connRs) { $connRs.Close(); $connRs.Dispose() } } catch { } }
+    try { if ($script:ConnTimer) { $script:ConnTimer.Stop() } } catch { }
+    $oldPowerShells = $script:ConnPowerShells
+    $oldRunspaces = $script:ConnRunspaces
     $script:ConnPowerShells = New-Object 'System.Collections.Generic.List[object]'
     $script:ConnRunspaces = New-Object 'System.Collections.Generic.List[object]'
+    if ($null -ne $oldPowerShells) {
+        for ($psIndex = 0; $psIndex -lt $oldPowerShells.Count; $psIndex++) {
+            try { $connPs = $oldPowerShells[$psIndex]; if ($null -ne $connPs) { $connPs.Stop(); $connPs.Dispose() } } catch { }
+        }
+    }
+    if ($null -ne $oldRunspaces) {
+        for ($rsIndex = 0; $rsIndex -lt $oldRunspaces.Count; $rsIndex++) {
+            try { $connRs = $oldRunspaces[$rsIndex]; if ($null -ne $connRs) { $connRs.Close(); $connRs.Dispose() } } catch { }
+        }
+    }
 }
 
 function Get-ConnectionReportLines {
@@ -3574,7 +3584,7 @@ function Open-ConnectionTestWindow {
     })
     $connForm.Add_Shown({ Start-ConnectionTest })
     $connForm.Add_FormClosed({
-        Stop-ConnectionTest
+        try { Stop-ConnectionTest } catch { }
         $script:ConnGrid = $null
         $script:ConnStatus = $null
     })
@@ -4029,7 +4039,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.7' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.8' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {

@@ -1667,3 +1667,14 @@ Describe 'Версия 2.10.7: закрытие окна проверки сое
     }
 }
 
+Describe 'Версия 2.10.8: закрытие окна проверки соединения без @() над обобщёнными списками' {
+    It 'Stop-ConnectionTest обходит списки по индексу' {
+        $global:UufMainText.Contains('for ($psIndex = 0; $psIndex -lt $oldPowerShells.Count; $psIndex++) {') | Should -BeTrue
+        $global:UufMainText.Contains('foreach ($connPs in @($script:ConnPowerShells))') | Should -BeFalse
+        $global:UufMainText.Contains('foreach ($connRs in @($script:ConnRunspaces))') | Should -BeFalse
+    }
+    It 'обработчик закрытия окна защищён try' {
+        $global:UufMainText.Contains('try { Stop-ConnectionTest } catch { }') | Should -BeTrue
+    }
+}
+
