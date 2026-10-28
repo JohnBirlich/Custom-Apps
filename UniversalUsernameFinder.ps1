@@ -1,4 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
+# --- Шрифт интерфейса: Tahoma (шрифт Windows XP, есть в любой версии Windows)
+$script:UiFontFamily = 'Tahoma'
 $script:AppVersion = '2.10.3'
 
 trap {
@@ -1205,7 +1207,7 @@ $script:Form.MinimumSize = New-Object System.Drawing.Size($minimumWidth, $minimu
 $script:Form.Size = New-Object System.Drawing.Size($windowWidth, $windowHeight)
 $script:Form.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
 $script:Form.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-$script:Form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$script:Form.Font = New-Object System.Drawing.Font($script:UiFontFamily, 9)
 $script:Form.FormBorderStyle = 'None'
 $script:Form.MinimizeBox = $true
 $script:Form.MaximizeBox = $true
@@ -1319,7 +1321,7 @@ $script:Form.Controls.Add($header)
 
 $title = New-Object System.Windows.Forms.Label
 $title.Text = ('UNIVERSAL USERNAME FINDER  •  v{0}' -f $script:AppVersion)
-$title.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 17, [System.Drawing.FontStyle]::Bold)
+$title.Font = New-Object System.Drawing.Font($script:UiFontFamily, 17, [System.Drawing.FontStyle]::Bold)
 $title.ForeColor = [System.Drawing.Color]::FromArgb(112,164,255)
 $title.AutoSize = $true
 $title.Location = New-Object System.Drawing.Point(66, 14)
@@ -1327,7 +1329,7 @@ $header.Controls.Add($title)
 
 $subtitle = New-Object System.Windows.Forms.Label
 $subtitle.Text = 'Автоматическая генерация и проверка имён для популярных платформ'
-$subtitle.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$subtitle.Font = New-Object System.Drawing.Font($script:UiFontFamily, 9)
 $subtitle.ForeColor = [System.Drawing.Color]::FromArgb(177,188,207)
 $subtitle.AutoSize = $true
 $subtitle.Location = New-Object System.Drawing.Point(66, 50)
@@ -1372,7 +1374,7 @@ $script:AccountButton.FlatStyle = 'Flat'
 $script:AccountButton.FlatAppearance.BorderSize = 0
 $script:AccountButton.BackColor = [System.Drawing.Color]::FromArgb(67,123,235)
 $script:AccountButton.ForeColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:AccountButton.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 9.5, [System.Drawing.FontStyle]::Bold)
+$script:AccountButton.Font = New-Object System.Drawing.Font($script:UiFontFamily, 9.5, [System.Drawing.FontStyle]::Bold)
 $script:AccountButton.Cursor = [System.Windows.Forms.Cursors]::Hand
 $header.Controls.Add($script:AccountButton)
 
@@ -1621,7 +1623,7 @@ $script:CategoryList.CheckOnClick = $true
 $script:CategoryList.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
 $script:CategoryList.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
 $script:CategoryList.BorderStyle = 'FixedSingle'
-$script:CategoryList.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$script:CategoryList.Font = New-Object System.Drawing.Font($script:UiFontFamily, 10)
 $script:CategoryList.IntegralHeight = $false
 $script:CategoryList.HorizontalScrollbar = $true
 [void]$script:CategoryList.Items.AddRange([object[]]@($script:WordCategories | Sort-Object))
@@ -1730,7 +1732,7 @@ for ($i=0; $i -lt $statLabels.Count; $i++) {
     $statLabels[$i].BackColor = [System.Drawing.Color]::FromArgb(31,40,56)
     $statLabels[$i].ForeColor = $statColors[$i]
     $statLabels[$i].TextAlign = 'MiddleCenter'
-    $statLabels[$i].Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
+    $statLabels[$i].Font = New-Object System.Drawing.Font($script:UiFontFamily,8.5,[System.Drawing.FontStyle]::Bold)
     $right.Controls.Add($statLabels[$i])
 }
 # --- Полоса статистики: ширины блоков считаются от фактической панели, поэтому «Недопустимо» и «Ошибки» не вылезают за край ни на одном разрешении
@@ -1850,7 +1852,7 @@ $script:Grid.GridColor = [System.Drawing.Color]::FromArgb(42,52,70)
 $script:Grid.EnableHeadersVisualStyles = $false
 $script:Grid.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(35,46,63)
 $script:Grid.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-$script:Grid.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
+$script:Grid.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font($script:UiFontFamily,8.5,[System.Drawing.FontStyle]::Bold)
 $script:Grid.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(20,27,38)
 $script:Grid.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
 $script:Grid.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(50,75,112)
@@ -1935,7 +1937,7 @@ $diagnosticHeader.Text = 'ДИАГНОСТИКА И ЖУРНАЛ'
 $diagnosticHeader.Location = New-Object System.Drawing.Point(14,720)
 $diagnosticHeader.Anchor = 'Bottom, Left'
 $diagnosticHeader.Size = New-Object System.Drawing.Size(250,20)
-$diagnosticHeader.Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
+$diagnosticHeader.Font = New-Object System.Drawing.Font($script:UiFontFamily,8.5,[System.Drawing.FontStyle]::Bold)
 $diagnosticHeader.ForeColor = [System.Drawing.Color]::FromArgb(194,207,226)
 $right.Controls.Add($diagnosticHeader)
 $script:DiagnosticBox = New-Object System.Windows.Forms.TextBox
@@ -1989,7 +1991,7 @@ $footer.Size = New-Object System.Drawing.Size(1008,34)
 $footer.Anchor = 'Bottom, Left, Right'
 $footer.ForeColor = [System.Drawing.Color]::FromArgb(20,20,24)
 $footer.BackColor = [System.Drawing.Color]::FromArgb(248,185,65)
-$footer.Font = New-Object System.Drawing.Font('Segoe UI',9.5,[System.Drawing.FontStyle]::Bold)
+$footer.Font = New-Object System.Drawing.Font($script:UiFontFamily,9.5,[System.Drawing.FontStyle]::Bold)
 $footer.TextAlign = 'MiddleLeft'
 $footer.Padding = New-Object System.Windows.Forms.Padding(8,0,4,0)
 $right.Controls.Add($footer)
@@ -2271,7 +2273,7 @@ function Open-AccountTools {
     $script:AccountForm.MinimizeBox = $false
     $script:AccountForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
     $script:AccountForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-    $script:AccountForm.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+    $script:AccountForm.Font = New-Object System.Drawing.Font($script:UiFontFamily, 9)
     Set-WindowChrome -Window $script:AccountForm
 
     $tabs = New-Object System.Windows.Forms.TabControl
@@ -3027,7 +3029,7 @@ function Open-CheckedNamesWindow {
     $checkedForm.MinimumSize = New-Object System.Drawing.Size(480,480)
     $checkedForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
     $checkedForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-    $checkedForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
+    $checkedForm.Font = New-Object System.Drawing.Font($script:UiFontFamily,9)
     Set-WindowChrome -Window $checkedForm
     $script:CheckedNamesDescription = New-Object System.Windows.Forms.Label
     $script:CheckedNamesDescription.Location = New-Object System.Drawing.Point(16,14)
@@ -3167,7 +3169,7 @@ function Open-FreeHistoryWindow {
     $script:HistoryForm.MinimumSize = New-Object System.Drawing.Size(560,480)
     $script:HistoryForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
     $script:HistoryForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-    $script:HistoryForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
+    $script:HistoryForm.Font = New-Object System.Drawing.Font($script:UiFontFamily,9)
     Set-WindowChrome -Window $script:HistoryForm
     $script:HistoryDescription = New-Object System.Windows.Forms.Label
     $script:HistoryDescription.Location = New-Object System.Drawing.Point(16,12)
@@ -3498,7 +3500,7 @@ function Open-ConnectionTestWindow {
     $connForm.MinimumSize = New-Object System.Drawing.Size(760,600)
     $connForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
     $connForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-    $connForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
+    $connForm.Font = New-Object System.Drawing.Font($script:UiFontFamily,9)
     Set-WindowChrome -Window $connForm
     $connInfo = New-Object System.Windows.Forms.Label
     $connInfo.Text = 'Тестовый запрос к публичным адресам платформ. «pass» — сервер ответил (2xx/3xx), «denied» — отказ (4xx), «error» — ошибка сервера (5xx), «Нет связи» — соединение не открылось. Пинг — время ответа сервера.'
@@ -3655,20 +3657,20 @@ function Show-UsernameFinderHelp {
     $helpForm.MinimumSize = New-Object System.Drawing.Size(640,520)
     $helpForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
     $helpForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-    $helpForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
+    $helpForm.Font = New-Object System.Drawing.Font($script:UiFontFamily,9)
     Set-WindowChrome -Window $helpForm
 
     $helpTabs = New-Object System.Windows.Forms.TabControl
     $helpTabs.Location = New-Object System.Drawing.Point(12,12)
     $helpTabs.Size = New-Object System.Drawing.Size(860,650)
     $helpTabs.Anchor = 'Top, Bottom, Left, Right'
-    $helpTabs.Font = New-Object System.Drawing.Font('Segoe UI Semibold',11.5,[System.Drawing.FontStyle]::Bold)
+    $helpTabs.Font = New-Object System.Drawing.Font($script:UiFontFamily,11.5,[System.Drawing.FontStyle]::Bold)
     Set-UufTabStyle -Tabs $helpTabs -TabWidth 150
     $helpTabs.SizeMode = 'Fixed'
     $helpTabs.Add_Resize({ param($resizeSender, $resizeArgs) Set-HelpTabSize -Tabs $resizeSender })
 
-    $headingFont = New-Object System.Drawing.Font('Segoe UI Semibold',11,[System.Drawing.FontStyle]::Bold)
-    $bodyFont = New-Object System.Drawing.Font('Segoe UI',9.5)
+    $headingFont = New-Object System.Drawing.Font($script:UiFontFamily,11,[System.Drawing.FontStyle]::Bold)
+    $bodyFont = New-Object System.Drawing.Font($script:UiFontFamily,9.5)
     $exampleFont = New-Object System.Drawing.Font('Consolas',9.5)
 
     $helpPages = @(
