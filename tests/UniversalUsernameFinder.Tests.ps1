@@ -1614,7 +1614,7 @@ Describe 'Версия 2.10.1: Telegram, белый фон и вкладки п�
     }
     It 'помощь: вкладки растягиваются на всю полосу, текст крупнее' {
         $global:UufMainText.Contains('function Set-HelpTabSize {') | Should -BeTrue
-        $global:UufMainText.Contains("Segoe UI Semibold',11.5") | Should -BeTrue
+        $global:UufMainText.Contains('$script:UiFontFamily,11.5') | Should -BeTrue
         $global:UufMainText.Contains("`$helpTabs.SizeMode = 'Fixed'") | Should -BeTrue
     }
     It 'помощь: полосы прокрутки в тёмной теме через uxtheme' {
