@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 # --- Шрифт интерфейса: Tahoma (шрифт Windows XP, есть в любой версии Windows)
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.5'
+$script:AppVersion = '2.10.6'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -1249,19 +1249,6 @@ public static class UufUser32 {
 }
 '@
     $script:UufDwmAvailable = $true
-} catch { }
-$script:UufThemeAvailable = $false
-try {
-    $null = Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-
-public static class UufTheme {
-    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
-    public static extern int SetWindowTheme(IntPtr hwnd, string subAppName, string subIdList);
-}
-'@
-    $script:UufThemeAvailable = $true
 } catch { }
 
 function Set-WindowChrome {
@@ -3590,17 +3577,7 @@ function Open-ConnectionTestWindow {
 }
 
 # --- Помощь
-# --- Вкладки помощи растягиваются на всю ширину полосы; текст крупнее и центрирован в кнопке
-function Set-HelpTabSize {
-    param($Tabs)
-    if ($null -eq $Tabs) { return }
-    $tabCount = [Math]::Max(1, [int]$Tabs.TabCount)
-    $tabWidth = [Math]::Max(60, [int][Math]::Floor(([int]$Tabs.ClientSize.Width - 6) / $tabCount))
-    $tabSize = New-Object System.Drawing.Size($tabWidth, 44)
-    if ($Tabs.ItemSize -ne $tabSize) { $Tabs.ItemSize = $tabSize }
-}
-
-# --- Помощь: пять страниц, оформленных карточками в стиле внутренних кнопок (тёмная тема, сине-фиолетовые акценты)
+# --- Окно помощи: ряд кнопок-разделов сверху и одна страница карточек (без вкладок и пересчёта по Resize)
 function Add-HelpCard {
     param([System.Windows.Forms.Panel]$CardHost, [string]$Heading, [string]$Body, [System.Drawing.Font]$HeadingFont, [System.Drawing.Font]$BodyFont)
     $Body = $Body.Replace('<br>', [Environment]::NewLine)
@@ -3666,29 +3643,46 @@ function Set-HelpCardLayout {
     }
 }
 
+function Show-HelpPage {
+    param([System.Windows.Forms.Panel]$PageHost, $Pages, [int]$Index, $NavButtons, $HeadingFont, $BodyFont)
+    if ($Index -lt 0 -or $Index -ge @($Pages).Count) { return }
+    $PageHost.SuspendLayout()
+    foreach ($oldCard in @($PageHost.Controls)) {
+        $PageHost.Controls.Remove($oldCard)
+        $oldCard.Dispose()
+    }
+    foreach ($cardItem in $Pages[$Index].Cards) {
+        Add-HelpCard -CardHost $PageHost -Heading ([string]$cardItem[0]) -Body ([string]$cardItem[1]) -HeadingFont $HeadingFont -BodyFont $BodyFont
+    }
+    Set-HelpCardLayout -CardHost $PageHost
+    $PageHost.AutoScrollPosition = New-Object System.Drawing.Point(0, 0)
+    $PageHost.ResumeLayout()
+    foreach ($navButton in @($NavButtons)) {
+        if ([int]$navButton.Tag -eq $Index) {
+            $navButton.BackColor = [System.Drawing.Color]::FromArgb(44,56,82)
+            $navButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(129,108,255)
+        } else {
+            $navButton.BackColor = [System.Drawing.Color]::FromArgb(26,33,47)
+            $navButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(64,78,104)
+        }
+    }
+}
+
 function Show-UsernameFinderHelp {
     $helpForm = New-Object System.Windows.Forms.Form
     $helpForm.Text = 'UUF — помощь'
     $helpForm.StartPosition = 'CenterParent'
-    $helpForm.Size = New-Object System.Drawing.Size(900,720)
-    $helpForm.MinimumSize = New-Object System.Drawing.Size(640,520)
+    $helpForm.ClientSize = New-Object System.Drawing.Size(900,680)
+    $helpForm.FormBorderStyle = 'FixedSingle'
+    $helpForm.MaximizeBox = $false
     $helpForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
     $helpForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $helpForm.Font = New-Object System.Drawing.Font($script:UiFontFamily,9)
     Set-WindowChrome -Window $helpForm
 
-    $helpTabs = New-Object System.Windows.Forms.TabControl
-    $helpTabs.Location = New-Object System.Drawing.Point(12,12)
-    $helpTabs.Size = New-Object System.Drawing.Size(860,650)
-    $helpTabs.Anchor = 'Top, Bottom, Left, Right'
-    $helpTabs.Font = New-Object System.Drawing.Font($script:UiFontFamily,11.5,[System.Drawing.FontStyle]::Bold)
-    Set-UufTabStyle -Tabs $helpTabs -TabWidth 150
-    $helpTabs.SizeMode = 'Fixed'
-    $helpTabs.Add_Resize({ param($resizeSender, $resizeArgs) try { Set-HelpTabSize -Tabs $resizeSender } catch { } })
-
     $headingFont = New-Object System.Drawing.Font($script:UiFontFamily,11,[System.Drawing.FontStyle]::Bold)
     $bodyFont = New-Object System.Drawing.Font($script:UiFontFamily,9.5)
-    $exampleFont = New-Object System.Drawing.Font('Consolas',9.5)
+    $navFont = New-Object System.Drawing.Font($script:UiFontFamily,10,[System.Drawing.FontStyle]::Bold)
 
     $helpPages = @(
         @{ Title = 'Дисклеймер'; Cards = @(
@@ -3745,31 +3739,32 @@ function Show-UsernameFinderHelp {
         ) }
     )
 
-    $cardHostList = @()
-    foreach ($page in $helpPages) {
-        $tabPage = New-Object System.Windows.Forms.TabPage
-        $tabPage.Text = [string]$page.Title
-        $tabPage.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-        $cardHost = New-Object System.Windows.Forms.Panel
-        $cardHost.Dock = 'Fill'
-        $cardHost.AutoScroll = $true
-        $cardHost.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-        foreach ($cardItem in $page.Cards) {
-            Add-HelpCard -CardHost $cardHost -Heading ([string]$cardItem[0]) -Body ([string]$cardItem[1]) -HeadingFont $headingFont -BodyFont $bodyFont
-        }
-        $cardHost.Add_Resize({ param($sender, $eventArgs) try { Set-HelpCardLayout -CardHost $sender } catch { } })
-        $cardHost.Add_HandleCreated({ param($handleSender, $handleArgs) if ($script:UufThemeAvailable) { try { $null = [UufTheme]::SetWindowTheme($handleSender.Handle, 'DarkMode_Explorer', $null) } catch { } } })
-        $tabPage.Controls.Add($cardHost)
-        $helpTabs.TabPages.Add($tabPage) | Out-Null
-        $cardHostList += $cardHost
+    $navButtons = @()
+    $pageHost = New-Object System.Windows.Forms.Panel
+    $pageHost.Location = New-Object System.Drawing.Point(16,72)
+    $pageHost.Size = New-Object System.Drawing.Size(868,592)
+    $pageHost.AutoScroll = $true
+    $pageHost.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $helpForm.Controls.Add($pageHost)
+
+    $buttonWidth = [int][Math]::Floor((868 - 8 * ($helpPages.Count - 1)) / $helpPages.Count)
+    for ($i = 0; $i -lt $helpPages.Count; $i++) {
+        $navButton = New-Object System.Windows.Forms.Button
+        $navButton.Text = [string]$helpPages[$i].Title
+        $navButton.Location = New-Object System.Drawing.Point((16 + $i * ($buttonWidth + 8)), 16)
+        $navButton.Size = New-Object System.Drawing.Size($buttonWidth, 40)
+        $navButton.FlatStyle = 'Flat'
+        $navButton.FlatAppearance.BorderSize = 1
+        $navButton.Font = $navFont
+        $navButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+        $navButton.UseVisualStyleBackColor = $false
+        $navButton.Tag = $i
+        $navButton.Add_Click({ param($clickSender, $clickArgs) Show-HelpPage -PageHost $pageHost -Pages $helpPages -Index ([int]$clickSender.Tag) -NavButtons $navButtons -HeadingFont $headingFont -BodyFont $bodyFont })
+        $helpForm.Controls.Add($navButton)
+        $navButtons += $navButton
     }
-    # --- Список панелей хранится в Tag элементов — обработчики берут его через sender, без общих переменных
-    $helpTabs.Tag = $cardHostList
-    $helpTabs.Add_SelectedIndexChanged({ param($sender, $eventArgs) try { foreach ($hostPanel in @($sender.Tag)) { Set-HelpCardLayout -CardHost $hostPanel } } catch { } })
-    $helpForm.Controls.Add($helpTabs)
-    $helpForm.Tag = $helpTabs
-    $helpForm.Add_Shown({ param($sender, $eventArgs) try { Set-HelpTabSize -Tabs $sender.Tag; foreach ($hostPanel in @($sender.Tag.Tag)) { Set-HelpCardLayout -CardHost $hostPanel } } catch { } })
-    Set-ButtonEdgeStyle -Root $helpForm
+
+    Show-HelpPage -PageHost $pageHost -Pages $helpPages -Index 0 -NavButtons $navButtons -HeadingFont $headingFont -BodyFont $bodyFont
     [void]$helpForm.ShowDialog($script:Form)
 }
 
@@ -4028,7 +4023,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.5' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.6' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {

@@ -1372,7 +1372,7 @@ Describe 'Версия 2.9.0: ручной ввод, вкладки, зерка�
         $global:UufMainText.Contains("`$Tabs.Appearance = 'FlatButtons'") | Should -BeTrue
         $global:UufMainText.Contains("`$Tabs.DrawMode = 'OwnerDrawFixed'") | Should -BeTrue
         $global:UufMainText.Contains('Set-UufTabStyle -Tabs $tabs -TabWidth 190') | Should -BeTrue
-        $global:UufMainText.Contains('Set-UufTabStyle -Tabs $helpTabs -TabWidth 150') | Should -BeTrue
+        $global:UufMainText.Contains('function Show-HelpPage {') | Should -BeTrue
     }
     It 'буфер обмена через безопасную функцию с повторами, прямых вызовов не осталось' {
         $global:UufMainText.Contains('function Copy-UufTextToClipboard {') | Should -BeTrue
@@ -1610,16 +1610,11 @@ Describe 'Версия 2.10.1: Telegram, белый фон и вкладки п�
     It 'помощь: подписи карточек с тёмным фоном, без белых полей' {
         $global:UufMainText.Contains('$headingLabel.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)') | Should -BeTrue
         $global:UufMainText.Contains('$bodyLabel.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)') | Should -BeTrue
-        $global:UufMainText.Contains('$tabPage.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)') | Should -BeTrue
+        $global:UufMainText.Contains('$pageHost.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)') | Should -BeTrue
     }
-    It 'помощь: вкладки растягиваются на всю полосу, текст крупнее' {
-        $global:UufMainText.Contains('function Set-HelpTabSize {') | Should -BeTrue
-        $global:UufMainText.Contains('$script:UiFontFamily,11.5') | Should -BeTrue
-        $global:UufMainText.Contains("`$helpTabs.SizeMode = 'Fixed'") | Should -BeTrue
-    }
-    It 'помощь: полосы прокрутки в тёмной теме через uxtheme' {
-        $global:UufMainText.Contains('public static extern int SetWindowTheme') | Should -BeTrue
-        $global:UufMainText.Contains("'DarkMode_Explorer'") | Should -BeTrue
+    It 'помощь: кнопки-разделы и заголовки шрифта Tahoma' {
+        $global:UufMainText.Contains('$script:UiFontFamily,11,[System.Drawing.FontStyle]::Bold') | Should -BeTrue
+        $global:UufMainText.Contains('$navButton.Text = [string]$helpPages[$i].Title') | Should -BeTrue
     }
 }
 
@@ -1643,7 +1638,22 @@ Describe 'Версия 2.10.5: окно помощи не зацикливает
     }
     It 'размеры меняются только при реальном изменении' {
         $global:UufMainText.Contains('if ($CardHost.AutoScrollMinSize -ne $minSize) { $CardHost.AutoScrollMinSize = $minSize }') | Should -BeTrue
-        $global:UufMainText.Contains('if ($Tabs.ItemSize -ne $tabSize) { $Tabs.ItemSize = $tabSize }') | Should -BeTrue
     }
 }
 
+Describe 'Версия 2.10.6: окно помощи без вкладок и без пересчёта по Resize' {
+    It 'разделы — кнопки, страница строится при выборе' {
+        $global:UufMainText.Contains('function Show-HelpPage {') | Should -BeTrue
+        $global:UufMainText.Contains('$navButton.FlatStyle = ''Flat''') | Should -BeTrue
+        $global:UufMainText.Contains('Show-HelpPage -PageHost $pageHost -Pages $helpPages -Index ([int]$clickSender.Tag)') | Should -BeTrue
+    }
+    It 'старые вкладки помощи и пересчёт размеров удалены' {
+        $global:UufMainText.Contains('Set-HelpTabSize') | Should -BeFalse
+        $global:UufMainText.Contains('$helpTabs') | Should -BeFalse
+        $global:UufMainText.Contains('SetWindowTheme') | Should -BeFalse
+        $global:UufMainText.Contains('Add_Resize({ param($resizeSender') | Should -BeFalse
+    }
+    It 'окно фиксированного размера' {
+        $global:UufMainText.Contains('$helpForm.FormBorderStyle = ''FixedSingle''') | Should -BeTrue
+    }
+}
