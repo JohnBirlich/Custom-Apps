@@ -1678,3 +1678,19 @@ Describe 'Версия 2.10.8: закрытие окна проверки сое
     }
 }
 
+Describe 'Версия 2.10.9: стиль окна регистрации и выравнивание проверки соединения' {
+    It 'вкладки регистрации в стиле кнопок помощи' {
+        $global:UufMainText.Contains('$tabs.SizeMode = ''Fixed''') | Should -BeTrue
+        $global:UufMainText.Contains('$tabs.ItemSize = New-Object System.Drawing.Size(366, 40)') | Should -BeTrue
+    }
+    It 'кнопка «Копировать отчёт» убрана из проверки соединения' {
+        $global:UufMainText.Contains('Копировать отчёт') | Should -BeFalse
+        $global:UufMainText.Contains('connCopyButton') | Should -BeFalse
+        $global:UufMainText.Contains('connCopyButton.Add_Click') | Should -BeFalse
+    }
+    It 'окно проверки соединения выровнено по сетке 868 px' {
+        $global:UufMainText.Contains('$connForm.ClientSize = New-Object System.Drawing.Size(900,660)') | Should -BeTrue
+        $global:UufMainText.Contains('$script:ConnGrid.Size = New-Object System.Drawing.Size(868,280)') | Should -BeTrue
+    }
+}
+
