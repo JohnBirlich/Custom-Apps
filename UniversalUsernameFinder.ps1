@@ -3633,7 +3633,7 @@ function Add-HelpCard {
 
 function Set-HelpCardLayout {
     param([System.Windows.Forms.Panel]$CardHost)
-    # Защита от повторного входа: смена размеров вызывает Resize, который снова вызывает эту функцию (зацикливание окна)
+    # --- Защита от повторного входа: смена размеров вызывает Resize и снова эту функцию
     if ($script:HelpLayoutBusy) { return }
     $script:HelpLayoutBusy = $true
     try {
