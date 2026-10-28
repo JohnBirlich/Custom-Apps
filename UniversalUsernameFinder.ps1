@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 # --- Шрифт интерфейса: Tahoma (шрифт Windows XP, есть в любой версии Windows)
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.8'
+$script:AppVersion = '2.10.9'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -2278,6 +2278,9 @@ function Open-AccountTools {
     [void]$tabs.TabPages.Add($prepareTab)
     [void]$tabs.TabPages.Add($vaultTab)
     Set-UufTabStyle -Tabs $tabs -TabWidth 190
+    $tabs.Font = New-Object System.Drawing.Font($script:UiFontFamily,10,[System.Drawing.FontStyle]::Bold)
+    $tabs.SizeMode = 'Fixed'
+    $tabs.ItemSize = New-Object System.Drawing.Size(366, 40)
     $script:AccountTabs = $tabs
     $script:AccountVaultTab = $vaultTab
     $script:AccountForm.Controls.Add($tabs)
@@ -3415,20 +3418,6 @@ function Stop-ConnectionTest {
     }
 }
 
-function Get-ConnectionReportLines {
-    $reportLines = New-Object 'System.Collections.Generic.List[string]'
-    $reportIndex = 0
-    if ($null -eq $script:ConnGrid) { return @() }
-    foreach ($reportRow in $script:ConnGrid.Rows) {
-        $reportIndex++
-        $pingCell = [string]$reportRow.Cells['Ping'].Value
-        $resultCell = [string]$reportRow.Cells['Result'].Value
-        $noteCell = [string]$reportRow.Cells['Note'].Value
-        $reportLines.Add(("{0}. {1}.api - {2}, ping: {3}, Error: {4}" -f $reportIndex, [string]$reportRow.Cells['Platform'].Value, $resultCell, $pingCell, $noteCell))
-    }
-    return @($reportLines)
-}
-
 function Start-ConnectionTest {
     if ($null -eq $script:ConnGrid) { return }
     Stop-ConnectionTest
@@ -3499,8 +3488,8 @@ function Open-ConnectionTestWindow {
     $connForm = New-Object System.Windows.Forms.Form
     $connForm.Text = 'Проверка соединения'
     $connForm.StartPosition = 'CenterParent'
-    $connForm.Size = New-Object System.Drawing.Size(900,640)
-    $connForm.MinimumSize = New-Object System.Drawing.Size(760,600)
+    $connForm.ClientSize = New-Object System.Drawing.Size(900,660)
+    $connForm.MinimumSize = New-Object System.Drawing.Size(760,620)
     $connForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
     $connForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $connForm.Font = New-Object System.Drawing.Font($script:UiFontFamily,9)
@@ -3508,13 +3497,13 @@ function Open-ConnectionTestWindow {
     $connInfo = New-Object System.Windows.Forms.Label
     $connInfo.Text = 'Тестовый запрос к публичным адресам платформ. «pass» — сервер ответил (2xx/3xx), «denied» — отказ (4xx), «error» — ошибка сервера (5xx), «Нет связи» — соединение не открылось. Пинг — время ответа сервера.'
     $connInfo.Location = New-Object System.Drawing.Point(16,12)
-    $connInfo.Size = New-Object System.Drawing.Size(856,44)
+    $connInfo.Size = New-Object System.Drawing.Size(868,44)
     $connInfo.Anchor = 'Top, Left, Right'
     $connInfo.ForeColor = [System.Drawing.Color]::FromArgb(190,202,221)
     $connForm.Controls.Add($connInfo)
     $script:ConnGrid = New-Object System.Windows.Forms.DataGridView
     $script:ConnGrid.Location = New-Object System.Drawing.Point(16,62)
-    $script:ConnGrid.Size = New-Object System.Drawing.Size(856,280)
+    $script:ConnGrid.Size = New-Object System.Drawing.Size(868,280)
     $script:ConnGrid.Anchor = 'Top, Left, Right'
     $script:ConnGrid.BackgroundColor = [System.Drawing.Color]::FromArgb(17,23,32)
     $script:ConnGrid.BorderStyle = 'None'
@@ -3543,7 +3532,7 @@ function Open-ConnectionTestWindow {
     $legendBox.ReadOnly = $true
     $legendBox.ScrollBars = 'Vertical'
     $legendBox.Location = New-Object System.Drawing.Point(16,352)
-    $legendBox.Size = New-Object System.Drawing.Size(856,200)
+    $legendBox.Size = New-Object System.Drawing.Size(868,240)
     $legendBox.Anchor = 'Top, Bottom, Left, Right'
     $legendBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
     $legendBox.ForeColor = [System.Drawing.Color]::FromArgb(190,202,221)
@@ -3554,34 +3543,21 @@ function Open-ConnectionTestWindow {
     $connForm.Controls.Add($legendBox)
     $connRunButton = New-Object System.Windows.Forms.Button
     $connRunButton.Text = '↻ Проверить снова'
-    $connRunButton.Location = New-Object System.Drawing.Point(16,566)
+    $connRunButton.Location = New-Object System.Drawing.Point(16,610)
     $connRunButton.Size = New-Object System.Drawing.Size(160,34)
     $connRunButton.Anchor = 'Bottom, Left'
     $connRunButton.FlatStyle = 'Flat'
     $connRunButton.BackColor = [System.Drawing.Color]::FromArgb(93,73,222)
     $connRunButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $connForm.Controls.Add($connRunButton)
-    $connCopyButton = New-Object System.Windows.Forms.Button
-    $connCopyButton.Text = 'Копировать отчёт'
-    $connCopyButton.Location = New-Object System.Drawing.Point(184,566)
-    $connCopyButton.Size = New-Object System.Drawing.Size(160,34)
-    $connCopyButton.Anchor = 'Bottom, Left'
-    $connCopyButton.FlatStyle = 'Flat'
-    $connCopyButton.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
-    $connCopyButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-    $connForm.Controls.Add($connCopyButton)
     $script:ConnStatus = New-Object System.Windows.Forms.Label
-    $script:ConnStatus.Location = New-Object System.Drawing.Point(358,570)
-    $script:ConnStatus.Size = New-Object System.Drawing.Size(514,26)
+    $script:ConnStatus.Location = New-Object System.Drawing.Point(192,614)
+    $script:ConnStatus.Size = New-Object System.Drawing.Size(692,26)
     $script:ConnStatus.Anchor = 'Bottom, Left, Right'
     $script:ConnStatus.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
-    $script:ConnStatus.TextAlign = 'MiddleRight'
+    $script:ConnStatus.TextAlign = 'MiddleLeft'
     $connForm.Controls.Add($script:ConnStatus)
     $connRunButton.Add_Click({ Start-ConnectionTest })
-    $connCopyButton.Add_Click({
-        $reportText = (Get-ConnectionReportLines) -join [Environment]::NewLine
-        if ($reportText) { Copy-UufTextToClipboard -Text $reportText -Context 'копирование отчёта о соединении' | Out-Null }
-    })
     $connForm.Add_Shown({ Start-ConnectionTest })
     $connForm.Add_FormClosed({
         try { Stop-ConnectionTest } catch { }
@@ -4039,7 +4015,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.8' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.9' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
