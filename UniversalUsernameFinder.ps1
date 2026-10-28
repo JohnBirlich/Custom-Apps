@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 # --- Шрифт интерфейса: Tahoma (шрифт Windows XP, есть в любой версии Windows)
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.3'
+$script:AppVersion = '2.10.4'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -3667,7 +3667,7 @@ function Show-UsernameFinderHelp {
     $helpTabs.Font = New-Object System.Drawing.Font($script:UiFontFamily,11.5,[System.Drawing.FontStyle]::Bold)
     Set-UufTabStyle -Tabs $helpTabs -TabWidth 150
     $helpTabs.SizeMode = 'Fixed'
-    $helpTabs.Add_Resize({ param($resizeSender, $resizeArgs) Set-HelpTabSize -Tabs $resizeSender })
+    $helpTabs.Add_Resize({ param($resizeSender, $resizeArgs) try { Set-HelpTabSize -Tabs $resizeSender } catch { } })
 
     $headingFont = New-Object System.Drawing.Font($script:UiFontFamily,11,[System.Drawing.FontStyle]::Bold)
     $bodyFont = New-Object System.Drawing.Font($script:UiFontFamily,9.5)
@@ -3740,7 +3740,7 @@ function Show-UsernameFinderHelp {
         foreach ($cardItem in $page.Cards) {
             Add-HelpCard -CardHost $cardHost -Heading ([string]$cardItem[0]) -Body ([string]$cardItem[1]) -HeadingFont $headingFont -BodyFont $bodyFont
         }
-        $cardHost.Add_Resize({ param($sender, $eventArgs) Set-HelpCardLayout -CardHost $sender })
+        $cardHost.Add_Resize({ param($sender, $eventArgs) try { Set-HelpCardLayout -CardHost $sender } catch { } })
         $cardHost.Add_HandleCreated({ param($handleSender, $handleArgs) if ($script:UufThemeAvailable) { try { $null = [UufTheme]::SetWindowTheme($handleSender.Handle, 'DarkMode_Explorer', $null) } catch { } } })
         $tabPage.Controls.Add($cardHost)
         $helpTabs.TabPages.Add($tabPage) | Out-Null
@@ -3748,10 +3748,10 @@ function Show-UsernameFinderHelp {
     }
     # --- Список панелей хранится в Tag элементов — обработчики берут его через sender, без общих переменных
     $helpTabs.Tag = $cardHostList
-    $helpTabs.Add_SelectedIndexChanged({ param($sender, $eventArgs) foreach ($hostPanel in @($sender.Tag)) { Set-HelpCardLayout -CardHost $hostPanel } })
+    $helpTabs.Add_SelectedIndexChanged({ param($sender, $eventArgs) try { foreach ($hostPanel in @($sender.Tag)) { Set-HelpCardLayout -CardHost $hostPanel } } catch { } })
     $helpForm.Controls.Add($helpTabs)
     $helpForm.Tag = $helpTabs
-    $helpForm.Add_Shown({ param($sender, $eventArgs) Set-HelpTabSize -Tabs $sender.Tag; foreach ($hostPanel in @($sender.Tag.Tag)) { Set-HelpCardLayout -CardHost $hostPanel } })
+    $helpForm.Add_Shown({ param($sender, $eventArgs) try { Set-HelpTabSize -Tabs $sender.Tag; foreach ($hostPanel in @($sender.Tag.Tag)) { Set-HelpCardLayout -CardHost $hostPanel } } catch { } })
     Set-ButtonEdgeStyle -Root $helpForm
     [void]$helpForm.ShowDialog($script:Form)
 }
@@ -4011,7 +4011,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.3' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.4' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
