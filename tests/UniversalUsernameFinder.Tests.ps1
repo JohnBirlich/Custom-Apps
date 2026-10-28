@@ -1632,6 +1632,6 @@ Describe 'Версия 2.10.2: установщик не доверяет сер
     It 'метка интернета снимается только с установленного UUF.exe' {
         $installText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
         $installText.Contains('try { Unblock-File -LiteralPath $targetExe } catch { }') | Should -BeTrue
-        $installText.Contains('Get-ChildItem -LiteralPath $targetDirectory -File') | Should -BeFalse
+        $installText.Contains('Unblock-File -LiteralPath $uufFile.FullName') | Should -BeFalse
     }
 }
