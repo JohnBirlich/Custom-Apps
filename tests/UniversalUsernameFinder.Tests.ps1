@@ -1176,7 +1176,7 @@ Describe 'Изменения версии 2.8.3' {
 
 Describe 'Доработка версии 2.8.4' {
     It 'версия не ниже 2.8.4 в скрипте' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:[89]|10)\.\d'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:[89]|10)\.\d+'''
     }
     It 'журнал печатает режим очереди проверки' {
         $global:UufMainText.Contains('Порядок проверки: вразнобой') | Should -BeTrue
@@ -1202,7 +1202,7 @@ Describe 'Исправление версии 2.8.5' {
 
 Describe 'Изменения версии 2.8.6' {
     It 'версия не ниже 2.8.6 в скрипте' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:[89]|10)\.\d'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:[89]|10)\.\d+'''
     }
     It 'статуса «Вероятно свободен» в проверках больше нет' {
         $global:UufWorkerText.Contains('Вероятно свободен') | Should -BeFalse
