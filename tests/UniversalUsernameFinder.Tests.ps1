@@ -880,7 +880,7 @@ Describe 'Интерфейс и поведение версии 2.5.5' {
     }
 
     It 'число потоков задаётся в интерфейсе и ограничено восемью' {
-        $global:UufMainText.Contains('$script:ThreadsBox = New-NumberBox 254 910 110 1 8 2') | Should -BeTrue
+        $global:UufMainText.Contains('$script:ThreadsBox = New-NumberBox 254 934 110 1 8 2') | Should -BeTrue
         $global:UufMainText.Contains('Рекомендуется 2–4 потока') | Should -BeTrue
         $global:UufMainText.Contains('if ($threadCount -gt 8) { $threadCount = 8 }') | Should -BeTrue
     }
@@ -960,7 +960,7 @@ Describe 'Платформы, домены и интерфейс версии 2.
         $global:UufMainText.Contains('$script:MaxLengthBox = New-NumberBox 216 624 80 1 64 25') | Should -BeTrue
         $global:UufMainText.Contains('$script:RandomCharsCheck = New-CheckBox ' + [char]39 + 'Случайные символы' + [char]39 + ' 14 803 180 $true') | Should -BeTrue
         $global:UufMainText.Contains('$script:TwoWordsCheck = New-CheckBox ' + [char]39 + 'Два осмысленных слова' + [char]39 + ' 194 683 170 $false') | Should -BeTrue
-        $global:UufMainText.Contains('$script:DelayBox = New-NumberBox 14 910 110 500 15000 700') | Should -BeTrue
+        $global:UufMainText.Contains('$script:DelayBox = New-NumberBox 14 934 110 500 15000 700') | Should -BeTrue
     }
     It 'интерфейс тёмный v2.5.5, кастомная строка заголовка, без анимаций' {
         $global:UufMainText.Contains('$script:Form.FormBorderStyle = ' + [char]39 + 'None' + [char]39) | Should -BeTrue
@@ -1582,7 +1582,7 @@ Describe 'Версия 2.10.0: поправки 1-16' {
         $global:UufFullText.Contains('$isGoogleAccount = ($platform -eq ' + [char]39 + 'Google' + [char]39 + ')') | Should -BeTrue
     }
     It 'пункт 15: кнопка «Проверка соединения», таблица HTTP-кодов и формат строки результата' {
-        $global:UufFullText.Contains("'⇄  Проверка соединения' 14 1237 350") | Should -BeTrue
+        $global:UufFullText.Contains("'⇄  Проверка соединения' 14 1261 350") | Should -BeTrue
         $global:UufFullText.Contains('function Open-ConnectionTestWindow {') | Should -BeTrue
         $global:UufFullText.Contains('$script:HttpStatusNotes = @{') | Should -BeTrue
         $global:UufFullText.Contains('"{0}. {1}.api - {2}, ping: {3}, Error: {4}"') | Should -BeTrue
@@ -1659,7 +1659,7 @@ Describe 'Версия 2.10.7: закрытие окна проверки сое
         $global:UufMainText.Contains('if ($null -eq $script:ConnGrid -or $null -eq $script:ConnQueue) { $script:ConnTimer.Stop(); return }') | Should -BeTrue
     }
     It 'ошибка таймера не всплывает в окно, а пишется в журнал' {
-        $global:UufMainText.Contains('Write-AppLog (''Ошибка проверки соединения: '' + [string]$_.Exception.Message)') | Should -BeTrue
+        $global:UufMainText.Contains('Add-ErrorDiagnostic (''Ошибка проверки соединения: '' + [string]$_.Exception.Message)') | Should -BeTrue
     }
 }
 
@@ -1714,5 +1714,36 @@ Describe 'Версия 2.10.11: разделитель _ и поиск толь�
     }
     It 'короткие ники не режут точный режим' {
         $global:UufMainText.Contains('if ($OnlyShort -and -not $ExactOnly)') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.13: интерфейс, остановка, журнал и недопустимые ники' {
+    It 'поле «Поиск только введенных ников» стоит на своей строке во всю ширину панели' {
+        $global:UufMainText.Contains('New-CheckBox ''Поиск только введенных ников'' 14 827 360 $false') | Should -BeTrue
+    }
+    It 'после остановки «Проверяется» возвращается в «Ожидает» до обновления кнопок' {
+        $revert = $global:UufFullText.IndexOf('можно запустить повторно', [System.StringComparison]::Ordinal)
+        $revert | Should -BeGreaterThan 0
+        $resetFound = [regex]::Match($global:UufFullText, 'Reset-CheckControls\r?\n\s+if \(\$completed -and').Success
+        $resetFound | Should -BeFalse
+        $after = [regex]::Match($global:UufFullText, 'Reset-CheckControls\r?\n\s+\$script:GridRefreshPending').Index
+        $after | Should -BeGreaterThan $revert
+    }
+    It 'ошибки выводятся в диагностику с префиксом ОШИБКА' {
+        $global:UufMainText.Contains("Add-Diagnostic ('ОШИБКА: ' + `$Message)") | Should -BeTrue
+        $global:UufMainText.Contains("Add-ErrorDiagnostic ('Не удалось сохранить настройки: '") | Should -BeTrue
+        $global:UufMainText.Contains("Add-ErrorDiagnostic ('Ошибка проверки соединения: '") | Should -BeTrue
+    }
+    It 'недопустимые ники попадают в постоянный список исключений генерации' {
+        $global:UufMainText.Contains('function Register-InvalidNick') | Should -BeTrue
+        $global:UufFullText.Contains('Register-ProgressOutcome $candidate') | Should -BeTrue
+        $global:UufFullText.Contains('Register-InvalidNick -Name $nick -Platform $platform') | Should -BeTrue
+    }
+    It 'статус «Свободно/возможно» заменён на «Свободно»' {
+        $global:UufMainText.Contains('Свободно/возможно') | Should -BeFalse
+        $global:UufMainText.Contains('"Свободно: $free"') | Should -BeTrue
+    }
+    It 'обработчик выбора сохранённой записи защищён от исключений' {
+        $global:UufMainText.Contains('Выбор сохранённой записи: ') | Should -BeTrue
     }
 }

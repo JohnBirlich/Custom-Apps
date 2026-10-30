@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.12'
+$script:AppVersion = '2.10.13'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -1681,30 +1681,30 @@ $script:ExcludeCheckedCheck = New-CheckBox 'Исключать проверен�
 $script:OnlyFreeCheck = New-CheckBox 'Показывать свободные' 14 779 180 $false
 $script:OrderedCheck = New-CheckBox 'Генерация по порядку' 194 779 170 $false
 $script:RandomCharsCheck = New-CheckBox 'Случайные символы' 14 803 180 $true
-$script:ExactOnlyCheck = New-CheckBox 'Поиск только введенных ников' 194 803 190 $false
+$script:ExactOnlyCheck = New-CheckBox 'Поиск только введенных ников' 14 827 360 $false
 
-Add-UiLabel 'Исключить слова/части ника (пример: xxx, test, 123)' 14 835 350 20 | Out-Null
-$script:ExcludeBox = New-TextBox 14 856 350 27 ''
-Add-UiLabel 'Пауза (мс)' 14 891 110 18 | Out-Null
-Add-UiLabel 'Тайм-аут (мс)' 134 891 110 18 | Out-Null
-Add-UiLabel 'Потоки' 254 891 110 18 | Out-Null
-$script:DelayBox = New-NumberBox 14 910 110 500 15000 700
-$script:TimeoutBox = New-NumberBox 134 910 110 1000 30000 8000
-$script:ThreadsBox = New-NumberBox 254 910 110 1 8 2
-$script:ThreadsLabel = Add-UiLabel 'Рекомендуется 2–4 потока. Пауза адаптивная: растёт при HTTP 429 и снижается после успехов.' 14 943 350 40
+Add-UiLabel 'Исключить слова/части ника (пример: xxx, test, 123)' 14 859 350 20 | Out-Null
+$script:ExcludeBox = New-TextBox 14 880 350 27 ''
+Add-UiLabel 'Пауза (мс)' 14 915 110 18 | Out-Null
+Add-UiLabel 'Тайм-аут (мс)' 134 915 110 18 | Out-Null
+Add-UiLabel 'Потоки' 254 915 110 18 | Out-Null
+$script:DelayBox = New-NumberBox 14 934 110 500 15000 700
+$script:TimeoutBox = New-NumberBox 134 934 110 1000 30000 8000
+$script:ThreadsBox = New-NumberBox 254 934 110 1 8 2
+$script:ThreadsLabel = Add-UiLabel 'Рекомендуется 2–4 потока. Пауза адаптивная: растёт при HTTP 429 и снижается после успехов.' 14 967 350 40
 
-$script:GenerateButton = Add-UiButton 'Сгенерировать и проверить' 14 991 350 $true 37
-$script:StartButton = Add-UiButton '▶  Найти свободные' 14 1034 350 $true 37
+$script:GenerateButton = Add-UiButton 'Сгенерировать и проверить' 14 1015 350 $true 37
+$script:StartButton = Add-UiButton '▶  Найти свободные' 14 1058 350 $true 37
 $script:StartButton.Visible = $false
-$script:StopButton = Add-UiButton '■  Остановить проверку' 14 1034 350 $false 35
+$script:StopButton = Add-UiButton '■  Остановить проверку' 14 1058 350 $false 35
 $script:StopButton.Enabled = $false
-$script:RetryButton = Add-UiButton '↻  Повторить ошибки' 14 1077 170 $false 33
-$script:ClearButton = Add-UiButton '✕  Очистить результаты' 194 1077 170 $false 33
-$script:SaveButton = Add-UiButton '↓  TXT свободные' 14 1117 170 $false 33
-$script:CsvButton = Add-UiButton '↓  CSV все результаты' 194 1117 170 $false 33
-$script:CopyButton = Add-UiButton '⧉  Копировать свободные' 14 1157 350 $false 33
-$script:CheckedNamesButton = Add-UiButton '≡  Проверенные ники (0)' 14 1197 350 $false 33
-$script:ConnectionTestButton = Add-UiButton '⇄  Проверка соединения' 14 1237 350 $false 33
+$script:RetryButton = Add-UiButton '↻  Повторить ошибки' 14 1101 170 $false 33
+$script:ClearButton = Add-UiButton '✕  Очистить результаты' 194 1101 170 $false 33
+$script:SaveButton = Add-UiButton '↓  TXT свободные' 14 1141 170 $false 33
+$script:CsvButton = Add-UiButton '↓  CSV все результаты' 194 1141 170 $false 33
+$script:CopyButton = Add-UiButton '⧉  Копировать свободные' 14 1181 350 $false 33
+$script:CheckedNamesButton = Add-UiButton '≡  Проверенные ники (0)' 14 1221 350 $false 33
+$script:ConnectionTestButton = Add-UiButton '⇄  Проверка соединения' 14 1261 350 $false 33
 
 $right = New-Object System.Windows.Forms.Panel
 $right.Location = New-Object System.Drawing.Point(418, 104)
@@ -2099,7 +2099,7 @@ function Get-SavedAccountRecords {
         $records = ConvertFrom-Json -InputObject $json -ErrorAction Stop
         return @($records)
     } catch {
-        Write-AppLog ('Не удалось прочитать зашифрованное хранилище: ' + $_.Exception.ToString())
+        Add-ErrorDiagnostic ('Не удалось прочитать зашифрованное хранилище: ' + $_.Exception.ToString())
         throw 'Не удалось открыть зашифрованное хранилище. Оно доступно только тому же пользователю Windows, который его создал. Подробности в UniversalUsernameFinder.log.'
     }
 }
@@ -2529,7 +2529,7 @@ function Open-AccountTools {
             $script:AccountPasswordBox.Text = New-SecurePassword -Length ([int]$script:PasswordLengthBox.Value)
             $script:RegistrationConfirmedCheck.Checked = $false
         } catch {
-            Write-AppLog ('Ошибка генерации пароля: ' + $_.Exception.ToString())
+            Add-ErrorDiagnostic ('Ошибка генерации пароля: ' + $_.Exception.ToString())
             [System.Windows.Forms.MessageBox]::Show('Не удалось создать пароль: ' + $_.Exception.Message, 'Ошибка', 'OK', 'Error') | Out-Null
         }
     })
@@ -2609,16 +2609,20 @@ function Open-AccountTools {
             $script:AccountTabs.SelectedTab = $script:AccountVaultTab
             [System.Windows.Forms.MessageBox]::Show("Данные для $storedNick сохранены в зашифрованное хранилище текущего пользователя Windows.", 'Сохранено', 'OK', 'Information') | Out-Null
         } catch {
-            Write-AppLog ('Не удалось сохранить учётные данные: ' + $_.Exception.ToString())
+            Add-ErrorDiagnostic ('Не удалось сохранить учётные данные: ' + $_.Exception.ToString())
             [System.Windows.Forms.MessageBox]::Show('Не удалось сохранить данные. ' + $_.Exception.Message + "`r`n`r`nСм. UniversalUsernameFinder.log.", 'Ошибка сохранения', 'OK', 'Error') | Out-Null
         }
     })
 
     $script:AccountListBox.Add_SelectedIndexChanged({
-        if ($script:AccountListBox.SelectedIndex -ge 0 -and $script:AccountListBox.SelectedIndex -lt $script:AccountRecords.Count) {
-            $script:SavedPasswordBox.Text = [string]$script:AccountRecords[$script:AccountListBox.SelectedIndex].Password
-        } else {
-            $script:SavedPasswordBox.Clear()
+        try {
+            if ($script:AccountListBox.SelectedIndex -ge 0 -and $script:AccountListBox.SelectedIndex -lt $script:AccountRecords.Count) {
+                $script:SavedPasswordBox.Text = [string]$script:AccountRecords[$script:AccountListBox.SelectedIndex].Password
+            } else {
+                $script:SavedPasswordBox.Clear()
+            }
+        } catch {
+            Add-ErrorDiagnostic ('Выбор сохранённой записи: ' + $_.Exception.ToString())
         }
     })
 
@@ -2656,7 +2660,7 @@ function Open-AccountTools {
             Save-EncryptedAccountRecords -Records $records
             Refresh-SavedAccountList
         } catch {
-            Write-AppLog ('Не удалось удалить запись из хранилища: ' + $_.Exception.ToString())
+            Add-ErrorDiagnostic ('Не удалось удалить запись из хранилища: ' + $_.Exception.ToString())
             [System.Windows.Forms.MessageBox]::Show('Не удалось изменить хранилище: ' + $_.Exception.Message, 'Ошибка', 'OK', 'Error') | Out-Null
         }
     })
@@ -2675,7 +2679,7 @@ function Open-AccountTools {
         Refresh-SavedAccountList
     } catch {
         $script:VaultStatusLabel.Text = 'Не удалось прочитать хранилище: ' + $_.Exception.Message
-        Write-AppLog ('Ошибка открытия инструментов аккаунта: ' + $_.Exception.ToString())
+        Add-ErrorDiagnostic ('Ошибка открытия инструментов аккаунта: ' + $_.Exception.ToString())
     }
     try {
         if ($script:Grid.CurrentRow -and $script:Grid.CurrentRow.Index -ge 0) {
@@ -2686,6 +2690,11 @@ function Open-AccountTools {
     Set-ButtonEdgeStyle -Root $script:AccountForm
     Update-AccountPlatformUi
     [void]$script:AccountForm.ShowDialog($script:Form)
+}
+
+function Add-ErrorDiagnostic {
+    param([string]$Message)
+    Add-Diagnostic ('ОШИБКА: ' + $Message)
 }
 
 function Add-Diagnostic {
@@ -2780,12 +2789,32 @@ function Save-UsernameHistory {
         Write-AtomicJsonFile -Path $historyFull -Json $json
         $script:HistoryDirty = $false
         $script:HistoryDirtySince = $null
-    } catch { Write-AppLog ('Не удалось сохранить историю ников: ' + $_.Exception.Message) }
+    } catch { Add-ErrorDiagnostic ('Не удалось сохранить историю ников: ' + $_.Exception.Message) }
 }
 
 function Mark-HistoryDirty {
     $script:HistoryDirty = $true
     if (-not $script:HistoryDirtySince) { $script:HistoryDirtySince = [DateTime]::UtcNow }
+}
+
+function Register-InvalidNick {
+    param([string]$Name, [string]$Platform)
+    if ([string]::IsNullOrWhiteSpace($Name) -or [string]::IsNullOrWhiteSpace($Platform)) { return }
+    $key = Get-HistoryKey -Name $Name -Platform $Platform
+    if ($script:RetiredNames.ContainsKey($key)) { return }
+    $script:RetiredNames[$key] = $true
+    Mark-HistoryDirty
+}
+
+function Register-ProgressOutcome {
+    param($Candidate)
+    if (-not $Candidate) { return }
+    $status = [string]$Candidate.Status
+    if ($status -eq 'Недопустимый') {
+        Register-InvalidNick -Name ([string]$Candidate.Name) -Platform ([string]$Candidate.Platform)
+    } elseif ($status -eq 'Ошибка сети') {
+        Add-ErrorDiagnostic ('{0} · {1}: {2}' -f [string]$Candidate.Platform, [string]$Candidate.Name, [string]$Candidate.Reason)
+    }
 }
 
 function Flush-HistoryIfDue {
@@ -2911,7 +2940,7 @@ function Restore-AppSettingsToUi {
 function Save-AppSettings {
     try {
         Export-AppSettings -Settings (Get-AppSettingsFromUi) -Path $script:SettingsPath
-    } catch { Write-AppLog ('Не удалось сохранить настройки: ' + $_.Exception.Message) }
+    } catch { Add-ErrorDiagnostic ('Не удалось сохранить настройки: ' + $_.Exception.Message) }
 }
 
 function Restore-AppSettings {
@@ -2919,13 +2948,13 @@ function Restore-AppSettings {
         $settings = Import-AppSettings -Path $script:SettingsPath
         if ($settings.Count -eq 0) {
             if (Test-Path -LiteralPath $script:SettingsPath) {
-                Write-AppLog 'Файл настроек повреждён или пуст; применены значения по умолчанию.'
+                Add-ErrorDiagnostic 'Файл настроек повреждён или пуст; применены значения по умолчанию.'
             }
             return
         }
         Restore-AppSettingsToUi -Settings $settings
         Add-Diagnostic ('Восстановлены настройки предыдущего сеанса (платформа: {0}).' -f [string]$script:PlatformBox.SelectedItem)
-    } catch { Write-AppLog ('Не удалось восстановить настройки: ' + $_.Exception.Message) }
+    } catch { Add-ErrorDiagnostic ('Не удалось восстановить настройки: ' + $_.Exception.Message) }
 }
 
 function Update-FreeHistoryFromCandidate {
@@ -3481,7 +3510,7 @@ function Start-ConnectionTest {
                 }
             } catch {
                 try { $script:ConnTimer.Stop() } catch { }
-                try { Write-AppLog ('Ошибка проверки соединения: ' + [string]$_.Exception.Message) } catch { }
+                try { Add-ErrorDiagnostic ('Ошибка проверки соединения: ' + [string]$_.Exception.Message) } catch { }
             }
         })
     }
@@ -3883,7 +3912,7 @@ function Update-Stats {
     }
     $script:StatTotal.Text = "Всего: $total"
     $script:StatChecked.Text = "Проверено: $checked"
-    $script:StatFree.Text = "Свободно/возможно: $free"
+    $script:StatFree.Text = "Свободно: $free"
     $script:StatTaken.Text = "Занято: $taken"
     $script:StatInvalid.Text = "Недопустимо: $invalid"
     $script:StatErrors.Text = "Ошибки: $errors"
@@ -3981,6 +4010,7 @@ function Start-Checking {
             $candidate.Status = 'Недопустимый'
             $candidate.Time = (Get-Date).ToString('HH:mm:ss')
             $candidate.Reason = "Неподходящий формат для платформы $selectedPlatform"
+            Register-InvalidNick -Name ([string]$candidate.Name) -Platform $selectedPlatform
             continue
         }
         $candidate.Status = 'Проверяется'
@@ -4016,7 +4046,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.12' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.13' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -4680,6 +4710,7 @@ $script:PollTimer.Add_Tick({
                     $candidate.Time = [string]$item.Time
                     $candidate.Reason = [string]$item.Reason
                     $candidate.Checked = $true
+                    Register-ProgressOutcome $candidate
                     Update-FreeHistoryFromCandidate $candidate
                     Touch-Candidates
                 }
@@ -4716,7 +4747,7 @@ $script:PollTimer.Add_Tick({
                 if ($entry.Type -eq 'Progress') {
                     $item = $entry.Item
                     $candidate = Find-Candidate -Name ([string]$item.Name) -Platform ([string]$item.Platform)
-                    if ($candidate) { $script:CheckedNames[((([string]$candidate.Platform) + '|' + [string]$candidate.Name).ToLowerInvariant())] = $true; $candidate.Status=[string]$item.Status; $candidate.Time=[string]$item.Time; $candidate.Reason=[string]$item.Reason; $candidate.Checked=$true; Update-FreeHistoryFromCandidate $candidate; Touch-Candidates }
+                    if ($candidate) { $script:CheckedNames[((([string]$candidate.Platform) + '|' + [string]$candidate.Name).ToLowerInvariant())] = $true; $candidate.Status=[string]$item.Status; $candidate.Time=[string]$item.Time; $candidate.Reason=[string]$item.Reason; $candidate.Checked=$true; Register-ProgressOutcome $candidate; Update-FreeHistoryFromCandidate $candidate; Touch-Candidates }
                     Update-BatchProgress $item
                 } elseif ($entry.Type -eq 'Log') { Add-Diagnostic ([string]$entry.Message) }
                 elseif ($entry.Type -eq 'Complete') { Add-CompletionEvent $entry; $script:CompletedWorkers = $script:CompletedWorkers + 1 }
@@ -4736,12 +4767,12 @@ $script:PollTimer.Add_Tick({
         }
         $workerErrors = ($workerErrorLines -join [Environment]::NewLine)
         Close-CheckRunspace
-        Reset-CheckControls
         if ($completed -and ($completed.Cancelled -or $completed.StopReason)) {
             foreach ($candidate in $script:Candidates) {
                 if ($candidate.Status -eq 'Проверяется') { $candidate.Status='Ожидает'; $candidate.Reason='Проверка не завершена; можно запустить повторно' }
             }
         }
+        Reset-CheckControls
         $script:GridRefreshPending = $false
         $script:LastGridRefresh = [DateTime]::UtcNow
         if ($script:HistoryDirty) { Save-UsernameHistory }
@@ -4765,7 +4796,7 @@ $script:PollTimer.Add_Tick({
             $script:SummaryLabel.Text = "Остановлено: $($completed.StopReason) · проверено: $($completed.Checked) · свободно: $($script:AvailableNames.Count)"
             Add-Diagnostic $script:SummaryLabel.Text
         } else {
-            $script:SummaryLabel.Text = "Готово · проверено: $($completed.Checked) · свободно/возможно: $($script:AvailableNames.Count)"
+            $script:SummaryLabel.Text = "Готово · проверено: $($completed.Checked) · свободно: $($script:AvailableNames.Count)"
             Add-Diagnostic $script:SummaryLabel.Text
         }
     }
@@ -4851,7 +4882,7 @@ $script:GenerateButton.Add_Click({
         $status = 'Ожидает'; $reason = 'Ожидает проверки'
         if (-not (Test-UsernameFormat -Username $nick -Platform $platform)) { $status = 'Недопустимый'; $reason = "Неверный формат имени для платформы $platform" }
         $manualTime = ''
-        if ($status -eq 'Недопустимый') { $manualTime = (Get-Date).ToString('HH:mm:ss') }
+        if ($status -eq 'Недопустимый') { $manualTime = (Get-Date).ToString('HH:mm:ss'); Register-InvalidNick -Name $nick -Platform $platform }
         $manualCandidate = [pscustomobject]@{Name=$nick; Platform=$platform; Meaning='Введён вручную'; Category='Ручной ввод'; Structure=(Get-NickStructure -Name $nick); Status=$status; Time=$manualTime; Reason=$reason; Checked=($status -eq 'Недопустимый')}
         [void]$script:Candidates.Add($manualCandidate)
         Register-Candidate $manualCandidate
