@@ -1711,7 +1711,7 @@ Describe 'Версия 2.10.11: разделитель _ и поиск толь�
     }
     It 'чекбокс режима точных ников подключён и передаётся в пул' {
         $global:UufMainText.Contains('$script:ExactOnlyCheck = New-CheckBox ''Поиск только введенных ников''') | Should -BeTrue
-        $global:UufMainText.Contains('-ExactOnly ([bool]$script:ExactOnlyCheck.Checked)') | Should -BeTrue
+        $global:UufFullText.Contains('-ExactOnly ([bool]$script:ExactOnlyCheck.Checked)') | Should -BeTrue
     }
     It 'режим точных ников выдаёт свои слова с номерами по порядку' {
         $global:UufMainText.Contains('$candidate = ([string]$item.Word).ToLowerInvariant() + [string]$number') | Should -BeTrue
