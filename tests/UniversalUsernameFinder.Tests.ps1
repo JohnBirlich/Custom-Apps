@@ -1176,7 +1176,7 @@ Describe 'Изменения версии 2.8.3' {
 
 Describe 'Доработка версии 2.8.4' {
     It 'версия не ниже 2.8.4 в скрипте' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:[89]|10)\.\d'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:[89]|10)\.\d+'''
     }
     It 'журнал печатает режим очереди проверки' {
         $global:UufMainText.Contains('Порядок проверки: вразнобой') | Should -BeTrue
@@ -1202,7 +1202,7 @@ Describe 'Исправление версии 2.8.5' {
 
 Describe 'Изменения версии 2.8.6' {
     It 'версия не ниже 2.8.6 в скрипте' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:[89]|10)\.\d'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:[89]|10)\.\d+'''
     }
     It 'статуса «Вероятно свободен» в проверках больше нет' {
         $global:UufWorkerText.Contains('Вероятно свободен') | Should -BeFalse
@@ -1358,7 +1358,7 @@ Describe 'Версия 2.8.9: SmartScreen-нюансы' {
         $readmeText.Contains('Установить сертификат') | Should -BeTrue
     }
     It 'версия поднята' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.[0-9])'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.\d+)'''
     }
 }
 
@@ -1400,7 +1400,7 @@ Describe 'Версия 2.9.0: ручной ввод, вкладки, зерка�
         $global:UufWorkerText.Contains('форма регистрации подтвердила доступность') | Should -BeTrue
     }
     It 'версия поднята до 2.9.0' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.[0-9])'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.\d+)'''
     }
 }
 
@@ -1442,7 +1442,7 @@ Describe 'Версия 2.9.1: дорисовка вкладок, возобно�
         $ciText.Contains('build/Install-UUF.bat') | Should -BeTrue
     }
     It 'версия поднята до 2.9.1' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.[0-9])'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.\d+)'''
     }
 }
 
@@ -1497,7 +1497,7 @@ Describe 'Версия 2.9.2: установщик зависимостей и �
         $readmeText.Contains('394802') | Should -BeFalse
     }
     It 'версия не ниже 2.9.2' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[2-9]|10\.[0-9])'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[2-9]|10\.\d+)'''
     }
 }
 
@@ -1536,7 +1536,7 @@ Describe 'Версия 2.9.3: полное удаление — самостоя
         $readmeText.Contains('Build-Uninstaller.ps1') | Should -BeTrue
     }
     It 'версия поднята до 2.10.0' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.[0-9]'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.\d+'''
     }
 }
 
@@ -1691,6 +1691,16 @@ Describe 'Версия 2.10.9: стиль окна регистрации и в�
     It 'окно проверки соединения выровнено по сетке 868 px' {
         $global:UufMainText.Contains('$connForm.ClientSize = New-Object System.Drawing.Size(900,660)') | Should -BeTrue
         $global:UufMainText.Contains('$script:ConnGrid.Size = New-Object System.Drawing.Size(868,280)') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.10: свои слова сохраняют _ . -' {
+    It 'свои слова конвертируются с сохранением допустимых символов' {
+        $global:UufMainText.Contains('$word = Convert-ToNickToken -Text $rawWord -KeepSymbols') | Should -BeTrue
+        $global:UufMainText.Contains('elseif ($KeepSymbols -and $character -match ''[._-]'')') | Should -BeTrue
+    }
+    It 'обрезка краёв от разделителей' {
+        $global:UufMainText.Contains('if ($KeepSymbols) { $result = $result.Trim(''._-'') }') | Should -BeTrue
     }
 }
 
