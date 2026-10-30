@@ -1,41 +1,20 @@
-﻿# Установка Universal Username Finder (Windows PowerShell 5.1+).
-#
-# Установщик сам проверяет зависимости (платформа .NET, Windows PowerShell, TLS),
-# кладёт UUF.exe в %LOCALAPPDATA%\Programs\UniversalUsernameFinder, снимает метку
-# интернета с установленного UUF.exe. Сертификат издателя Hasberd НЕ добавляется в
-# доверенные по умолчанию: это делается только по явной команде -TrustCertificate
-# (тогда сертификат попадает в «Доверенные корневые» и «Доверенные издатели» текущего
-# пользователя). Создаёт
-# ярлыки на рабочем столе и в меню «Пуск» и регистрирует программу в
-# «Приложения и возможности», откуда её можно удалить одной кнопкой.
-# Рядом с программой кладётся Uninstall-UUF.ps1 — программа полного удаления.
-#
-# Быстрый старт: двойной щелчок по Install-UUF.bat (или .ps1).
-# Ручной запуск: powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1
-# С доверием сертификату издателя (явный выбор): powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1 -TrustCertificate
-# Быстрое удаление: powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1 -Uninstall
+﻿
 
 [CmdletBinding()]
 param(
     [string]$ExePath = '',
     [switch]$Uninstall,
     [switch]$RemoveData,
-    # Явно добавить UUF-signing.cer в «Доверенные корневые» и «Доверенные издатели» текущего пользователя.
-    # По умолчанию не добавляется. Старое имя -TrustSelfSigned остаётся псевдонимом.
     [Alias('TrustSelfSigned')]
     [switch]$TrustCertificate,
-    # Устарело: доверие больше не выставляется без -TrustCertificate; ключ принимается для совместимости.
     [switch]$NoTrust,
-    # Пропустить проверку .NET / PowerShell / TLS (не рекомендуется).
     [switch]$SkipDependencyCheck,
-    # Без паузы в конце — для автоматизации и ярлыка удаления из «Приложений».
     [switch]$Silent
 )
 
 $ErrorActionPreference = 'Stop'
 $installerVersion = '2.9.3'
 
-# --- Любая непройденная ошибка печатается в окно и ждёт Enter: двойной клик по .ps1 не должен закрывать PowerShell мгновенно.
 trap {
     Write-Host ''
     Write-Host ('ОШИБКА: ' + $_.Exception.Message) -ForegroundColor Red
@@ -228,7 +207,6 @@ if ($Uninstall) {
         & $uninstallerSource -KeepData:(-not [bool]$RemoveData) -Silent:$Silent
         exit $LASTEXITCODE
     }
-    # --- Удаление без внешнего деинсталлятора (если он потерян): минимум — программа и ярлыки
     Stop-RunningApp
     Remove-InstallShortcuts
     Remove-UufRegistryEntry
@@ -284,8 +262,6 @@ if ([System.IO.File]::Exists($certificateSource)) {
     Copy-Item -LiteralPath $certificateSource -Destination $targetCertificatePath -Force
 }
 
-# --- Кладём программу полного удаления рядом с приложением: AppUninstaller.exe — основной вариант,
-# Uninstall-UUF.ps1/.bat — резервный исходник на случай, если .exe будет заблокирован антивирусом.
 $uninstallerExeSource = Get-UninstallerExeSource
 if ($uninstallerExeSource) {
     Copy-Item -LiteralPath $uninstallerExeSource -Destination $targetUninstaller -Force
@@ -306,7 +282,6 @@ if (-not [System.IO.File]::Exists($targetUninstaller) -and -not [System.IO.File]
 New-InstallShortcut -Directory $desktopDirectory
 New-InstallShortcut -Directory $programsDirectory
 
-# --- Метку интернета снимаем только с установленного UUF.exe (остальные файлы папки распаковки не трогаем)
 try { Unblock-File -LiteralPath $targetExe } catch { }
 Write-Step 'Метка интернета снята с установленного UUF.exe.'
 
@@ -332,7 +307,6 @@ if ($TrustCertificate -and -not $NoTrust) {
     Write-Step 'Сертификат издателя не добавлен в доверенные (по умолчанию). Чтобы добавить, запустите с ключом -TrustCertificate.'
 }
 
-# --- Регистрируем программу в «Приложения и возможности» (HKCU): удаление оттуда вызывает Uninstall-UUF.ps1
 try {
     $displayVersion = $installerVersion
     try {

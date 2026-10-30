@@ -4,16 +4,8 @@ on:
   push:
   pull_request:
   workflow_dispatch:
-  # Вызов из release.yml: тот же CI перед прикреплением файлов к релизу
   workflow_call:
 
-# Сообщения шагов намеренно ASCII: inline-скрипт шага Windows PowerShell 5.1 может
-# читаться как ANSI, и кириллица в нём превращается в нечитаемые символы.
-# Ошибки дублируются командами ::error:: — их видно в аннотациях прогона через API.
-#
-# Модули PSGallery устанавливаются с повторными попытками: репозиторий периодически
-# отвечает «No match was found for the specified search criteria», что не связано
-# с проверяемым кодом.
 jobs:
   syntax:
     name: Syntax (Windows PowerShell 5.1 and PowerShell 7)
@@ -21,8 +13,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Целевая среда приложения — Windows PowerShell 5.1, поэтому она проверяется
-      # отдельно: синтаксис, допустимый в PowerShell 7, не всегда разбирается в 5.1.
       - name: Parse with Windows PowerShell 5.1 (target runtime)
         shell: powershell
         run: |
@@ -122,8 +112,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Линтер — вспомогательная проверка: если PSGallery недоступен после всех
-      # попыток, шаг предупреждает, но не роняет сборку (это не дефект кода).
       - name: PSScriptAnalyzer
         shell: pwsh
         run: |
@@ -209,8 +197,6 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           try {
-            # Windows PowerShell 5.1 does not enable TLS 1.2 by default, and PSGallery
-            # requires it; without this line module installation fails in 5.1.
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             try { Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue } catch { }
             $available = Get-Module -ListAvailable -Name Pester | Where-Object { $_.Version -ge [version]'5.0.0' } | Select-Object -First 1
@@ -242,9 +228,6 @@ jobs:
             exit 1
           }
 
-  # Сборка самостоятельного .exe. Исходный скрипт остаётся единственным источником
-  # правды: ps2exe встраивает его в исполняемый файл, отдельного кода на C# нет.
-  # Готовый файл публикуется артефактом прогона, в репозиторий он не коммитится.
   build:
     name: Build Windows executable (ps2exe)
     runs-on: windows-latest
@@ -317,8 +300,6 @@ jobs:
             exit 1
           }
 
-      # Проверка содержимого: .exe извлекает встроенный скрипт параметром -extract,
-      # поэтому разбираем его парсером и убеждаемся, что внутри тот же корректный код.
       - name: Verify embedded script
         shell: powershell
         run: |
@@ -332,10 +313,6 @@ jobs:
               Write-Host '::warning::Extraction produced no file; embedded script was not verified.'
               exit 0
             }
-            # ps2exe writes the extracted script as UTF-8 without a BOM, and ParseFile
-            # reads a BOM-less file as ANSI in Windows PowerShell 5.1. That mangles
-            # Cyrillic and yields bogus syntax errors, so the text is decoded
-            # explicitly as UTF-8 and parsed with ParseInput instead of by path.
             $extractedText = [System.IO.File]::ReadAllText($extracted, [System.Text.Encoding]::UTF8)
             $failed = $false
             $tokens = $null
@@ -353,10 +330,6 @@ jobs:
               Write-Host ('::error::Embedded script does not contain expected marker: ' + $marker)
               $failed = $true
             }
-            # The embedded code must be exactly the reviewed repository source, so it
-            # is compared after normalizing line endings and a possible BOM. A
-            # difference is reported as a warning: it is informative, while parse
-            # errors and missing markers are fatal.
             $crlf = [string][char]13 + [string][char]10
             $lf = [string][char]10
             $bom = [string][char]0xFEFF
@@ -376,10 +349,6 @@ jobs:
             exit 1
           }
 
-      # Authenticode: SHA-256 + timestamp. If the UUF_SIGN_PFX_BASE64/PASSWORD secrets
-      # are configured, the build is signed with the real code signing certificate;
-      # otherwise Sign-Uuf.ps1 falls back to a self-signed CN=Hasberd certificate and
-      # exports its public key (dist/UUF-signing.cer) next to the exe.
       - name: Sign executable (Authenticode)
         shell: powershell
         env:
@@ -394,8 +363,6 @@ jobs:
             exit 1
           }
 
-      # Hash of the final signed binary: users can verify the artifact and hand the
-      # hash to antivirus support as a known-good sample.
       - name: Compute checksum
         shell: powershell
         run: |

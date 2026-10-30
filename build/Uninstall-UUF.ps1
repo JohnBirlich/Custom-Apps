@@ -1,32 +1,14 @@
-﻿# Полное удаление Universal Username Finder (Windows PowerShell 5.1+).
-#
-# Программа удаляет всё, что оставил установщик:
-#   - файлы в %LOCALAPPDATA%\Programs\UniversalUsernameFinder (UUF.exe, сертификат, этот скрипт);
-#   - ярлыки на рабочем столе и в меню «Пуск»;
-#   - запись в «Приложения и возможности» (HKCU);
-#   - доверие к сертификату издателя Hasberd из хранилищ текущего пользователя
-#     («Доверенные корневые» и «Доверенные издатели») — только самоподписанный сертификат CN=Hasberd;
-#   - данные приложения: историю ников, настройки, зашифрованный сейф и журнал
-#     (%LOCALAPPDATA%\UniversalUsernameFinder) — по умолчанию спрашивает подтверждение.
-#
-# Запуск: двойной щелчок по AppUninstaller.exe (собранный из этого скрипта вариант —
-# именно он кладётся в папку программы и регистрируется в «Приложениях»),
-# по Uninstall-UUF.bat (резерв) или командой:
-# powershell -NoProfile -ExecutionPolicy Bypass -File .\Uninstall-UUF.ps1 [-KeepData] [-Silent]
+﻿
 
 [CmdletBinding()]
 param(
-    # Удалить данные без подтверждения (установщик передаёт этот ключ вместе с -Uninstall -RemoveData).
     [switch]$RemoveData,
-    # Оставить историю, настройки, сейф и журнал (по умолчанию при запуске спрашивается).
     [switch]$KeepData,
-    # Без вопросов и пауз: удаляет всё сразу (для QuietUninstallString из реестра).
     [switch]$Silent
 )
 
 $ErrorActionPreference = 'Stop'
 
-# --- Ошибка не должна закрывать окно молча: печатаем её и ждём Enter
 trap {
     Write-Host ''
     Write-Host ('ОШИБКА: ' + $_.Exception.Message) -ForegroundColor Red
@@ -120,8 +102,6 @@ function Remove-UufDirectory {
         Write-Step ($Label + ' удалено: ' + $Path)
         return $true
     } catch {
-        # --- Этот файл может лежать внутри удаляемой папки (самоудаление AppUninstaller.exe):
-        # планируем доочистчика, который подождёт завершения текущего процесса и сотрёт папку.
         Write-Step ($Label + ' занят — папка будет удалена автоматически сразу после закрытия этого окна')
         try {
             $escaped = $Path.Replace('"','""')

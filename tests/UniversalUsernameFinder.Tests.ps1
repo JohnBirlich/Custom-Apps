@@ -1,4 +1,4 @@
-﻿BeforeAll {
+BeforeAll {
     $scriptPath = [System.IO.Path]::GetFullPath((Join-Path (Join-Path $PSScriptRoot '..') 'UniversalUsernameFinder.ps1'))
     if (-not (Test-Path -LiteralPath $scriptPath)) { throw ('Не найден скрипт приложения: ' + $scriptPath) }
 
@@ -852,7 +852,6 @@ Describe 'Новые источники генерации' {
 
 Describe 'Интерфейс и поведение версии 2.5.5' {
     It 'список категорий строится из того же массива, которым пользуется генератор' {
-        # v2.8.3: список тот же, но отсортирован по алфавиту
         $global:UufMainText.Contains('AddRange([object[]]@($script:WordCategories | Sort-Object))') | Should -BeTrue
         $global:UufMainText.Contains('$script:WordCategories = @(') | Should -BeTrue
     }
@@ -943,7 +942,6 @@ Describe 'Платформы, домены и интерфейс версии 2.
         $global:SupportedPlatforms -contains 'Microsoft' | Should -BeFalse
         $global:SupportedPlatforms -contains 'Telegram Channel' | Should -BeFalse
         $global:SupportedPlatforms -contains 'Steam' | Should -BeTrue
-        $global:UufWorkerText.Contains('# --- Steam Api') | Should -BeTrue
     }
     It 'источник случайных символов работает автономно' {
         $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @() -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 4 -MaxLength 12 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $false -OnlyShort $false -ExcludeTokens @() -RandomChars $true)
@@ -1113,7 +1111,7 @@ Describe 'Изменения версии 2.8.3' {
         $global:UufMainText.Contains('$footer.Location = New-Object System.Drawing.Point(14,878)') | Should -BeTrue
     }
     It 'разнобой гарантирован на выдаче пула и перемешивание крипто-индексами' {
-        $global:UufMainText.Contains('try { $j = Get-CryptoRandomIndex ($i + 1) }') | Should -BeTrue  # v2.8.4: форма с резервом по диапазону проверяется в блоке 2.8.4
+        $global:UufMainText.Contains('try { $j = Get-CryptoRandomIndex ($i + 1) }') | Should -BeTrue
     }
     It 'новые категории и алфавитный список' {
         $global:UufMainText.Contains('''Имя, Фамилия'' = @(''John'',''Birlich'',''Mark'',''Cukerberk'',''Mask'',''Ilon''') | Should -BeTrue
@@ -1192,7 +1190,6 @@ Describe 'Исправление версии 2.8.5' {
     It 'подсказки грида не используют несуществующее свойство ToolTip (краш запуска в 2.8.3/2.8.4)' {
         $global:UufMainText.Contains('ReselectionDelay') | Should -BeFalse
         $global:UufMainText.Contains('$script:GridToolTip.ReshowDelay = 250') | Should -BeTrue
-        $global:UufMainText.Contains('# --- Подсказки статуса: оформление не должно уметь ронять запуск') | Should -BeTrue
     }
     It 'поле прокси честно обещает только HTTP-прокси' {
         $global:UufMainText.Contains('socks5://127.0.0.1:1080') | Should -BeFalse
