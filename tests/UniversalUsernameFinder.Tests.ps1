@@ -1582,7 +1582,7 @@ Describe 'Версия 2.10.0: поправки 1-16' {
         $global:UufFullText.Contains('$isGoogleAccount = ($platform -eq ' + [char]39 + 'Google' + [char]39 + ')') | Should -BeTrue
     }
     It 'пункт 15: кнопка «Проверка соединения», таблица HTTP-кодов и формат строки результата' {
-        $global:UufFullText.Contains("'⇄  Проверка соединения' 14 1237 350") | Should -BeTrue
+        $global:UufFullText.Contains("'⇄  Проверка соединения' 14 1261 350") | Should -BeTrue
         $global:UufFullText.Contains('function Open-ConnectionTestWindow {') | Should -BeTrue
         $global:UufFullText.Contains('$script:HttpStatusNotes = @{') | Should -BeTrue
         $global:UufFullText.Contains('"{0}. {1}.api - {2}, ping: {3}, Error: {4}"') | Should -BeTrue
@@ -1714,5 +1714,36 @@ Describe 'Версия 2.10.11: разделитель _ и поиск толь�
     }
     It 'короткие ники не режут точный режим' {
         $global:UufMainText.Contains('if ($OnlyShort -and -not $ExactOnly)') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.13: интерфейс, остановка, журнал и недопустимые ники' {
+    It 'поле «Поиск только введенных ников» стоит на своей строке во всю ширину панели' {
+        $global:UufMainText.Contains('New-CheckBox ''Поиск только введенных ников'' 14 827 360 $false') | Should -BeTrue
+    }
+    It 'после остановки «Проверяется» возвращается в «Ожидает» до обновления кнопок' {
+        $revert = $global:UufMainText.IndexOf('можно запустить повторно')
+        $revert | Should -BeGreaterThan 0
+        $reset = $global:UufMainText.IndexOf("        Reset-CheckControls`n        if (`$completed -and")
+        $reset | Should -BeLessThan 0
+        $after = $global:UufMainText.IndexOf("        Reset-CheckControls`n        `$script:GridRefreshPending")
+        $after | Should -BeGreaterThan $revert
+    }
+    It 'ошибки выводятся в диагностику с префиксом ОШИБКА' {
+        $global:UufMainText.Contains("Add-Diagnostic ('ОШИБКА: ' + `$Message)") | Should -BeTrue
+        $global:UufMainText.Contains("Add-ErrorDiagnostic ('Не удалось сохранить настройки: '") | Should -BeTrue
+        $global:UufMainText.Contains("Add-ErrorDiagnostic ('Ошибка проверки соединения: '") | Should -BeTrue
+    }
+    It 'недопустимые ники попадают в постоянный список исключений генерации' {
+        $global:UufMainText.Contains('function Register-InvalidNick') | Should -BeTrue
+        $global:UufMainText.Contains('Register-ProgressOutcome $candidate') | Should -BeTrue
+        $global:UufMainText.Contains('Register-InvalidNick -Name $nick -Platform $platform') | Should -BeTrue
+    }
+    It 'статус «Свободно/возможно» заменён на «Свободно»' {
+        $global:UufMainText.Contains('Свободно/возможно') | Should -BeFalse
+        $global:UufMainText.Contains('"Свободно: $free"') | Should -BeTrue
+    }
+    It 'обработчик выбора сохранённой записи защищён от исключений' {
+        $global:UufMainText.Contains('Выбор сохранённой записи: ') | Should -BeTrue
     }
 }
