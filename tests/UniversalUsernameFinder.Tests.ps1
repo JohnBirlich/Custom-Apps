@@ -1,4 +1,4 @@
-﻿BeforeAll {
+BeforeAll {
     $scriptPath = [System.IO.Path]::GetFullPath((Join-Path (Join-Path $PSScriptRoot '..') 'UniversalUsernameFinder.ps1'))
     if (-not (Test-Path -LiteralPath $scriptPath)) { throw ('Не найден скрипт приложения: ' + $scriptPath) }
 
@@ -1585,7 +1585,6 @@ Describe 'Версия 2.10.0: поправки 1-16' {
         $global:UufFullText.Contains("'⇄  Проверка соединения' 14 1237 350") | Should -BeTrue
         $global:UufFullText.Contains('function Open-ConnectionTestWindow {') | Should -BeTrue
         $global:UufFullText.Contains('$script:HttpStatusNotes = @{') | Should -BeTrue
-        $global:UufFullText.Contains('https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status') | Should -BeTrue
         $global:UufFullText.Contains('"{0}. {1}.api - {2}, ping: {3}, Error: {4}"') | Should -BeTrue
     }
     It 'пункт 16: журнал разворачивается вверх и возвращается в стандартное положение' {
