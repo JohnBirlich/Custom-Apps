@@ -1722,11 +1722,11 @@ Describe 'Версия 2.10.13: интерфейс, остановка, журн
         $global:UufMainText.Contains('New-CheckBox ''Поиск только введенных ников'' 14 827 360 $false') | Should -BeTrue
     }
     It 'после остановки «Проверяется» возвращается в «Ожидает» до обновления кнопок' {
-        $revert = $global:UufFullText.IndexOf('можно запустить повторно')
+        $revert = $global:UufFullText.IndexOf('можно запустить повторно', [System.StringComparison]::Ordinal)
         $revert | Should -BeGreaterThan 0
-        $reset = $global:UufFullText.IndexOf("        Reset-CheckControls`n        if (`$completed -and")
+        $reset = $global:UufFullText.IndexOf("        Reset-CheckControls`n        if (`$completed -and", [System.StringComparison]::Ordinal)
         $reset | Should -BeLessThan 0
-        $after = $global:UufFullText.IndexOf("        Reset-CheckControls`n        `$script:GridRefreshPending")
+        $after = $global:UufFullText.IndexOf("        Reset-CheckControls`n        `$script:GridRefreshPending", [System.StringComparison]::Ordinal)
         $after | Should -BeGreaterThan $revert
     }
     It 'ошибки выводятся в диагностику с префиксом ОШИБКА' {
