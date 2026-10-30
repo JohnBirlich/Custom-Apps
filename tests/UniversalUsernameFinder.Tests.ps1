@@ -1724,8 +1724,8 @@ Describe 'Версия 2.10.13: интерфейс, остановка, журн
     It 'после остановки «Проверяется» возвращается в «Ожидает» до обновления кнопок' {
         $revert = $global:UufFullText.IndexOf('можно запустить повторно', [System.StringComparison]::Ordinal)
         $revert | Should -BeGreaterThan 0
-        $reset = [regex]::Match($global:UufFullText, 'Reset-CheckControls\r?\n\s+if \(\$completed -and').Index
-        $reset | Should -BeLessThan 0
+        $resetFound = [regex]::Match($global:UufFullText, 'Reset-CheckControls\r?\n\s+if \(\$completed -and').Success
+        $resetFound | Should -BeFalse
         $after = [regex]::Match($global:UufFullText, 'Reset-CheckControls\r?\n\s+\$script:GridRefreshPending').Index
         $after | Should -BeGreaterThan $revert
     }
