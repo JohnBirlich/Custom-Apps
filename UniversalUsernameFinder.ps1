@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 # --- Шрифт интерфейса: Tahoma (шрифт Windows XP, есть в любой версии Windows)
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.9'
+$script:AppVersion = '2.10.10'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -473,7 +473,7 @@ function Get-NickStructure {
 }
 
 function Convert-ToNickToken {
-    param([string]$Text)
+    param([string]$Text, [switch]$KeepSymbols)
     if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
     $value = $Text.Trim().ToLowerInvariant()
     $known = @{
@@ -493,8 +493,10 @@ function Convert-ToNickToken {
         $character = [string]$char
         if ($map.ContainsKey($character)) { [void]$builder.Append([string]$map[$character]) }
         elseif ($character -match '[a-z0-9]') { [void]$builder.Append($character) }
+        elseif ($KeepSymbols -and $character -match '[._-]') { [void]$builder.Append($character) }
     }
     $result = $builder.ToString()
+    if ($KeepSymbols) { $result = $result.Trim('._-') }
     if ($result.Length -gt 0) { return $result.Substring(0,1).ToUpperInvariant() + $result.Substring(1) }
     return ''
 }
@@ -710,7 +712,7 @@ function New-AdvancedCandidatePool {
         }
     }
     foreach ($rawWord in ($CustomWords -split '[,;\s]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
-        $word = Convert-ToNickToken $rawWord
+        $word = Convert-ToNickToken -Text $rawWord -KeepSymbols
         if ($word.Length -gt 0) { [void]$anchors.Add([pscustomobject]@{Word=$word; Meaning='ваше ключевое слово'; Category='Свои слова'}) }
     }
 
@@ -4029,7 +4031,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.9' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.10' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {

@@ -1694,3 +1694,13 @@ Describe 'Версия 2.10.9: стиль окна регистрации и в�
     }
 }
 
+Describe 'Версия 2.10.10: свои слова сохраняют _ . -' {
+    It 'свои слова конвертируются с сохранением допустимых символов' {
+        $global:UufMainText.Contains('$word = Convert-ToNickToken -Text $rawWord -KeepSymbols') | Should -BeTrue
+        $global:UufMainText.Contains('elseif ($KeepSymbols -and $character -match ''[._-]'')') | Should -BeTrue
+    }
+    It 'обрезка краёв от разделителей' {
+        $global:UufMainText.Contains('if ($KeepSymbols) { $result = $result.Trim(''._-'') }') | Should -BeTrue
+    }
+}
+
