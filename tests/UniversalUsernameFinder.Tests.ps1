@@ -1704,3 +1704,19 @@ Describe 'Версия 2.10.10: свои слова сохраняют _ . -' {
     }
 }
 
+
+Describe 'Версия 2.10.11: разделитель _ и поиск только введенных ников' {
+    It 'генератор не удаляет _ . - из слов' {
+        $global:UufMainText.Contains('[^A-Za-z0-9._-]') | Should -BeTrue
+    }
+    It 'чекбокс режима точных ников подключён и передаётся в пул' {
+        $global:UufMainText.Contains('$script:ExactOnlyCheck = New-CheckBox ''Поиск только введенных ников''') | Should -BeTrue
+        $global:UufFullText.Contains('-ExactOnly ([bool]$script:ExactOnlyCheck.Checked)') | Should -BeTrue
+    }
+    It 'режим точных ников выдаёт свои слова с номерами по порядку' {
+        $global:UufMainText.Contains('$candidate = ([string]$item.Word).ToLowerInvariant() + [string]$number') | Should -BeTrue
+    }
+    It 'короткие ники не режут точный режим' {
+        $global:UufMainText.Contains('if ($OnlyShort -and -not $ExactOnly)') | Should -BeTrue
+    }
+}

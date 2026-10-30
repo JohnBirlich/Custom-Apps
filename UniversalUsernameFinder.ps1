@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 # --- Шрифт интерфейса: Tahoma (шрифт Windows XP, есть в любой версии Windows)
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.10'
+$script:AppVersion = '2.10.11'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -695,7 +695,8 @@ function New-AdvancedCandidatePool {
         [bool]$LeetWords,
         [bool]$RareShort,
         [bool]$Ordered,
-        [bool]$RandomChars
+        [bool]$RandomChars,
+        [bool]$ExactOnly
     )
     if ($null -eq $ExcludeKeys) { $ExcludeKeys = @{} }
     if ($Count -lt 1) { $Count = 1 }
@@ -739,7 +740,7 @@ function New-AdvancedCandidatePool {
     $rareWords = @($script:RareShortWords)
 
     $maximum = $MaxLength
-    if ($OnlyShort) { $maximum = [Math]::Min($maximum, 12) }
+    if ($OnlyShort -and -not $ExactOnly) { $maximum = [Math]::Min($maximum, 12) }
     $joiner = ''
     if ($UseUnderscore) { $joiner = '_' }
 
@@ -806,7 +807,7 @@ function New-AdvancedCandidatePool {
         if (-not $Ordered) { $items = Get-ShuffledArray -Items $items }
         foreach ($base in $items) {
             if ($result.Count -ge $StopAtTotal) { break }
-            $word = [regex]::Replace([string]$base.Word, '[^A-Za-z0-9]', '')
+            $word = [regex]::Replace([string]$base.Word, '[^A-Za-z0-9._-]', '')
             if ($word.Length -lt 1) { continue }
             if (& $tryAccept $word ([string]$base.Meaning) ([string]$base.Category) 'Одно слово') {
                 $counters['Single'] = $counters['Single'] + 1
@@ -846,8 +847,8 @@ function New-AdvancedCandidatePool {
                 $reverse = ($index % 2) -eq 1
                 $baseItem = $baseArray[[int][Math]::Floor($combo / $secondArray.Count)]
                 $secondItem = $secondArray[$combo % $secondArray.Count]
-                $left = [regex]::Replace([string]$baseItem.Word, '[^A-Za-z0-9]', '')
-                $right = [regex]::Replace([string]$secondItem.Word, '[^A-Za-z0-9]', '')
+                $left = [regex]::Replace([string]$baseItem.Word, '[^A-Za-z0-9._-]', '')
+                $right = [regex]::Replace([string]$secondItem.Word, '[^A-Za-z0-9._-]', '')
                 if ($left.Length -lt 1 -or $right.Length -lt 1 -or $left -ieq $right) { continue }
                 if ($reverse) {
                     $name = $right + $joiner + $left
@@ -870,8 +871,8 @@ function New-AdvancedCandidatePool {
             $attempts++
             $baseItem = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
             $secondItem = $secondArray[(Get-Random -Minimum 0 -Maximum $secondArray.Count)]
-            $left = [regex]::Replace([string]$baseItem.Word, '[^A-Za-z0-9]', '')
-            $right = [regex]::Replace([string]$secondItem.Word, '[^A-Za-z0-9]', '')
+            $left = [regex]::Replace([string]$baseItem.Word, '[^A-Za-z0-9._-]', '')
+            $right = [regex]::Replace([string]$secondItem.Word, '[^A-Za-z0-9._-]', '')
             if ($left.Length -lt 1 -or $right.Length -lt 1 -or $left -ieq $right) { $failStreak++; continue }
             if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) {
                 $name = $left + $joiner + $right
@@ -900,7 +901,7 @@ function New-AdvancedCandidatePool {
             $structure = 'Одно слово'
             if ($hasAnchors) {
                 $anchor = $bases[(Get-Random -Minimum 0 -Maximum $bases.Count)]
-                $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9]', '')
+                $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9._-]', '')
                 if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) {
                     $name = $anchorWord + $joiner + $word
                     $meaning = '{0} + выдуманное слово' -f [string]$anchor.Meaning
@@ -936,14 +937,14 @@ function New-AdvancedCandidatePool {
             $meaning = 'два выдуманных слова'
             if ($hasAnchors -and $baseArray.Count -ge 1) {
                 $anchor = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
-                $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9]', '')
+                $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9._-]', '')
                 if ($anchorWord.Length -ge 1) {
                     if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) { $left = $anchorWord } else { $right = $anchorWord }
                     $meaning = '{0} + выдуманное слово' -f [string]$anchor.Meaning
                 }
             } elseif ($baseArray.Count -ge 1 -and $secondArray.Count -ge 1 -and (Get-Random -Minimum 0 -Maximum 2) -eq 0) {
                 $item = $secondArray[(Get-Random -Minimum 0 -Maximum $secondArray.Count)]
-                $itemWord = [regex]::Replace([string]$item.Word, '[^A-Za-z0-9]', '')
+                $itemWord = [regex]::Replace([string]$item.Word, '[^A-Za-z0-9._-]', '')
                 if ($itemWord.Length -ge 1) {
                     if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) { $right = $itemWord } else { $left = $itemWord }
                     $meaning = 'выдуманное слово + {0}' -f [string]$item.Meaning
@@ -975,8 +976,8 @@ function New-AdvancedCandidatePool {
             if ($baseArray.Count -ge 1 -and $secondArray.Count -ge 1 -and $mode -eq 1) {
                 $baseItem = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
                 $secondItem = $secondArray[(Get-Random -Minimum 0 -Maximum $secondArray.Count)]
-                $left = [regex]::Replace([string]$baseItem.Word, '[^A-Za-z0-9]', '')
-                $right = [regex]::Replace([string]$secondItem.Word, '[^A-Za-z0-9]', '')
+                $left = [regex]::Replace([string]$baseItem.Word, '[^A-Za-z0-9._-]', '')
+                $right = [regex]::Replace([string]$secondItem.Word, '[^A-Za-z0-9._-]', '')
                 if ($left.Length -ge 1 -and $right.Length -ge 1 -and $left -ine $right) {
                     $sourceName = $left + $joiner + $right
                     $structure = 'Два слова'
@@ -985,14 +986,14 @@ function New-AdvancedCandidatePool {
                 }
             } elseif ($baseArray.Count -ge 1 -and $mode -eq 0) {
                 $item = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
-                $sourceName = [regex]::Replace([string]$item.Word, '[^A-Za-z0-9]', '')
+                $sourceName = [regex]::Replace([string]$item.Word, '[^A-Za-z0-9._-]', '')
                 $meaning = '{0} + замена символами' -f [string]$item.Meaning
             }
             if ([string]::IsNullOrWhiteSpace($sourceName)) {
                 $inventedWord = New-InventedWord -MinLength ([Math]::Max(3, $MinLength)) -MaxLength $maximum
                 if ($hasAnchors -and $baseArray.Count -ge 1) {
                     $anchor = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
-                    $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9]', '')
+                    $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9._-]', '')
                     if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) { $sourceName = $anchorWord + $joiner + $inventedWord } else { $sourceName = $inventedWord + $joiner + $anchorWord }
                     $structure = 'Два слова'
                     $meaning = '{0} + выдуманное слово + замена символами' -f [string]$anchor.Meaning
@@ -1034,7 +1035,7 @@ function New-AdvancedCandidatePool {
             }
             if ($hasAnchors -and $baseArray.Count -ge 1) {
                 $anchor = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
-                $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9]', '')
+                $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9._-]', '')
                 if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) {
                     $name = $anchorWord + $joiner + $name
                     $meaning = '{0} + редкое короткое слово' -f [string]$anchor.Meaning
@@ -1075,7 +1076,7 @@ function New-AdvancedCandidatePool {
             } else {
                 if ($baseArray.Count -ge 1) {
                     $item = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
-                    $baseName = [regex]::Replace([string]$item.Word, '[^A-Za-z0-9]', '')
+                    $baseName = [regex]::Replace([string]$item.Word, '[^A-Za-z0-9._-]', '')
                     $meaning = '{0} + число' -f [string]$item.Meaning
                     $category = [string]$item.Category
                 } else {
@@ -1147,7 +1148,28 @@ function New-AdvancedCandidatePool {
         Random = $fillRandom
     }
 
-    $perSource = [int][Math]::Ceiling($Count / $activeSources.Count)
+    if ($ExactOnly) {
+        # --- Поиск только введенных ников: сами слова как есть, при «Использовать цифры» — с номерами 1, 2, 3...
+        $activeSources.Clear()
+        foreach ($item in $anchors) {
+            if ($result.Count -ge $Count) { break }
+            $exactName = ([string]$item.Word).ToLowerInvariant()
+            [void](& $tryAccept $exactName 'ваше ключевое слово' 'Свои слова' 'Одно слово')
+        }
+        if ($UseNumbers) {
+            for ($number = 1; $number -le 10000 -and $result.Count -lt $Count; $number++) {
+                $fitted = $false
+                foreach ($item in $anchors) {
+                    if ($result.Count -ge $Count) { break }
+                    $candidate = ([string]$item.Word).ToLowerInvariant() + [string]$number
+                    if ($candidate.Length -le $maximum) { $fitted = $true }
+                    [void](& $tryAccept $candidate ('{0} + число' -f [string]$item.Meaning) 'Свои слова' 'Одно слово')
+                }
+                if (-not $fitted) { break }
+            }
+        }
+    }
+    $perSource = [int][Math]::Ceiling($Count / [Math]::Max(1, $activeSources.Count))
     if ($perSource -lt 1) { $perSource = 1 }
     $target = 0
     foreach ($sourceName in $activeSources) {
@@ -1673,6 +1695,7 @@ $script:ExcludeCheckedCheck = New-CheckBox 'Исключать проверен�
 $script:OnlyFreeCheck = New-CheckBox 'Показывать свободные' 14 779 180 $false
 $script:OrderedCheck = New-CheckBox 'Генерация по порядку' 194 779 170 $false
 $script:RandomCharsCheck = New-CheckBox 'Случайные символы' 14 803 180 $true
+$script:ExactOnlyCheck = New-CheckBox 'Поиск только введенных ников' 194 803 190 $false
 
 Add-UiLabel 'Исключить слова/части ника (пример: xxx, test, 123)' 14 835 350 20 | Out-Null
 $script:ExcludeBox = New-TextBox 14 856 350 27 ''
@@ -3727,6 +3750,7 @@ function Show-UsernameFinderHelp {
             @('Замена символами', 'Буквы заменяются похожими цифрами и знаками (leet).<br>  Пример: fine → f1n3, group → gr0up'),
             @('Редкие короткие (3-6)', 'Ники длиной 3–6 символов. Такие имена обычно заняты первыми, свободных мало.<br>  Пример: xqv7, zorn, kvei'),
             @('Использовать цифры', 'Добавляет цифры к нику.<br>  Пример: lonelesee24'),
+            @('Поиск только введенных ников', 'Ищет только слова из поля «Свои слова», как введены (с _ . -). Остальные источники отключаются. С «Использовать цифры» добавляет номера: plumer_fresh1, plumer_fresh2 и т.д. «Только короткие» здесь не ограничивает длину; действует «Макс. длина».<br>  Пример: plumer_fresh → plumer_fresh1'),
             @('Разделитель _', 'Вставляет подчёркивание между частями. Не работает для Google и GitHub: эти платформы его не допускают.<br>  Пример: lone_see'),
             @('Случайные символы', 'Случайные буквы и цифры.<br>  Пример: k7qzd2'),
             @('Тонкая настройка', 'Количество — сколько ников выдать. Мин. и макс. длина — границы длины. «Только короткие (≤12)» оставляет ники не длиннее 12 символов.<br>Важно: если «Только короткие» включено, а минимальная длина больше 12, ников не будет. Программа предупредит и не запустит генерацию.'),
@@ -4031,7 +4055,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.10' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.11' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -4815,8 +4839,12 @@ $script:GenerateButton.Add_Click({
     $requestedCount = [int]$script:CountBox.Value
     # --- Конфликты настроек: предупреждаем до генерации, а не молча теряем ники
     $enabledSources = @($script:OneWordCheck, $script:TwoWordsCheck, $script:InventedWordsCheck, $script:InventedPairsCheck, $script:LeetCheck, $script:RareShortCheck, $script:RandomCharsCheck, $script:NumbersCheck) | Where-Object { $_.Checked }
-    if (@($enabledSources).Count -eq 0) { Add-Diagnostic 'Ни один источник генерации не выбран: использую однословные ники как запасной вариант. Включи нужные галочки в «Настройки генерации».' }
-    if ([bool]$script:ShortOnlyCheck.Checked -and [int]$script:MinLengthBox.Value -gt 12) {
+    if ([bool]$script:ExactOnlyCheck.Checked) {
+        if ([string]::IsNullOrWhiteSpace($customWords)) { Add-Diagnostic 'Режим «Поиск только введенных ников»: впиши свои слова в поле «Свои слова через запятую».' }
+        if (@($enabledSources | Where-Object { $_ -ne $script:NumbersCheck }).Count -gt 0) { Add-Diagnostic 'Режим «Поиск только введенных ников»: галочки источников игнорируются, используются только свои слова (с цифрами, если включено).' }
+    }
+    if (@($enabledSources).Count -eq 0 -and -not [bool]$script:ExactOnlyCheck.Checked) { Add-Diagnostic 'Ни один источник генерации не выбран: использую однословные ники как запасной вариант. Включи нужные галочки в «Настройки генерации».' }
+    if ([bool]$script:ShortOnlyCheck.Checked -and -not [bool]$script:ExactOnlyCheck.Checked -and [int]$script:MinLengthBox.Value -gt 12) {
         [System.Windows.Forms.MessageBox]::Show('«Только короткие (≤12)» не совместимо с минимальной длиной больше 12 символов: ников не будет. Уменьши минимальную длину или сними галочку «Только короткие».', 'Настройки', 'OK', 'Warning') | Out-Null
         return
     }
@@ -4833,7 +4861,7 @@ $script:GenerateButton.Add_Click({
     if ($script:ExcludeCheckedCheck.Checked) {
         foreach ($checkedKey in $script:CheckedNames.Keys) { $excludeKeys[[string]$checkedKey] = $true }
     }
-    $candidates = @(New-AdvancedCandidatePool -SelectedWordCategories $categories -CustomWords $customWords -Style ([string]$script:StyleBox.SelectedItem) -Platform $platform -MinLength ([int]$script:MinLengthBox.Value) -MaxLength ([int]$script:MaxLengthBox.Value) -Count $requestedCount -UseNumbers ([bool]$script:NumbersCheck.Checked) -UseUnderscore ([bool]$script:UnderscoreCheck.Checked) -OneWord ([bool]$script:OneWordCheck.Checked) -TwoWords ([bool]$script:TwoWordsCheck.Checked) -InventedWords ([bool]$script:InventedWordsCheck.Checked) -InventedPairs ([bool]$script:InventedPairsCheck.Checked) -LeetWords ([bool]$script:LeetCheck.Checked) -RareShort ([bool]$script:RareShortCheck.Checked) -Ordered ([bool]$script:OrderedCheck.Checked) -RandomChars ([bool]$script:RandomCharsCheck.Checked) -OnlyShort ([bool]$script:ShortOnlyCheck.Checked) -ExcludeTokens $excludeTokens -ExcludeKeys $excludeKeys)
+    $candidates = @(New-AdvancedCandidatePool -SelectedWordCategories $categories -CustomWords $customWords -Style ([string]$script:StyleBox.SelectedItem) -Platform $platform -MinLength ([int]$script:MinLengthBox.Value) -MaxLength ([int]$script:MaxLengthBox.Value) -Count $requestedCount -UseNumbers ([bool]$script:NumbersCheck.Checked) -UseUnderscore ([bool]$script:UnderscoreCheck.Checked) -OneWord ([bool]$script:OneWordCheck.Checked) -TwoWords ([bool]$script:TwoWordsCheck.Checked) -InventedWords ([bool]$script:InventedWordsCheck.Checked) -InventedPairs ([bool]$script:InventedPairsCheck.Checked) -LeetWords ([bool]$script:LeetCheck.Checked) -RareShort ([bool]$script:RareShortCheck.Checked) -Ordered ([bool]$script:OrderedCheck.Checked) -RandomChars ([bool]$script:RandomCharsCheck.Checked) -ExactOnly ([bool]$script:ExactOnlyCheck.Checked) -OnlyShort ([bool]$script:ShortOnlyCheck.Checked) -ExcludeTokens $excludeTokens -ExcludeKeys $excludeKeys)
     # --- Разнобой: гарантированно перемешиваем и сам вывод пула (страховка от тихого сбоя перемешивания внутри)
     if (-not $script:OrderedCheck.Checked -and @($candidates).Count -gt 1) { $candidates = @(Get-ShuffledArray -Items @($candidates)) }
     $poolStats = $script:GenerationStats
