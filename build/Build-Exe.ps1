@@ -1,18 +1,8 @@
-﻿# Сборка Universal Username Finder в самостоятельный .exe через модуль ps2exe.
-#
-# ps2exe встраивает исходный скрипт в исполняемый файл и поднимает для него среду
-# PowerShell, поэтому .ps1 остаётся единственным источником правды: правки вносятся
-# в скрипт, а .exe пересобирается. Отдельного кода на C# в репозитории нет.
-#
-# Запуск из папки build:  .\Build-Exe.ps1
-# Запуск из любого места:  powershell -ExecutionPolicy Bypass -File build\Build-Exe.ps1
-# Результат:               ..\dist\UUF.exe
+﻿
 
 [CmdletBinding()]
 param(
-    # Каталог для готового .exe. По умолчанию — dist в корне репозитория.
     [string]$OutputDirectory = '',
-    # Не устанавливать ps2exe, а только использовать уже имеющийся.
     [switch]$SkipInstall
 )
 
@@ -34,7 +24,6 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
 $null = [System.IO.Directory]::CreateDirectory($OutputDirectory)
 $outputPath = Join-Path $OutputDirectory 'UUF.exe'
 
-# Версия берётся из самого приложения, чтобы метаданные .exe не разъезжались с ним.
 $scriptText = [System.IO.File]::ReadAllText($scriptPath)
 $quote = [char]39
 $versionPattern = '\$script:AppVersion\s*=\s*' + $quote + '([0-9]+(?:\.[0-9]+)*)' + $quote
@@ -51,8 +40,6 @@ Write-Host ('Исходный скрипт:  ' + $scriptPath)
 Write-Host ('Версия:           ' + $appVersion + ' (файл: ' + $fileVersion + ')')
 Write-Host ('Результат:        ' + $outputPath)
 
-# Модуль ps2exe. PSGallery периодически отвечает «No match was found for the
-# specified search criteria», поэтому установка повторяется несколько раз.
 $ps2exe = Get-Module -ListAvailable -Name ps2exe | Select-Object -First 1
 if (-not $ps2exe -and -not $SkipInstall) {
     try { Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue } catch { }
@@ -78,17 +65,6 @@ if ([System.IO.File]::Exists($outputPath)) {
     try { [System.IO.File]::Delete($outputPath) } catch { }
 }
 
-# Флаги сборки:
-#   -noConsole  приложение Windows Forms без консольного окна;
-#   -STA        однопоточный режим, обязателен для Windows Forms;
-#   -noOutput / -noError  подавляют стандартный вывод и поток ошибок. В GUI-режиме
-#               ps2exe показывает каждую строку вывода отдельным диалогом, а у
-#               приложения весь вывод идёт в интерфейс и журнал, поэтому каналы
-#               закрываются, чтобы случайная строка не превратилась в окно с кнопкой OK.
-# Флаг -DPIAware намеренно не используется: он объявляет процесс DPI-осведомлённым,
-# и при масштабировании 125-150 % вместо растянутого, но целого окна можно получить
-# мелкую и обрезанную раскладку. Интерфейс размечен абсолютными координатами, поэтому
-# вопрос требует проверки на живой машине, а не в сборке.
 $iconPath = Join-Path $repositoryRoot 'assets\uuf.ico'
 $buildArguments = @{
     inputFile   = $scriptPath

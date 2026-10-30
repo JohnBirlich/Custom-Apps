@@ -1,5 +1,4 @@
 ﻿$ErrorActionPreference = 'Stop'
-# --- Шрифт интерфейса: Tahoma (шрифт Windows XP, есть в любой версии Windows)
 $script:UiFontFamily = 'Tahoma'
 $script:AppVersion = '2.10.11'
 
@@ -33,7 +32,6 @@ function Get-AppDirectory {
 }
 
 function Resolve-LogPath {
-    # --- Журнал пишется в %LOCALAPPDATA%\UniversalUsernameFinder, где его не затирает сборка; папка программы — portable-резерв
     $primary = Join-Path (Get-AppDirectory) 'UniversalUsernameFinder.log'
     try {
         $preferredDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
@@ -66,11 +64,9 @@ function Rotate-AppLog {
     } catch { }
 }
 
-# --- Журнал и стартовая диагностика
 $script:LogPath = Resolve-LogPath
 Rotate-AppLog
 
-# --- Статус подписи запускаемого файла: по таким строкам в журнале видно, собрана ли подпись и доверен ли издатель
 try {
     $uufSelfPath = [string]([Environment]::GetCommandLineArgs()[0])
     if ($uufSelfPath -and (Test-Path -LiteralPath $uufSelfPath) -and ($uufSelfPath -notmatch '(?i)\\(powershell(_ise)?|pwsh)(\.cat)?(\.exe)?$')) {
@@ -278,7 +274,6 @@ $script:Modifiers = @(
     @{Word='One'; Meaning='один, единственный'}, @{Word='X'; Meaning='загадочный символ'}
 )
 
-# --- Словарь: категории и слова
 $script:WordCategories = @(
     'Космос','Свет и энергия','Природа','Мифология','Эмоции и характер','Скорость',
     'Абстрактное','Эстетика','Технологии и кибер','Игры и киберспорт','Животные',
@@ -343,7 +338,6 @@ $script:MeaningGroups = @{
     'Русские слова латиницей' = @('Privet','Phizik','Shizik','Cloun','Debil','Poka','Khorosho','Avos','Nibudo','Bardak','Kefir','Pelmeni','Shaurma','Tovarich','Kartoshka','Arbuz')
 }
 
-# --- Слоги и редкие слова
 $script:InventedOnsets = @(
     'k','kr','v','vr','d','dr','t','tr','n','z','s','st','r','l','m','p','b','g','gr','f','fl',
     'th','sh','ch','x','qu','br','pr','sn','sl','sm','sk','c','h','j','w','y','kl','gl','bl',
@@ -396,7 +390,7 @@ $script:LastGridRefresh = [DateTime]::MinValue
 $script:GridRefreshPending = $false
 $script:StatusColors = @{
     'Свободен'            = [System.Drawing.Color]::FromArgb(99,222,151)
-    'Вероятно свободен'   = [System.Drawing.Color]::FromArgb(120,205,250) # legacy: старые записи истории
+    'Вероятно свободен'   = [System.Drawing.Color]::FromArgb(120,205,250)
     'Занят'               = [System.Drawing.Color]::FromArgb(245,120,120)
     'Недопустимый'        = [System.Drawing.Color]::FromArgb(180,188,203)
     'Не подтверждено'      = [System.Drawing.Color]::FromArgb(207,185,255)
@@ -507,7 +501,6 @@ function Test-RobloxUsernameFormat {
     return ($Username.Length -ge 3 -and $Username.Length -le 20 -and $Username -match '^[A-Za-z0-9_]+$' -and $Username -match '[A-Za-z0-9]' -and $Username -notmatch '^_|_$|__')
 }
 
-# --- Платформы и правила длины
 $script:SupportedPlatforms = @('Roblox','Google','Mail.ru','VK','Discord','Outlook','Telegram','Steam','GitHub','YouTube')
 
 function Test-SupportedPlatform {
@@ -587,7 +580,6 @@ function Test-UsernameFormat {
         'VK' { return ($Username.Length -ge 5 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9._]+$' -and $Username -notmatch '(^[._]|[._]$|\.\.|__)' -and $Username -notmatch '^\d+$') }
         'Outlook' { return ($Username.Length -ge 3 -and $Username.Length -le 64 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]?$' -and $Username -notmatch '([._-]$|[._-]{2})') }
         'GitHub' { return ($Username.Length -ge 1 -and $Username.Length -le 39 -and $Username -match '^(?!-)(?!.*--)[A-Za-z0-9-]+(?<!-)$') }
-# --- Discord Api
         'Discord' {
             $discordNameForFormat = $Username.ToLowerInvariant()
             return ($Username.Length -ge 2 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_.]+$' -and $Username -notmatch '(^\.|\.$|\.\.)' -and $discordNameForFormat -notin @('discord','clyde','nitro','here','everyone','system'))
@@ -673,7 +665,6 @@ function Convert-ToLeetWord {
     return (-join $chars)
 }
 
-# --- Генератор ников
 function New-AdvancedCandidatePool {
     param(
         [string[]]$SelectedWordCategories,
@@ -1149,7 +1140,6 @@ function New-AdvancedCandidatePool {
     }
 
     if ($ExactOnly) {
-        # --- Поиск только введенных ников: сами слова как есть, при «Использовать цифры» — с номерами 1, 2, 3...
         $activeSources.Clear()
         foreach ($item in $anchors) {
             if ($result.Count -ge $Count) { break }
@@ -1204,7 +1194,6 @@ function New-AdvancedCandidatePool {
     return @($shuffled | Select-Object -First $take)
 }
 
-# --- Интерфейс: окно и заголовок
 $script:Form = New-Object System.Windows.Forms.Form
 $script:Form.Text = ('Universal Username Finder v{0}' -f $script:AppVersion)
 $script:Form.StartPosition = 'CenterScreen'
@@ -1389,7 +1378,6 @@ $script:AccountButton.Font = New-Object System.Drawing.Font($script:UiFontFamily
 $script:AccountButton.Cursor = [System.Windows.Forms.Cursors]::Hand
 $header.Controls.Add($script:AccountButton)
 
-# --- Интерфейс: кастомная строка заголовка
 $script:UufEdgeColor = [System.Drawing.Color]::FromArgb(15,19,27)
 $uufCaptionMouseDown = {
     param($sender,$e)
@@ -1471,10 +1459,8 @@ $header.Add_MouseDown($uufCaptionMouseDown)
 $title.Add_MouseDown($uufCaptionMouseDown)
 $subtitle.Add_MouseDown($uufCaptionMouseDown)
 if ($headerLogo) { $headerLogo.Add_MouseDown($uufCaptionMouseDown) }
-# --- Полка шапки: подгоняем под фактическую ширину окна, чтобы кнопки не вылезали за край
 try { $header.Width = [Math]::Max(880,[int]$script:Form.ClientSize.Width) } catch { }
 
-# --- Интерфейс: левая панель
 $left = New-Object System.Windows.Forms.Panel
 $left.Location = New-Object System.Drawing.Point(14, 104)
 $left.Size = New-Object System.Drawing.Size(390, [Math]::Max(320,[int]$script:Form.ClientSize.Height - 114))
@@ -1722,7 +1708,7 @@ $script:ConnectionTestButton = Add-UiButton '⇄  Проверка соедин�
 
 $right = New-Object System.Windows.Forms.Panel
 $right.Location = New-Object System.Drawing.Point(418, 104)
-$right.Size = New-Object System.Drawing.Size(1040, 926)  # design size; below, after all children are added, snapped to the client
+$right.Size = New-Object System.Drawing.Size(1040, 926)
 $right.Anchor = 'Top, Bottom, Left, Right'
 $right.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
 $script:Form.Controls.Add($right)
@@ -1747,7 +1733,6 @@ for ($i=0; $i -lt $statLabels.Count; $i++) {
     $statLabels[$i].Font = New-Object System.Drawing.Font($script:UiFontFamily,8.5,[System.Drawing.FontStyle]::Bold)
     $right.Controls.Add($statLabels[$i])
 }
-# --- Полоса статистики: ширины блоков считаются от фактической панели, поэтому «Недопустимо» и «Ошибки» не вылезают за край ни на одном разрешении
 $right.Add_SizeChanged({
     $uufPanelW = [int]$script:Form.ClientSize.Width - 440
     if ($uufPanelW -lt 520) { $uufPanelW = 520 }
@@ -1905,7 +1890,6 @@ $script:Grid.add_CellDoubleClick({
         }
     }
 })
-# --- Подсказки статуса: оформление не должно уметь ронять запуск
 try {
     $script:GridToolTip = New-Object System.Windows.Forms.ToolTip
     $script:GridToolTip.InitialDelay = 250
@@ -1986,7 +1970,6 @@ $script:SummaryLabel.Anchor = 'Bottom, Left, Right'
 $script:SummaryLabel.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
 $script:SummaryLabel.TextAlign = 'MiddleRight'
 $right.Controls.Add($script:SummaryLabel)
-# --- Нижняя плашка: VPN/Proxy только для платформ, где возможны региональные блокировки
 $script:VpnNoticePlatforms = @('YouTube','Telegram','Outlook','Google','Discord')
 $script:VpnNoticeText = 'Проверка некоторых платформ возможно потребует VPN/Proxy, если вы проживаете в странах СНГ, где работают блокировки.'
 function Update-VpnNotice {
@@ -2009,7 +1992,6 @@ $footer.Padding = New-Object System.Windows.Forms.Padding(8,0,4,0)
 $right.Controls.Add($footer)
 $script:FooterNotice = $footer
 Update-VpnNotice
-# --- Раскладка правой панели: журнал разворачивается вверх над таблицей и возвращается в стандартное положение
 function Set-UufRightLayout {
     if ($null -eq $script:DiagnosticBox -or $null -eq $script:Grid -or $null -eq $script:DiagnosticHeader) { return }
     $layoutPanel = $script:DiagnosticBox.Parent
@@ -2034,7 +2016,6 @@ function Set-UufRightLayout {
     if ($script:FooterNotice) { $script:FooterNotice.Location = New-Object System.Drawing.Point(14,($panelHeight - 48)); $script:FooterNotice.Size = New-Object System.Drawing.Size($contentWidth,34) }
 }
 
-# --- Правая панель: подгонка под клиентское окно после добавления детей — якоря Bottom поднимают журнал и футер вверх
 try {
     $uufClientFit = $script:Form.ClientSize
     $right.Size = New-Object System.Drawing.Size([Math]::Max(520,[int]$uufClientFit.Width - 440),[Math]::Max(320,[int]$uufClientFit.Height - 114))
@@ -2083,7 +2064,6 @@ function Get-CryptoRandomIndex {
     return [int]($value % $MaxExclusive)
 }
 
-# --- Пароль и регистрация
 function New-SecurePassword {
     param([ValidateRange(16,32)][int]$Length = 20)
     $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
@@ -2246,7 +2226,6 @@ function Get-AccountSafetyText {
     return ($lines -join "`r`n")
 }
 
-# --- Случайные имя и фамилия для формы регистрации Google (только для Google)
 $script:GoogleFirstNames = @('Alex','Daniel','Maria','Sophie','Liam','Emma','Lucas','Olivia','Ethan','Mia','Noah','Anna','Leo','Clara','Max','Julia','Ryan','Nora','Adam','Lena','Oscar','Eva','Henry','Ruby')
 $script:GoogleLastNames = @('Miller','Schmidt','Brown','Novak','Weber','Clark','Wagner','Hughes','Fischer','Bennett','Hoffmann','Reed','Keller','Morgan','Becker','Carter','Lang','Foster','Wolf','Hayes','Berger','Ward','Krause','Shaw')
 function Set-RandomGoogleNameFields {
@@ -2598,7 +2577,6 @@ function Open-AccountTools {
             [System.Windows.Forms.MessageBox]::Show(('Проверь ник: ' + (Get-PlatformFormatHint -Platform ([string]$script:AccountPlatform)) + '.'), 'Неверный ник', 'OK', 'Warning') | Out-Null
             return
         }
-        # --- Пункт 6: для Mail.ru пароль при регистрации создаётся сайтом, поэтому сохранение без пароля допустимо
         $passwordOptionalPlatform = ([string]$script:AccountPlatform -eq 'Mail.ru')
         if ([string]::IsNullOrWhiteSpace($password)) {
             if (-not $passwordOptionalPlatform) {
@@ -2615,7 +2593,6 @@ function Open-AccountTools {
             return
         }
         try {
-            # --- Формат как в генерации: для почтовых платформ сохраняем адрес целиком (ник@домен)
             $storedNick = Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name $nick
             $records = @(Get-SavedAccountRecords)
             $existing = @($records | Where-Object { [string]$_.Username -ieq $storedNick -or [string]$_.Username -ieq $nick })
@@ -2748,7 +2725,6 @@ function Touch-Candidates {
     $script:CandidateRevision = $script:CandidateRevision + 1
 }
 
-# --- Атомарная запись файлов
 
 function Write-AtomicFile {
     param(
@@ -2790,7 +2766,6 @@ function Write-AtomicJsonFile {
     Write-AtomicFile -Path $Path -Bytes $bytes
 }
 
-# --- Хранилище истории ников
 function Save-UsernameHistory {
     try {
         if (-not (Test-Path -LiteralPath $script:HistoryDirectory)) { [void](New-Item -ItemType Directory -Path $script:HistoryDirectory -Force) }
@@ -2820,7 +2795,6 @@ function Flush-HistoryIfDue {
     if (([DateTime]::UtcNow - $script:HistoryDirtySince).TotalSeconds -ge $IntervalSeconds) { Save-UsernameHistory }
 }
 
-# --- Настройки приложения
 
 function Export-AppSettings {
     param(
@@ -2848,7 +2822,6 @@ function Import-AppSettings {
     return $result
 }
 
-# --- Безопасное применение значений к контролам
 
 function Add-SettingValue {
     param([hashtable]$Target, [string]$Key, [scriptblock]$Getter)
@@ -2892,7 +2865,6 @@ function Set-CheckedListFromSettings {
     }
 }
 
-# --- Настройки и геометрия окна
 function Get-AppSettingsFromUi {
     $settings = @{}
     Add-SettingValue $settings 'AppVersion' { $script:AppVersion }
@@ -2999,7 +2971,6 @@ function Refresh-FreeHistoryList {
     }
 }
 
-# --- Проверенные ники и история свободных
 function Update-CheckedNamesButtonText {
     if (-not $script:CheckedNamesButton) { return }
     $script:CheckedNamesButton.Text = ('Проверенные ники ({0})' -f $script:CheckedNames.Count)
@@ -3316,7 +3287,6 @@ function Open-FreeHistoryWindow {
         Touch-Candidates
         Update-ResultGrid
         Add-Diagnostic ("Повторная проверка: {0} ник(ов), платформа {1}." -f $selectedItems.Count, $selectedPlatform)
-        # --- Возобновляем только выбранные ники (статус «Ожидает»), остальные таблицы не трогаем
         Start-Checking -RetryErrorsOnly $false -ResumePending $true
     })
     Set-ButtonEdgeStyle -Root $script:HistoryForm
@@ -3343,8 +3313,6 @@ function Open-FreeHistoryWindow {
     [void]$script:HistoryForm.ShowDialog($script:Form)
 }
 
-# --- Проверка соединения: доступность платформ, время ответа и HTTP-статус
-# --- Пинг здесь — время HTTP-ответа (ICMP-ping веб-сервисы часто блокируют). Запросы только GET, без входа и без обхода защит.
 $script:ConnectionEndpoints = @(
     [pscustomobject]@{Platform='Telegram';  Url='https://t.me/'},
     [pscustomobject]@{Platform='YouTube';   Url='https://www.youtube.com/'},
@@ -3357,7 +3325,6 @@ $script:ConnectionEndpoints = @(
     [pscustomobject]@{Platform='VK';        Url='https://vk.com/'},
     [pscustomobject]@{Platform='Mail.ru';   Url='https://account.mail.ru/'}
 )
-# --- Описания HTTP-кодов по MDN: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status
 $script:HttpStatusNotes = @{
     200 = 'OK — запрос выполнен';
     201 = 'Created — ресурс создан';
@@ -3401,7 +3368,6 @@ function Get-ConnectionVerdict {
     return [pscustomobject]@{Result='unknown'; Note=$codeNote}
 }
 
-# --- Скрипт фонового запроса: выполняется в отдельном runspace, окно не зависает
 $script:ConnectionScript = @'
 param($Url, $TimeoutSec, $Proxy, $UserAgent, $Queue, $Platform)
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
@@ -3607,8 +3573,6 @@ function Open-ConnectionTestWindow {
     [void]$connForm.ShowDialog($script:Form)
 }
 
-# --- Помощь
-# --- Окно помощи: ряд кнопок-разделов сверху и одна страница карточек (без вкладок и пересчёта по Resize)
 function Add-HelpCard {
     param([System.Windows.Forms.Panel]$CardHost, [string]$Heading, [string]$Body, [System.Drawing.Font]$HeadingFont, [System.Drawing.Font]$BodyFont)
     $Body = $Body.Replace('<br>', [Environment]::NewLine)
@@ -3641,7 +3605,6 @@ function Add-HelpCard {
 
 function Set-HelpCardLayout {
     param([System.Windows.Forms.Panel]$CardHost)
-    # --- Защита от повторного входа: смена размеров вызывает Resize и снова эту функцию
     if ($script:HelpLayoutBusy) { return }
     $script:HelpLayoutBusy = $true
     try {
@@ -3978,7 +3941,6 @@ function Update-ResultGrid {
     Update-AvailableNames
 }
 
-# --- Запуск прогона проверки
 function Get-PendingCandidateCount {
     $pendingPlatform = [string]$script:PlatformBox.SelectedItem
     $pendingCount = 0
@@ -4045,7 +4007,6 @@ function Start-Checking {
     $script:CurrentBatchDone = 0
     $script:ProgressBar.Value = 0
     $script:ProgressCaption.Text = "Проверка 0 из $($script:CurrentBatchTotal) · потоков $threadCount"
-# --- Воркер: проверка платформ
     $workerScript = @'
 param($InputQueue, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform, $AppVersion, $WorkerId, $BatchTotal, $ProxyUrl)
 $ErrorActionPreference = 'Stop'
@@ -4239,7 +4200,6 @@ try {
         $r = $null
         try {
             switch ($Platform) {
-# --- Roblox Api
                 'Roblox' {
                     $payload = @{username=$name; birthday='2000-01-01T00:00:00.000Z'; context='Signup'} | ConvertTo-Json -Compress
                     $robloxHeaders = @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json'; 'Origin'='https://www.roblox.com'; 'Referer'='https://www.roblox.com/'}
@@ -4273,9 +4233,7 @@ try {
                         $status = 'Не подтверждено'; $reason = "Roblox ответил HTTP $httpStatus без распознаваемого результата валидации"; $consecutiveErrors = 0
                     }
                 }
-# --- Google Api
                 'Google' {
-                    # --- Google закрыл анонимные опросы (400 на «холодные» запросы), поэтому первым идёт signin-lookup с прогретой сессией
                     $email = $name + '@gmail.com'
                     $googleCode = ''
                     $googleHttpNote = ''
@@ -4337,7 +4295,6 @@ try {
                     elseif ($googleCode -eq '2') { $status='Занят'; $reason='Google: адрес Gmail используется'; $consecutiveErrors=0 }
                     else { $status='Не подтверждено'; if ($googleHttpNote) { $reason='Google: ' + $googleHttpNote + '; lookup тоже молчит — проверьте позже или через «Прокси»' } else { $reason='Google не вернул распознаваемого ответа — точную доступность покажет только форма регистрации' }; $consecutiveErrors=0 }
                 }
-# --- Mail.ru Api
                 'Mail.ru' {
                     $email = $name + '@mail.ru'
                     $url = 'https://account.mail.ru/api/v1/user/exists?email=' + [uri]::EscapeDataString($email)
@@ -4354,7 +4311,6 @@ try {
                         } else { $status='Не подтверждено'; $reason='Mail.ru вернул неожиданный формат ответа'; $consecutiveErrors=0 }
                     }
                 }
-# --- VK Api
                 'VK' {
                     $url = 'https://api.vk.com/method/utils.resolveScreenName?screen_name=' + [uri]::EscapeDataString($name) + '&v=5.199'
                     $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json'}
@@ -4390,7 +4346,6 @@ try {
                         } else { $status='Не подтверждено'; $reason='Discord не вернул признак занятости имени'; $consecutiveErrors=0 }
                     } elseif ($httpStatus -eq 400 -or $httpStatus -eq 422) { $status='Недопустимый'; $reason='Discord отклонил формат имени'; $consecutiveErrors=0 }
                 }
-# --- Outlook Api
                 'Outlook' {
                     $signInName = $name + '@outlook.com'
                     $credentialBody = ConvertTo-Json -InputObject @{username=$signInName; isOtherIdEntry=$false} -Compress
@@ -4475,7 +4430,6 @@ try {
                         }
                     }
                 }
-# --- GitHub Api
                 'GitHub' {
                     if ($null -eq $githubSession) {
                         $githubSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
@@ -4510,7 +4464,6 @@ try {
                         }
                     }
                 }
-# --- YouTube Api
                 'YouTube' {
                     $url = 'https://www.youtube.com/@' + [uri]::EscapeDataString($name)
                     $ytHeaders = @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'=$browserHeaders['Accept']; 'Accept-Language'='en-US,en;q=0.9'; 'Cookie'='CONSENT=YES+cb; SOCS=CAI; GPS=1'}
@@ -4520,18 +4473,12 @@ try {
                     $escapedHandle = [regex]::Escape($name)
                     $matchingCanonical = $content -match ('(?is)"canonicalBaseUrl"\s*:\s*"/@' + $escapedHandle + '"') -or $content -match ('(?is)<link[^>]+rel="canonical"[^>]+href="https?://www\.youtube\.com/@' + $escapedHandle + '"') -or $content -match ('(?is)property="og:url"[^>]+content="https?://www\.youtube\.com/@' + $escapedHandle + '"') -or $content -match ('(?is)"canonicalChannelUrl"\s*:\s*"https?://www\.youtube\.com/@' + $escapedHandle + '"')
                     $channelMetadata = $content -match '(?is)"channelMetadataRenderer"\s*:\s*\{'
-                    # --- Категории как в YTKits: «Канал найден» — занято; «Не найден» — свободно (подтверждается в Studio); иное — «Неизвестно»
                     $ytNotFound = ($httpStatus -eq 404) -or ($content -match '(?i)channelNotFound|This page isn.t available|channel does not exist|"errorScreen"|Страница недоступна')
                     if ($httpStatus -eq 200 -and $matchingCanonical -and $channelMetadata) { $status='Занят'; $reason='YouTube: канал найден, canonical handle совпадает с запрошенным'; $consecutiveErrors=0 }
                     elseif ($ytNotFound -and -not $channelMetadata) { $status='Свободен'; $reason='YouTube: канал с этим handle не найден — подтверди в YouTube Studio (резерв и ограничения видны только там)'; $consecutiveErrors=0 }
                     else { $status='Не подтверждено'; $reason='YouTube: результат неизвестен — страница не подтвердила ни канал с этим handle, ни его отсутствие; повтори позже или проверь на youtube.com/handle'; $consecutiveErrors=0 }
                 }
-# --- Telegram Api
                 'Telegram' {
-                    # --- Публичный метод: t.me и зеркала telegram.dog/telegram.me — первый однозначный ответ выигрывает, как в веб-версии
-                    # --- Занятый ник отдаёт заголовок профиля (tgme_page_title) или счётчики канала/группы (подписчики, участники).
-                    # --- Свободный ник отдаёт страницу-заглушку «If you have Telegram, you can contact @ник» без заголовка профиля.
-                    # --- og:title «Telegram: Contact @ник» есть на обеих страницах, поэтому по нему статус не определяем.
                     $tgResolved = $false
                     $tgNoProfileSeen = $false
                     $tgLastNote = ''
@@ -4556,11 +4503,9 @@ try {
                         if ($httpStatus -eq 200) { $tgNoProfileSeen = $true; $tgLastNote = $tgName + ' ответил без распознаваемых маркеров профиля'; continue }
                         if ($httpStatus -eq 0) { $tgLastNote = $tgName + ' недоступен: соединение не установлено (сетевая блокировка) — поставь «Прокси» над таблицей или включи VPN' } else { $tgLastNote = $tgName + ' вернул неожиданный HTTP ' + $httpStatus }
                     }
-                    # --- Страница открылась, но профиля на ней нет: тег свободен
                     if (-not $tgResolved -and $tgNoProfileSeen) { $status='Свободен'; $reason='Telegram: страница @' + $name + ' открылась без профиля и без признаков занятости — тег свободен'; $consecutiveErrors=0; $tgResolved=$true }
                     if (-not $tgResolved) { $status='Не подтверждено'; $reason='Telegram: ' + $tgLastNote + '; попробуй повторить или задать прокси'; $consecutiveErrors=0 }
                 }
-# --- Steam Api
                 'Steam' {
                     $url = 'https://steamcommunity.com/id/' + $name
                     $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers $browserHeaders
@@ -4837,7 +4782,6 @@ $script:GenerateButton.Add_Click({
     $customWords = Get-TextBoxValue $script:CustomBox
     $excludeTokens = @($script:ExcludeBox.Text -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     $requestedCount = [int]$script:CountBox.Value
-    # --- Конфликты настроек: предупреждаем до генерации, а не молча теряем ники
     $enabledSources = @($script:OneWordCheck, $script:TwoWordsCheck, $script:InventedWordsCheck, $script:InventedPairsCheck, $script:LeetCheck, $script:RareShortCheck, $script:RandomCharsCheck, $script:NumbersCheck) | Where-Object { $_.Checked }
     if ([bool]$script:ExactOnlyCheck.Checked) {
         if ([string]::IsNullOrWhiteSpace($customWords)) { Add-Diagnostic 'Режим «Поиск только введенных ников»: впиши свои слова в поле «Свои слова через запятую».' }
@@ -4862,7 +4806,6 @@ $script:GenerateButton.Add_Click({
         foreach ($checkedKey in $script:CheckedNames.Keys) { $excludeKeys[[string]$checkedKey] = $true }
     }
     $candidates = @(New-AdvancedCandidatePool -SelectedWordCategories $categories -CustomWords $customWords -Style ([string]$script:StyleBox.SelectedItem) -Platform $platform -MinLength ([int]$script:MinLengthBox.Value) -MaxLength ([int]$script:MaxLengthBox.Value) -Count $requestedCount -UseNumbers ([bool]$script:NumbersCheck.Checked) -UseUnderscore ([bool]$script:UnderscoreCheck.Checked) -OneWord ([bool]$script:OneWordCheck.Checked) -TwoWords ([bool]$script:TwoWordsCheck.Checked) -InventedWords ([bool]$script:InventedWordsCheck.Checked) -InventedPairs ([bool]$script:InventedPairsCheck.Checked) -LeetWords ([bool]$script:LeetCheck.Checked) -RareShort ([bool]$script:RareShortCheck.Checked) -Ordered ([bool]$script:OrderedCheck.Checked) -RandomChars ([bool]$script:RandomCharsCheck.Checked) -ExactOnly ([bool]$script:ExactOnlyCheck.Checked) -OnlyShort ([bool]$script:ShortOnlyCheck.Checked) -ExcludeTokens $excludeTokens -ExcludeKeys $excludeKeys)
-    # --- Разнобой: гарантированно перемешиваем и сам вывод пула (страховка от тихого сбоя перемешивания внутри)
     if (-not $script:OrderedCheck.Checked -and @($candidates).Count -gt 1) { $candidates = @(Get-ShuffledArray -Items @($candidates)) }
     $poolStats = $script:GenerationStats
     if ($null -eq $poolStats) { $poolStats = @{} }

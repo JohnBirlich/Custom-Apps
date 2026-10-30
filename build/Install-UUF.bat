@@ -1,5 +1,4 @@
 @echo off
-rem Universal Username Finder - installer launcher. Double-click me instead of the .ps1.
 cd /d "%~dp0"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-UUF.ps1" %*
 if errorlevel 1 (

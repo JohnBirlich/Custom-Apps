@@ -1,9 +1,3 @@
-# Выпуск релиза: при публикации релиза на GitHub сборка берётся из ci.yml
-# (те же проверки, та же подпись Authenticode), и готовые файлы прикладываются
-# к этому релизу. Вручную можно прикрепить файлы к существующему тегу через
-# workflow_dispatch.
-#
-# Сообщения шагов — ASCII (см. комментарий в ci.yml).
 name: Release
 
 on:
@@ -18,7 +12,6 @@ on:
 
 permissions:
   contents: write
-  # Нужно для gh run download: скачивание артефакта сборки этого же прогона
   actions: read
 
 jobs:
@@ -43,8 +36,6 @@ jobs:
             echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
           fi
 
-      # Шаги пишут диагностику через ::notice:: и ::error::, чтобы причина была видна
-      # в аннотациях прогона даже без доступа к полному логу.
       - name: Download build artifact
         env:
           GH_TOKEN: ${{ github.token }}
