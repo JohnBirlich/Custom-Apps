@@ -1358,7 +1358,7 @@ Describe 'Версия 2.8.9: SmartScreen-нюансы' {
         $readmeText.Contains('Установить сертификат') | Should -BeTrue
     }
     It 'версия поднята' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.[0-9])'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.\d+)'''
     }
 }
 
@@ -1400,7 +1400,7 @@ Describe 'Версия 2.9.0: ручной ввод, вкладки, зерка�
         $global:UufWorkerText.Contains('форма регистрации подтвердила доступность') | Should -BeTrue
     }
     It 'версия поднята до 2.9.0' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.[0-9])'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.\d+)'''
     }
 }
 
@@ -1442,7 +1442,7 @@ Describe 'Версия 2.9.1: дорисовка вкладок, возобно�
         $ciText.Contains('build/Install-UUF.bat') | Should -BeTrue
     }
     It 'версия поднята до 2.9.1' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.[0-9])'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.\d+)'''
     }
 }
 
@@ -1497,7 +1497,7 @@ Describe 'Версия 2.9.2: установщик зависимостей и �
         $readmeText.Contains('394802') | Should -BeFalse
     }
     It 'версия не ниже 2.9.2' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[2-9]|10\.[0-9])'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[2-9]|10\.\d+)'''
     }
 }
 
@@ -1536,7 +1536,7 @@ Describe 'Версия 2.9.3: полное удаление — самостоя
         $readmeText.Contains('Build-Uninstaller.ps1') | Should -BeTrue
     }
     It 'версия поднята до 2.10.0' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.[0-9]'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.\d+'''
     }
 }
 
