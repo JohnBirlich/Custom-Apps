@@ -5050,8 +5050,6 @@ $uufResizeEdgeRight = New-UufResizeEdge 'ResizeEdgeRight' $uufEdgeRightX 0 6 $uu
 $uufResizeEdgeBottom = New-UufResizeEdge 'ResizeEdgeBottom' 0 $uufEdgeBottomY $uufClientWidth 6 'Bottom, Left, Right' ([System.Windows.Forms.Cursors]::SizeNS) 15
 
 function Show-StartupVideo {
-    # Заставка загрузки: зацикленное видео digital_word_eye.mp4 рядом с программой (или в assets\).
-    # Если файла нет или WPF/медиа недоступны, молча возвращаем $null и запускаем приложение как обычно.
     $script:StartupSplash = $null
     try {
         $videoPath = Join-Path (Get-AppDirectory) 'digital_word_eye.mp4'

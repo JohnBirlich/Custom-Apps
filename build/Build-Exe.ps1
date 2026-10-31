@@ -93,7 +93,6 @@ if ($sizeKb -lt 20) {
     throw ('Собранный файл подозрительно мал (' + $sizeKb + ' КБ): вероятно, сборка прошла некорректно')
 }
 
-# Заставка загрузки: видео кладём рядом с UUF.exe (программа ищет его там).
 $videoSource = Join-Path $repositoryRoot 'assets\digital_word_eye.mp4'
 if ([System.IO.File]::Exists($videoSource)) {
     Copy-Item -LiteralPath $videoSource -Destination (Join-Path $OutputDirectory 'digital_word_eye.mp4') -Force
