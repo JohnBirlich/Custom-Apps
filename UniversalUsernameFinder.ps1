@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.14'
+$script:AppVersion = '2.10.15'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -4042,7 +4042,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.14' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.15' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {

@@ -1780,3 +1780,9 @@ Describe 'правки 2.10.15: Telegram, ручные ники, полный а
         $global:UufMainText.Contains('if ($preferredNick) { $preferredNick = Get-DisplayNick') | Should -BeTrue
     }
 }
+
+Describe 'Версия 2.10.15: исправления ручных ников, Telegram и полного адреса' {
+    It 'версия 2.10.15' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.15'''
+    }
+}
