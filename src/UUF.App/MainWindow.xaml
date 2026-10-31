@@ -40,6 +40,8 @@
                     <Button Content="{Binding PauseButtonText}" Command="{Binding PauseCommand}" />
                     <Button Content="Остановить" Command="{Binding StopCommand}" />
                     <Button Content="Регистрация и пароль" Click="OpenAccounts_Click" />
+                    <Button Content="Диагностика и журнал" Click="OpenJournal_Click" />
+                    <Button Content="Помощь" Click="OpenHelp_Click" />
                 </WrapPanel>
             </StackPanel>
         </Border>
