@@ -19,10 +19,42 @@ jobs:
     name: CI and build
     uses: ./.github/workflows/ci.yml
 
+  wpf:
+    name: WPF build (win-x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run xUnit tests
+        run: dotnet test tests/UUF.Core.Tests/UUF.Core.Tests.csproj --configuration Release
+
+      - name: Publish WPF app
+        run: dotnet publish src/UUF.App/UUF.App.csproj --configuration Release --runtime win-x64 --self-contained false -p:PublishSingleFile=true -o publish/uuf-app
+
+      - name: Prepare WPF release files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path wpf-out | Out-Null
+          Copy-Item publish/uuf-app/UUF.exe wpf-out/UUF-WPF.exe
+          $hash = (Get-FileHash wpf-out/UUF-WPF.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  UUF-WPF.exe" | Set-Content -Encoding ascii wpf-out/UUF-WPF.exe.sha256
+
+      - name: Upload WPF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UniversalUsernameFinder-wpf
+          path: wpf-out/*
+          if-no-files-found: error
+
   attach:
     name: Attach files to release
     runs-on: ubuntu-latest
-    needs: ci
+    needs: [ci, wpf]
     steps:
       - name: Resolve release tag
         id: tag
@@ -49,6 +81,11 @@ jobs:
           fi
           echo "::notice::downloaded: $(find release-files -type f | tr '\n' ' ')"
 
+      - name: Download WPF artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n UniversalUsernameFinder-wpf -D release-files/wpf
+
       - name: Upload files to release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -56,7 +93,7 @@ jobs:
         run: |
           set +e
           echo "::notice::tag=$TAG"
-          for required in UUF.exe UUF.exe.sha256 AppUninstaller.exe AppUninstaller.exe.sha256; do
+          for required in UUF.exe UUF.exe.sha256 AppUninstaller.exe AppUninstaller.exe.sha256 UUF-WPF.exe UUF-WPF.exe.sha256; do
             if [ -z "$(find release-files -type f -name "$required" -print -quit)" ]; then
               echo "::error::missing $required in build artifact"
               exit 1
