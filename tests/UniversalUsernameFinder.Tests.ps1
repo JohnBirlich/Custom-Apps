@@ -1400,8 +1400,7 @@ Describe 'Версия 2.9.0: ручной ввод, вкладки, зерка�
 
 Describe 'Версия 2.9.1: дорисовка вкладок, возобновление проверки, устойчивость остановок' {
     It 'обработчик вкладок привязывает аргументы через param и защищён от падения' {
-        $global:UufMainText.Contains('param($tabSender,$tabArgs)') | Should -BeTrue
-        $global:UufMainText.Contains('if ($tabIndex -lt 0 -or $tabIndex -ge $tabSender.TabPages.Count) { return }') | Should -BeTrue
+        $global:UufMainText.Contains('param($clickSender, $clickArgs) Set-AccountTabView -Index ([int]$clickSender.Tag)') | Should -BeTrue
         $global:UufMainText | Should -Not -Match '\$args\[1\]\.TabIndex'
     }
     It 'кнопки заголовка не рисуют системных рамок' {
@@ -1673,8 +1672,8 @@ Describe 'Версия 2.10.8: закрытие окна проверки сое
 
 Describe 'Версия 2.10.9: стиль окна регистрации и выравнивание проверки соединения' {
     It 'вкладки регистрации в стиле кнопок помощи' {
-        $global:UufMainText.Contains('$tabs.SizeMode = ''Fixed''') | Should -BeTrue
-        $global:UufMainText.Contains('$tabs.ItemSize = New-Object System.Drawing.Size(366, 40)') | Should -BeTrue
+        $global:UufMainText.Contains('$tabButton.FlatStyle = ''Flat''') | Should -BeTrue
+        $global:UufMainText.Contains('$tabButton.Size = New-Object System.Drawing.Size(365, 40)') | Should -BeTrue
     }
     It 'кнопка «Копировать отчёт» убрана из проверки соединения' {
         $global:UufMainText.Contains('Копировать отчёт') | Should -BeFalse
