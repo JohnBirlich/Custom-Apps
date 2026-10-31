@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using UUF.App.ViewModels;
+using UUF.Core.Diagnostics;
 using UUF.Core.Vault;
 
 namespace UUF.App.Windows;
@@ -9,10 +10,10 @@ public partial class AccountWindow : Window
 {
     private readonly AccountViewModel _viewModel;
 
-    public AccountWindow(AccountVault vault)
+    public AccountWindow(AccountVault vault, AppLog log)
     {
         InitializeComponent();
-        _viewModel = new AccountViewModel(vault);
+        _viewModel = new AccountViewModel(vault, log);
         DataContext = _viewModel;
         ShowPanel(registerVisible: true);
     }

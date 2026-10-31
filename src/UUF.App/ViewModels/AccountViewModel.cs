@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Input;
+using UUF.Core.Diagnostics;
 using UUF.Core.Platforms;
 using UUF.Core.Security;
 using UUF.Core.Usernames;
@@ -11,6 +12,7 @@ namespace UUF.App.ViewModels;
 public sealed class AccountViewModel : INotifyPropertyChanged
 {
     private readonly AccountVault _vault;
+    private readonly AppLog _log;
     private string _selectedPlatform = PlatformCatalog.Roblox;
     private string _nick = string.Empty;
     private int _passwordLength = 20;
@@ -19,9 +21,10 @@ public sealed class AccountViewModel : INotifyPropertyChanged
     private AccountRecord? _selectedRecord;
     private string _vaultStatus = string.Empty;
 
-    public AccountViewModel(AccountVault vault)
+    public AccountViewModel(AccountVault vault, AppLog log)
     {
         _vault = vault;
+        _log = log;
         GenerateCommand = new RelayCommand(_ => Generate(), _ => true);
         SaveCommand = new RelayCommand(_ => Save(), _ => CanSave());
         DeleteCommand = new RelayCommand(_ => Delete(), _ => SelectedRecord is not null);
@@ -113,6 +116,7 @@ public sealed class AccountViewModel : INotifyPropertyChanged
         records.Add(new AccountRecord(address, Password, SelectedPlatform,
             DateTimeOffset.Now.ToString("o")));
         _vault.Save(records);
+        _log.Info((replaced > 0 ? "Запись обновлена: " : "Запись сохранена: ") + address + " (" + SelectedPlatform + ")");
 
         RegisterStatus = replaced > 0
             ? "Запись для " + address + " обновлена в зашифрованном хранилище."
@@ -127,6 +131,7 @@ public sealed class AccountViewModel : INotifyPropertyChanged
         var records = _vault.Load().Where(record =>
             !(record.Username == target.Username && record.CreatedAt == target.CreatedAt)).ToList();
         _vault.Save(records);
+        _log.Info("Запись удалена: " + target.Username);
         SelectedRecord = null;
         ReloadVault();
         VaultStatus = "Запись удалена.";
@@ -135,9 +140,18 @@ public sealed class AccountViewModel : INotifyPropertyChanged
     private void ReloadVault()
     {
         Records.Clear();
-        foreach (var record in _vault.Load())
+        try
         {
-            Records.Add(record);
+            foreach (var record in _vault.Load())
+            {
+                Records.Add(record);
+            }
+        }
+        catch (Exception exception)
+        {
+            _log.Error("Не удалось прочитать хранилище: " + exception.Message);
+            VaultStatus = "Не удалось прочитать хранилище: " + exception.Message;
+            return;
         }
         VaultStatus = Records.Count == 0
             ? "Сохранённых записей пока нет."

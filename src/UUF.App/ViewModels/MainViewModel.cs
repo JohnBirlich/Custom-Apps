@@ -5,6 +5,7 @@ using System.Threading;
 using System.Windows.Input;
 using UUF.App.Models;
 using UUF.Core.Checking;
+using UUF.Core.Diagnostics;
 using UUF.Core.Platforms;
 using UUF.Core.Transport;
 using UUF.Core.Usernames;
@@ -16,6 +17,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(15);
 
     private readonly SynchronizationContext _ui;
+    private readonly AppLog _log;
     private readonly PauseController _pause = new();
     private CancellationTokenSource? _cancellation;
     private string _namesText = string.Empty;
@@ -26,8 +28,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _isRunning;
     private bool _isPaused;
 
-    public MainViewModel()
+    public MainViewModel(AppLog log)
     {
+        _log = log;
         _ui = SynchronizationContext.Current ?? new SynchronizationContext();
         StartCommand = new RelayCommand(_ => _ = StartAsync(), _ => CanStart());
         PauseCommand = new RelayCommand(_ => TogglePause(), _ => IsRunning);
@@ -131,6 +134,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         IsPaused = false;
         IsRunning = true;
         Summary = "Проверка: 0 из " + jobs.Count;
+        _log.Info("Проверка запущена: " + jobs.Count + " ник(ов), платформа " + platform + ", потоков " + Threads);
 
         try
         {
@@ -148,6 +152,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception exception)
         {
             Summary = "Проверка прервана: " + exception.Message;
+            _log.Error("Проверка прервана: " + exception.Message);
         }
         finally
         {
@@ -155,6 +160,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             IsPaused = false;
             _cancellation = null;
             cancellation.Dispose();
+            _log.Info("Проверка завершена");
             UpdateSummary();
         }
     }
@@ -164,6 +170,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (rowsByName.TryGetValue(job.Name, out var row))
         {
             row.Apply(result.Status, result.Reason);
+        }
+        if (result.Status == CheckStatus.NetworkError)
+        {
+            _log.Error(job.Name + " (" + job.Platform + "): " + result.Reason);
         }
         UpdateSummary();
     }
@@ -185,6 +195,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void Stop()
     {
+        _log.Info("Остановка проверки запрошена");
         _cancellation?.Cancel();
         _pause.Resume();
     }
