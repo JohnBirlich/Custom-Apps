@@ -388,6 +388,7 @@ jobs:
             dist/UUF.exe.sha256
             dist/AppUninstaller.exe
             dist/AppUninstaller.exe.sha256
+            dist/digital_word_eye.mp4
             dist/*.cer
             build/Install-UUF.ps1
             build/Install-UUF.bat

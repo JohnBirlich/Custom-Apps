@@ -93,6 +93,11 @@ if ($sizeKb -lt 20) {
     throw ('Собранный файл подозрительно мал (' + $sizeKb + ' КБ): вероятно, сборка прошла некорректно')
 }
 
+$videoSource = Join-Path $repositoryRoot 'assets\digital_word_eye.mp4'
+if ([System.IO.File]::Exists($videoSource)) {
+    Copy-Item -LiteralPath $videoSource -Destination (Join-Path $OutputDirectory 'digital_word_eye.mp4') -Force
+}
+
 Write-Host ''
 Write-Host ('Готово: ' + $outputPath + ' (' + $sizeKb + ' КБ)')
 Write-Host 'Важно: .exe содержит исходный скрипт в открытом виде (ps2exe извлекает его'

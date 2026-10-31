@@ -5049,9 +5049,56 @@ $uufResizeEdgeLeft = New-UufResizeEdge 'ResizeEdgeLeft' 0 0 6 $uufClientHeight '
 $uufResizeEdgeRight = New-UufResizeEdge 'ResizeEdgeRight' $uufEdgeRightX 0 6 $uufClientHeight 'Top, Bottom, Right' ([System.Windows.Forms.Cursors]::SizeWE) 11
 $uufResizeEdgeBottom = New-UufResizeEdge 'ResizeEdgeBottom' 0 $uufEdgeBottomY $uufClientWidth 6 'Bottom, Left, Right' ([System.Windows.Forms.Cursors]::SizeNS) 15
 
+function Show-StartupVideo {
+    $script:StartupSplash = $null
+    try {
+        $videoPath = Join-Path (Get-AppDirectory) 'digital_word_eye.mp4'
+        if (-not [System.IO.File]::Exists($videoPath)) {
+            $videoPath = Join-Path (Get-AppDirectory) 'assets\digital_word_eye.mp4'
+        }
+        if (-not [System.IO.File]::Exists($videoPath)) { return }
+
+        Add-Type -AssemblyName PresentationFramework
+        Add-Type -AssemblyName PresentationCore
+        Add-Type -AssemblyName WindowsBase
+
+        $player = New-Object System.Windows.Controls.MediaElement
+        $player.LoadedBehavior = [System.Windows.Controls.MediaState]::Play
+        $player.UnloadedBehavior = [System.Windows.Controls.MediaState]::Close
+        $player.Stretch = [System.Windows.Media.Stretch]::Uniform
+        $player.Source = New-Object System.Uri($videoPath)
+        $player.Add_MediaEnded({ param($sender, $e) try { $sender.Position = [TimeSpan]::Zero; $sender.Play() } catch { } })
+
+        $splash = New-Object System.Windows.Window
+        $splash.WindowStyle = [System.Windows.WindowStyle]::None
+        $splash.ResizeMode = [System.Windows.ResizeMode]::NoResize
+        $splash.ShowInTaskbar = $false
+        $splash.Topmost = $true
+        $splash.WindowStartupLocation = [System.Windows.WindowStartupLocation]::CenterScreen
+        $splash.Background = [System.Windows.Media.Brushes]::Black
+        $splash.Width = 480
+        $splash.Height = 270
+        $splash.Content = $player
+        $splash.Show()
+        $script:StartupSplash = $splash
+    } catch {
+        Write-StartupLog ('Заставка недоступна: ' + $_.Exception.Message)
+        $script:StartupSplash = $null
+    }
+}
+
+function Close-StartupVideo {
+    if ($script:StartupSplash) {
+        try { $script:StartupSplash.Close() } catch { }
+        $script:StartupSplash = $null
+    }
+}
+
 try {
     Set-ButtonEdgeStyle -Root $script:Form
     try { if ($script:UufDwmAvailable) { [UufDwmCorners]::Round($script:Form.Handle) } } catch { }
+    Show-StartupVideo
+    $script:Form.Add_Shown({ Close-StartupVideo })
     [void]$script:Form.ShowDialog()
 } catch {
     Write-StartupLog ('Фатальная ошибка главного окна: ' + $_.Exception.ToString())

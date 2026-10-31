@@ -257,6 +257,10 @@ Stop-RunningApp
 New-Item -ItemType Directory -Force -Path $targetDirectory | Out-Null
 $exeSourceFull = [System.IO.Path]::GetFullPath($ExePath)
 Copy-Item -LiteralPath $exeSourceFull -Destination $targetExe -Force
+$videoSource = Join-Path (Split-Path -Parent $exeSourceFull) 'digital_word_eye.mp4'
+if ([System.IO.File]::Exists($videoSource)) {
+    Copy-Item -LiteralPath $videoSource -Destination (Join-Path $targetDirectory 'digital_word_eye.mp4') -Force
+}
 $certificateSource = Join-Path (Split-Path -Parent $exeSourceFull) 'UUF-signing.cer'
 if ([System.IO.File]::Exists($certificateSource)) {
     Copy-Item -LiteralPath $certificateSource -Destination $targetCertificatePath -Force
