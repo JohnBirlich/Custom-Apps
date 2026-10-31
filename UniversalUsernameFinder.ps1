@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $script:UiFontFamily = 'Tahoma'
 $script:AppVersion = '2.10.15'
 
