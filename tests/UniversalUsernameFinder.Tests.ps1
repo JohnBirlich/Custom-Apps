@@ -1761,3 +1761,22 @@ Describe 'Версия 2.10.14: две кнопки вкладок в стиле
         $global:UufMainText.Contains('$tabButton.FlatStyle = ''Flat''') | Should -BeTrue
     }
 }
+
+Describe 'правки 2.10.15: Telegram, ручные ники, полный адрес' {
+    It 'Telegram: страница без профиля проверяется раньше заголовка профиля' {
+        $freeIdx = [regex]::Match($global:UufWorkerText, [regex]::Escape('$httpStatus -eq 200 -and $freePage) { $status')).Index
+        $profileIdx = [regex]::Match($global:UufWorkerText, [regex]::Escape('$httpStatus -eq 200 -and $profileTitle) { $status')).Index
+        $freeIdx | Should -BeGreaterThan 0
+        $profileIdx | Should -BeGreaterThan $freeIdx
+    }
+    It 'Telegram: заголовок профиля больше не решает статус при прямом совпадении с $profileTitle или $channelCounters' {
+        $global:UufWorkerText.Contains('($profileTitle -or $channelCounters)') | Should -BeFalse
+    }
+    It 'пункт 1: подсказка ручных ников распознаётся и по цвету поля' {
+        $global:UufFullText.Contains('[System.Drawing.Color]::FromArgb(149,164,187))') | Should -BeTrue
+    }
+    It 'пункт 9: поля регистрации показывают ник с доменом через Get-DisplayNick' {
+        $global:UufMainText.Contains('Items.Add((Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name ([string]$availableNick)))') | Should -BeTrue
+        $global:UufMainText.Contains('if ($preferredNick) { $preferredNick = Get-DisplayNick') | Should -BeTrue
+    }
+}

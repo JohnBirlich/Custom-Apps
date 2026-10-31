@@ -1567,7 +1567,7 @@ function Get-TextBoxValue {
     if (-not $Box) { return '' }
     $value = [string]$Box.Text
     $hint = [string]$Box.Tag
-    if ($hint -and $value -eq $hint) { return '' }
+    if ($hint -and ($value.Trim() -eq $hint.Trim() -or $Box.ForeColor -eq [System.Drawing.Color]::FromArgb(149,164,187))) { return '' }
     return $value
 }
 function New-CheckBox {
@@ -2511,7 +2511,7 @@ function Open-AccountTools {
     $refreshNicks.Add_Click({
         $keep = $script:AccountUsernameBox.Text.Trim()
         $script:AccountUsernameBox.Items.Clear()
-        foreach ($availableNick in $script:PlatformAvailableNames) { [void]$script:AccountUsernameBox.Items.Add([string]$availableNick) }
+        foreach ($availableNick in $script:PlatformAvailableNames) { [void]$script:AccountUsernameBox.Items.Add((Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name ([string]$availableNick))) }
         $script:AccountUsernameBox.Text = $keep
         if ($script:AccountUsernameBox.Items.Count -eq 0) {
             [System.Windows.Forms.MessageBox]::Show('В основном окне пока нет найденных свободных ников. Можно ввести ник вручную, но его доступность не подтверждена.', 'Список ников', 'OK', 'Information') | Out-Null
@@ -2660,7 +2660,7 @@ function Open-AccountTools {
     })
 
     try {
-        foreach ($availableNick in $script:PlatformAvailableNames) { [void]$script:AccountUsernameBox.Items.Add([string]$availableNick) }
+        foreach ($availableNick in $script:PlatformAvailableNames) { [void]$script:AccountUsernameBox.Items.Add((Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name ([string]$availableNick))) }
         $preferredNick = ''
         if ($script:Grid.CurrentRow -and $script:Grid.CurrentRow.Index -ge 0) {
             $candidateNick = [string]$script:Grid.CurrentRow.Cells['Nick'].Value
@@ -2668,6 +2668,7 @@ function Open-AccountTools {
             if ($candidateStatus -eq 'Свободен') { $preferredNick = $candidateNick }
         }
         if (-not $preferredNick -and $script:PlatformAvailableNames.Count -gt 0) { $preferredNick = [string]$script:PlatformAvailableNames[0] }
+        if ($preferredNick) { $preferredNick = Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name $preferredNick }
         $script:AccountUsernameBox.Text = $preferredNick
         $script:AccountPasswordBox.Text = New-SecurePassword -Length ([int]$script:PasswordLengthBox.Value)
         Refresh-SavedAccountList
@@ -4523,8 +4524,9 @@ try {
                         if ($blockedPage) { $tgLastNote = $tgName + ' блокируется провайдером — задай «Прокси» над таблицей или включи VPN'; continue }
                         if ($httpStatus -eq 404) { $status='Свободен'; $reason='Telegram: ' + $tgName + ' вернул 404 — страница @' + $name + ' никем не занята'; $consecutiveErrors=0; $tgResolved=$true; break }
                         if ($httpStatus -eq 200 -and $reservedPage) { $status='Занят'; $reason='Telegram: тег @' + $name + ' зарезервирован платформой (резерв или платный ник) — регистрация закрыта'; $consecutiveErrors=0; $tgResolved=$true; break }
-                        if ($httpStatus -eq 200 -and ($profileTitle -or $channelCounters)) { $status='Занят'; $reason='Telegram: ' + $tgName + ' отдаёт публичную страницу профиля или канала @' + $name; $consecutiveErrors=0; $tgResolved=$true; break }
+                        if ($httpStatus -eq 200 -and $channelCounters) { $status='Занят'; $reason='Telegram: ' + $tgName + ' отдаёт публичную страницу канала @' + $name; $consecutiveErrors=0; $tgResolved=$true; break }
                         if ($httpStatus -eq 200 -and $freePage) { $status='Свободен'; $reason='Telegram: страница @' + $name + ' на ' + $tgName + ' без профиля и предлагает открыть чат — тег свободен'; $consecutiveErrors=0; $tgResolved=$true; break }
+                        if ($httpStatus -eq 200 -and $profileTitle) { $status='Занят'; $reason='Telegram: ' + $tgName + ' отдаёт публичную страницу профиля @' + $name; $consecutiveErrors=0; $tgResolved=$true; break }
                         if ($httpStatus -eq 200) { $tgNoProfileSeen = $true; $tgLastNote = $tgName + ' ответил без распознаваемых маркеров профиля'; continue }
                         if ($httpStatus -eq 0) { $tgLastNote = $tgName + ' недоступен: соединение не установлено (сетевая блокировка) — поставь «Прокси» над таблицей или включи VPN' } else { $tgLastNote = $tgName + ' вернул неожиданный HTTP ' + $httpStatus }
                     }
