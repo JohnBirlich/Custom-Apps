@@ -27,6 +27,7 @@ public static class Probes
             PlatformCatalog.Discord => (name, ct) => ProbeDiscordAsync(transport, name, timeout, ct),
             PlatformCatalog.VK => (name, ct) => ProbeVkAsync(transport, name, timeout, ct),
             PlatformCatalog.MailRu => (name, ct) => ProbeMailRuAsync(transport, name, timeout, ct),
+            PlatformCatalog.GitHub => (name, ct) => ProbeGitHubAsync(transport, name, timeout, ct),
             _ => (_, _) => Task.FromResult(new ProbeResult(CheckStatus.Unconfirmed,
                 platform + " пока не перенесена в C#-версию; используйте PowerShell-версию")),
         };
@@ -241,6 +242,87 @@ public static class Probes
         return IsTruthy(existsNode)
             ? new ProbeResult(CheckStatus.Taken, "Mail.ru подтвердил существование адреса")
             : new ProbeResult(CheckStatus.Free, "Mail.ru сообщил, что адрес не занят");
+    }
+
+    public static async Task<ProbeResult> ProbeGitHubAsync(IHttpTransport transport, string name, TimeSpan timeout, CancellationToken ct)
+    {
+        const string signupUrl = "https://github.com/signup?source=form-home-signup";
+        await transport.SendAsync(new HttpRequestSpec(
+            signupUrl,
+            HttpMethod.Get,
+            new Dictionary<string, string>
+            {
+                ["User-Agent"] = BrowserUserAgent,
+                ["Accept"] = "text/html,application/xhtml+xml",
+            },
+            null,
+            "text/html",
+            timeout), ct);
+
+        var check = await transport.SendAsync(new HttpRequestSpec(
+            "https://github.com/signup_check/username?value=" + Uri.EscapeDataString(name),
+            HttpMethod.Get,
+            new Dictionary<string, string>
+            {
+                ["User-Agent"] = BrowserUserAgent,
+                ["Accept"] = "*/*",
+                ["X-Requested-With"] = "XMLHttpRequest",
+                ["Referer"] = signupUrl,
+            },
+            null,
+            "text/plain",
+            timeout), ct);
+
+        var signup = ClassifyGitHubSignup(check);
+        if (signup is not null)
+        {
+            return signup;
+        }
+
+        var api = await transport.SendAsync(new HttpRequestSpec(
+            "https://api.github.com/users/" + Uri.EscapeDataString(name),
+            HttpMethod.Get,
+            new Dictionary<string, string>
+            {
+                ["User-Agent"] = "UniversalUsernameFinder",
+                ["Accept"] = "application/vnd.github+json",
+                ["X-GitHub-Api-Version"] = "2026-03-10",
+            },
+            null,
+            "application/json",
+            timeout), ct);
+
+        return ClassifyGitHubApi(api);
+    }
+
+    public static ProbeResult? ClassifyGitHubSignup(HttpReply reply)
+    {
+        var body = reply.Content.Trim();
+        if (reply.Code == 200 && (body.Length == 0 || Regex.IsMatch(body, @"^(available|true|username is available)\.?$", RegexOptions.IgnoreCase)))
+        {
+            return new ProbeResult(CheckStatus.Free, "Регистрационный endpoint GitHub не сообщил о занятости имени");
+        }
+
+        if ((reply.Code == 403 || reply.Code == 422)
+            && Regex.IsMatch(body, "already taken|reserved word|username is taken|not available|unavailable", RegexOptions.IgnoreCase))
+        {
+            return Regex.IsMatch(body, "reserved word|invalid", RegexOptions.IgnoreCase)
+                ? new ProbeResult(CheckStatus.Invalid, "GitHub отклонил имя как зарезервированное или недопустимое")
+                : new ProbeResult(CheckStatus.Taken, "Регистрационный endpoint GitHub сообщил, что имя занято");
+        }
+
+        return null;
+    }
+
+    public static ProbeResult ClassifyGitHubApi(HttpReply reply)
+    {
+        return reply.Code switch
+        {
+            200 => new ProbeResult(CheckStatus.Taken, "Публичный профиль GitHub найден"),
+            404 => new ProbeResult(CheckStatus.Free, "GitHub: профиль с таким именем не найден"),
+            403 => new ProbeResult(CheckStatus.NetworkError, "GitHub ограничил анонимный API (403/возможный лимит)"),
+            _ => new ProbeResult(CheckStatus.Unconfirmed, "GitHub не дал однозначного ответа (HTTP " + reply.Code + ")"),
+        };
     }
 
     public static ProbeResult ClassifyDiscord(HttpReply reply)
