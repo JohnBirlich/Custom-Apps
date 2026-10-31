@@ -24,6 +24,7 @@ public static class Probes
         {
             PlatformCatalog.Google => (name, ct) => google.ProbeAsync(name, ct),
             PlatformCatalog.Outlook => (name, ct) => OutlookProbe.ProbeAsync(transport, name, timeout, ct),
+            PlatformCatalog.YouTube => (name, ct) => ProbeYouTubeAsync(transport, name, timeout, ct),
             PlatformCatalog.Roblox => (name, ct) => ProbeRobloxAsync(transport, name, timeout, ct),
             PlatformCatalog.Steam => (name, ct) => ProbeSteamAsync(transport, name, timeout, ct),
             PlatformCatalog.Telegram => (name, ct) => ProbeTelegramAsync(transport, name, timeout, ct),
@@ -336,6 +337,49 @@ public static class Probes
         }
 
         return result;
+    }
+
+    public static async Task<ProbeResult> ProbeYouTubeAsync(IHttpTransport transport, string name, TimeSpan timeout, CancellationToken ct)
+    {
+        var reply = await transport.SendAsync(new HttpRequestSpec(
+            "https://www.youtube.com/@" + Uri.EscapeDataString(name),
+            HttpMethod.Get,
+            new Dictionary<string, string>
+            {
+                ["User-Agent"] = BrowserUserAgent,
+                ["Accept"] = BrowserAccept,
+                ["Accept-Language"] = "en-US,en;q=0.9",
+                ["Cookie"] = "CONSENT=YES+cb; SOCS=CAI; GPS=1",
+            },
+            null,
+            "text/html",
+            timeout), ct);
+
+        return ClassifyYouTube(reply, name);
+    }
+
+    public static ProbeResult ClassifyYouTube(HttpReply reply, string name)
+    {
+        var handle = Regex.Escape(name);
+        var content = reply.Content;
+        var matchingCanonical =
+            Regex.IsMatch(content, "(?is)\"canonicalBaseUrl\"\\s*:\\s*\"/@" + handle + "\"")
+            || Regex.IsMatch(content, "(?is)<link[^>]+rel=\"canonical\"[^>]+href=\"https?://www\\.youtube\\.com/@" + handle + "\"")
+            || Regex.IsMatch(content, "(?is)property=\"og:url\"[^>]+content=\"https?://www\\.youtube\\.com/@" + handle + "\"")
+            || Regex.IsMatch(content, "(?is)\"canonicalChannelUrl\"\\s*:\\s*\"https?://www\\.youtube\\.com/@" + handle + "\"");
+        var channelMetadata = Regex.IsMatch(content, "(?is)\"channelMetadataRenderer\"\\s*:\\s*\\{");
+        var notFound = reply.Code == 404
+            || Regex.IsMatch(content, "(?i)channelNotFound|This page isn.t available|channel does not exist|\"errorScreen\"|Страница недоступна");
+
+        if (reply.Code == 200 && matchingCanonical && channelMetadata)
+        {
+            return new ProbeResult(CheckStatus.Taken, "YouTube: канал найден, canonical handle совпадает с запрошенным");
+        }
+        if (notFound && !channelMetadata)
+        {
+            return new ProbeResult(CheckStatus.Free, "YouTube: канал с этим handle не найден — подтверди в YouTube Studio (резерв и ограничения видны только там)");
+        }
+        return new ProbeResult(CheckStatus.Unconfirmed, "YouTube: результат неизвестен — страница не подтвердила ни канал с этим handle, ни его отсутствие; повтори позже или проверь на youtube.com/handle");
     }
 
     public static ProbeResult ClassifyDiscord(HttpReply reply)
