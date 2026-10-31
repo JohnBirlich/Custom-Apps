@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.17'
+$script:AppVersion = '2.10.18'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -4042,7 +4042,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.17' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.18' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -5064,6 +5064,9 @@ function Show-StartupVideo {
         $videoLiteral = "'" + $videoPath.Replace("'", "''") + "'"
         $logLiteral = "'" + $splashLog.Replace("'", "''") + "'"
         $parentId = [int]$PID
+        $readyPath = Join-Path $logDirectory 'splash.ready'
+        $readyLiteral = "'" + $readyPath.Replace("'", "''") + "'"
+        if ([System.IO.File]::Exists($readyPath)) { [System.IO.File]::Delete($readyPath) }
 
         $splashScript = @"
 `$ErrorActionPreference = 'Stop'
@@ -5092,6 +5095,7 @@ try {
     `$timer.Interval = [TimeSpan]::FromSeconds(1)
     `$timer.Add_Tick({ try { if (-not (Get-Process -Id $parentId -ErrorAction SilentlyContinue)) { `$window.Close() } } catch { `$window.Close() } })
     `$window.Add_Loaded({ `$timer.Start() })
+    `$window.Add_ContentRendered({ try { [System.IO.File]::WriteAllText($readyLiteral, 'ready') } catch { } })
     `$app = New-Object System.Windows.Application
     [void]`$app.Run(`$window)
 } catch {
@@ -5100,6 +5104,7 @@ try {
 "@
         $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($splashScript))
         $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $script:StartupSplashStarted = [DateTime]::UtcNow
         $script:StartupSplash = Start-Process -FilePath $powershellPath -ArgumentList @('-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', $encoded) -WindowStyle Hidden -PassThru
     } catch {
         Write-StartupLog ('Заставка недоступна: ' + $_.Exception.Message)
@@ -5109,6 +5114,16 @@ try {
 
 function Close-StartupVideo {
     if ($script:StartupSplash) {
+        $readyPath = Join-Path (Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder') 'splash.ready'
+        $deadline = [DateTime]::UtcNow.AddSeconds(10)
+        while (-not [System.IO.File]::Exists($readyPath) -and -not $script:StartupSplash.HasExited -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 100
+        }
+        if (-not [System.IO.File]::Exists($readyPath)) {
+            Write-StartupLog 'Заставка не сообщила о готовности (см. splash.log)'
+        }
+        $shownFor = ([DateTime]::UtcNow - $script:StartupSplashStarted).TotalMilliseconds
+        if ($shownFor -lt 3000) { Start-Sleep -Milliseconds ([int](3000 - $shownFor)) }
         try { if (-not $script:StartupSplash.HasExited) { $script:StartupSplash.Kill() } } catch { }
         try { $script:StartupSplash.Dispose() } catch { }
         $script:StartupSplash = $null
