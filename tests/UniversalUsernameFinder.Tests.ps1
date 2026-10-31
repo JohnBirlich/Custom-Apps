@@ -1745,8 +1745,8 @@ Describe 'Версия 2.10.13: интерфейс, остановка, журн
 }
 
 Describe 'Версия 2.10.14: две кнопки вкладок в стиле помощи и переключение без сдвига' {
-    It 'версия 2.10.14' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.14'''
+    It 'версия не ниже 2.10.14' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(1[4-9]|[2-9][0-9])'''
     }
     It 'окно регистрации: вместо TabControl две кнопки и две панели' {
         $global:UufMainText.Contains('New-Object System.Windows.Forms.TabControl') | Should -BeFalse
