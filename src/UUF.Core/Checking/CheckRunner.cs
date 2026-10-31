@@ -76,14 +76,25 @@ public sealed class CheckRunner
         Action<CheckJob, ProbeResult> onResult,
         CancellationToken cancellationToken)
     {
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using var slots = new SemaphoreSlim(_threads, _threads);
-        var tasks = jobs.Select(job => RunJobAsync(job, probeFor, slots, pause, onResult, cancellationToken)).ToArray();
+
+        void Report(CheckJob job, ProbeResult result)
+        {
+            onResult(job, result);
+            if (result.StopRun)
+            {
+                stop.Cancel();
+            }
+        }
+
+        var tasks = jobs.Select(job => RunJobAsync(job, probeFor, slots, pause, Report, stop.Token)).ToArray();
 
         try
         {
             await Task.WhenAll(tasks);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (stop.IsCancellationRequested)
         {
         }
     }
