@@ -1804,7 +1804,7 @@ Describe 'Заставка загрузки: видео digital_word_eye.mp4' {
 }
 
 Describe 'Версия 2.10.16: заставка загрузки' {
-    It 'версия 2.10.16' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.16'''
+    It 'версия не ниже 2.10.16' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(1[6-9]|[2-9][0-9])'''
     }
 }

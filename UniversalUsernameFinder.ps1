@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.16'
+$script:AppVersion = '2.10.17'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -4042,7 +4042,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.16' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.17' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -5058,29 +5058,49 @@ function Show-StartupVideo {
         }
         if (-not [System.IO.File]::Exists($videoPath)) { return }
 
-        Add-Type -AssemblyName PresentationFramework
-        Add-Type -AssemblyName PresentationCore
-        Add-Type -AssemblyName WindowsBase
+        $logDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
+        $null = [System.IO.Directory]::CreateDirectory($logDirectory)
+        $splashLog = Join-Path $logDirectory 'splash.log'
+        $videoLiteral = "'" + $videoPath.Replace("'", "''") + "'"
+        $logLiteral = "'" + $splashLog.Replace("'", "''") + "'"
+        $parentId = [int]$PID
 
-        $player = New-Object System.Windows.Controls.MediaElement
-        $player.LoadedBehavior = [System.Windows.Controls.MediaState]::Play
-        $player.UnloadedBehavior = [System.Windows.Controls.MediaState]::Close
-        $player.Stretch = [System.Windows.Media.Stretch]::Uniform
-        $player.Source = New-Object System.Uri($videoPath)
-        $player.Add_MediaEnded({ param($sender, $e) try { $sender.Position = [TimeSpan]::Zero; $sender.Play() } catch { } })
-
-        $splash = New-Object System.Windows.Window
-        $splash.WindowStyle = [System.Windows.WindowStyle]::None
-        $splash.ResizeMode = [System.Windows.ResizeMode]::NoResize
-        $splash.ShowInTaskbar = $false
-        $splash.Topmost = $true
-        $splash.WindowStartupLocation = [System.Windows.WindowStartupLocation]::CenterScreen
-        $splash.Background = [System.Windows.Media.Brushes]::Black
-        $splash.Width = 480
-        $splash.Height = 270
-        $splash.Content = $player
-        $splash.Show()
-        $script:StartupSplash = $splash
+        $splashScript = @"
+`$ErrorActionPreference = 'Stop'
+try {
+    Add-Type -AssemblyName PresentationFramework
+    Add-Type -AssemblyName PresentationCore
+    Add-Type -AssemblyName WindowsBase
+    `$player = New-Object System.Windows.Controls.MediaElement
+    `$player.LoadedBehavior = 'Play'
+    `$player.UnloadedBehavior = 'Close'
+    `$player.Stretch = 'Uniform'
+    `$player.Source = New-Object System.Uri($videoLiteral)
+    `$player.Add_MediaEnded({ param(`$sender, `$e) try { `$sender.Position = [TimeSpan]::Zero; `$sender.Play() } catch { } })
+    `$player.Add_MediaFailed({ param(`$sender, `$e) try { Add-Content -LiteralPath $logLiteral -Value ('MediaFailed: ' + `$e.ErrorException.Message) } catch { }; try { `$window.Close() } catch { } })
+    `$window = New-Object System.Windows.Window
+    `$window.WindowStyle = 'None'
+    `$window.ResizeMode = 'NoResize'
+    `$window.ShowInTaskbar = `$false
+    `$window.Topmost = `$true
+    `$window.WindowStartupLocation = 'CenterScreen'
+    `$window.Background = [System.Windows.Media.Brushes]::Black
+    `$window.Width = 480
+    `$window.Height = 270
+    `$window.Content = `$player
+    `$timer = New-Object System.Windows.Threading.DispatcherTimer
+    `$timer.Interval = [TimeSpan]::FromSeconds(1)
+    `$timer.Add_Tick({ try { if (-not (Get-Process -Id $parentId -ErrorAction SilentlyContinue)) { `$window.Close() } } catch { `$window.Close() } })
+    `$window.Add_Loaded({ `$timer.Start() })
+    `$app = New-Object System.Windows.Application
+    [void]`$app.Run(`$window)
+} catch {
+    try { Add-Content -LiteralPath $logLiteral -Value ('Splash error: ' + `$_.Exception.ToString()) } catch { }
+}
+"@
+        $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($splashScript))
+        $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $script:StartupSplash = Start-Process -FilePath $powershellPath -ArgumentList @('-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', $encoded) -WindowStyle Hidden -PassThru
     } catch {
         Write-StartupLog ('Заставка недоступна: ' + $_.Exception.Message)
         $script:StartupSplash = $null
@@ -5089,7 +5109,8 @@ function Show-StartupVideo {
 
 function Close-StartupVideo {
     if ($script:StartupSplash) {
-        try { $script:StartupSplash.Close() } catch { }
+        try { if (-not $script:StartupSplash.HasExited) { $script:StartupSplash.Kill() } } catch { }
+        try { $script:StartupSplash.Dispose() } catch { }
         $script:StartupSplash = $null
     }
 }
