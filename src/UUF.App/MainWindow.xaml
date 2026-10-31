@@ -39,6 +39,7 @@
                     <Button Content="Проверить" Command="{Binding StartCommand}" Style="{StaticResource PrimaryButton}" />
                     <Button Content="{Binding PauseButtonText}" Command="{Binding PauseCommand}" />
                     <Button Content="Остановить" Command="{Binding StopCommand}" />
+                    <Button Content="Регистрация и пароль" Click="OpenAccounts_Click" />
                 </WrapPanel>
             </StackPanel>
         </Border>
