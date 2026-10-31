@@ -249,7 +249,7 @@ public class ProbeTests
     public async Task UnknownPlatformIsUnconfirmedWithoutNetworkCalls()
     {
         var transport = new FakeTransport(_ => throw new InvalidOperationException("must not be called"));
-        var probe = Probes.For("Google", transport, Timeout);
+        var probe = Probes.For("YouTube", transport, Timeout);
 
         var result = await probe("neo", CancellationToken.None);
 

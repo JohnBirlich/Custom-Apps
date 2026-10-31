@@ -13,14 +13,17 @@ public static class Probes
 {
     public const string BrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
 
-    private const string BrowserAccept = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+    internal const string BrowserAccept = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 
     private static readonly ProbeResult UnknownNetworkStatus = new(CheckStatus.NetworkError, "Не удалось определить статус");
 
     public static NameProbe For(string platform, IHttpTransport transport, TimeSpan timeout)
     {
+        var google = new GoogleProbe(transport, timeout);
         return platform switch
         {
+            PlatformCatalog.Google => (name, ct) => google.ProbeAsync(name, ct),
+            PlatformCatalog.Outlook => (name, ct) => OutlookProbe.ProbeAsync(transport, name, timeout, ct),
             PlatformCatalog.Roblox => (name, ct) => ProbeRobloxAsync(transport, name, timeout, ct),
             PlatformCatalog.Steam => (name, ct) => ProbeSteamAsync(transport, name, timeout, ct),
             PlatformCatalog.Telegram => (name, ct) => ProbeTelegramAsync(transport, name, timeout, ct),
@@ -316,13 +319,23 @@ public static class Probes
 
     public static ProbeResult ClassifyGitHubApi(HttpReply reply)
     {
-        return reply.Code switch
+        var result = reply.Code switch
         {
             200 => new ProbeResult(CheckStatus.Taken, "Публичный профиль GitHub найден"),
             404 => new ProbeResult(CheckStatus.Free, "GitHub: профиль с таким именем не найден"),
-            403 => new ProbeResult(CheckStatus.NetworkError, "GitHub ограничил анонимный API (403/возможный лимит)"),
-            _ => new ProbeResult(CheckStatus.Unconfirmed, "GitHub не дал однозначного ответа (HTTP " + reply.Code + ")"),
+            403 => new ProbeResult(CheckStatus.NetworkError, "GitHub ограничил анонимный API (403/возможный лимит); проверка остановлена", StopRun: true),
+            _ => new ProbeResult(CheckStatus.NetworkError, "Не удалось определить статус"),
         };
+
+        var remaining = reply.Headers is not null && reply.Headers.TryGetValue("X-RateLimit-Remaining", out var raw)
+            ? raw.Trim()
+            : string.Empty;
+        if (remaining == "0" && !result.StopRun)
+        {
+            result = new ProbeResult(result.Status, result.Reason + "; исчерпан часовой лимит анонимного API GitHub (60 запросов), проверка остановлена", StopRun: true);
+        }
+
+        return result;
     }
 
     public static ProbeResult ClassifyDiscord(HttpReply reply)

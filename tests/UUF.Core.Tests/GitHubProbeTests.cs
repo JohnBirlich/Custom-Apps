@@ -78,10 +78,41 @@ public class GitHubProbeTests
     }
 
     [Fact]
-    public void UnknownApiAnswerIsUnconfirmed()
+    public void UnknownApiAnswerIsNetworkError()
     {
         var result = Probes.ClassifyGitHubApi(new HttpReply(500, "{}"));
 
-        Assert.Equal(CheckStatus.Unconfirmed, result.Status);
+        Assert.Equal(CheckStatus.NetworkError, result.Status);
+        Assert.False(result.StopRun);
+    }
+
+    [Fact]
+    public void ApiForbiddenStopsRun()
+    {
+        var result = Probes.ClassifyGitHubApi(new HttpReply(403, "{}"));
+
+        Assert.True(result.StopRun);
+    }
+
+    [Fact]
+    public void ExhaustedRateLimitStopsRunAfterAnswer()
+    {
+        var headers = new Dictionary<string, string> { ["X-RateLimit-Remaining"] = "0" };
+
+        var result = Probes.ClassifyGitHubApi(new HttpReply(200, "{}", headers));
+
+        Assert.Equal(CheckStatus.Taken, result.Status);
+        Assert.True(result.StopRun);
+    }
+
+    [Fact]
+    public void RemainingRateLimitDoesNotStopRun()
+    {
+        var headers = new Dictionary<string, string> { ["X-RateLimit-Remaining"] = "42" };
+
+        var result = Probes.ClassifyGitHubApi(new HttpReply(404, "{}", headers));
+
+        Assert.Equal(CheckStatus.Free, result.Status);
+        Assert.False(result.StopRun);
     }
 }
