@@ -7,7 +7,7 @@ on:
 
 jobs:
   dotnet-test:
-    name: C# core tests (.NET 8)
+    name: C# core tests and WPF build (.NET 8)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -19,6 +19,9 @@ jobs:
 
       - name: Run xUnit tests
         run: dotnet test tests/UUF.Core.Tests/UUF.Core.Tests.csproj --configuration Release --logger "trx;LogFileName=core-tests.trx"
+
+      - name: Build WPF app (UUF.App)
+        run: dotnet build src/UUF.App/UUF.App.csproj --configuration Release
 
       - name: Upload test results
         if: always()
