@@ -1786,3 +1786,19 @@ Describe 'Версия 2.10.15: исправления ручных ников, 
         $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.15'''
     }
 }
+
+Describe 'Заставка загрузки: видео digital_word_eye.mp4' {
+    It 'видео подключается и закрывается при показе главного окна' {
+        $global:UufFullText | Should -Match 'function Show-StartupVideo'
+        $global:UufFullText | Should -Match 'function Close-StartupVideo'
+        $global:UufFullText | Should -Match "digital_word_eye\.mp4"
+        $global:UufFullText | Should -Match '\$script:Form\.Add_Shown\(\{ Close-StartupVideo \}\)'
+    }
+
+    It 'сборка и установка переносят видео рядом с UUF.exe' {
+        $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Build-Exe.ps1'))
+        $buildText | Should -Match 'digital_word_eye\.mp4'
+        $installText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Install-UUF.ps1'))
+        $installText | Should -Match 'digital_word_eye\.mp4'
+    }
+}
