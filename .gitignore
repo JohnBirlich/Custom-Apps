@@ -14,8 +14,3 @@ dist/
 Thumbs.db
 Desktop.ini
 .DS_Store
-
-# .NET: сборки и результаты тестов
-bin/
-obj/
-TestResults/
