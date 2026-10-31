@@ -1365,10 +1365,7 @@ Describe 'Версия 2.9.0: ручной ввод, вкладки, зерка�
         $global:UufMainText.Contains('$script:ManualNickBox = New-TextBox 14 505 350 66') | Should -BeTrue
     }
     It 'вкладки рисуются вручную: без белой полоски, кнопки угла в цвете таба' {
-        $global:UufMainText.Contains('function Set-UufTabStyle {') | Should -BeTrue
-        $global:UufMainText.Contains("`$Tabs.Appearance = 'FlatButtons'") | Should -BeTrue
-        $global:UufMainText.Contains("`$Tabs.DrawMode = 'OwnerDrawFixed'") | Should -BeTrue
-        $global:UufMainText.Contains('Set-UufTabStyle -Tabs $tabs -TabWidth 190') | Should -BeTrue
+        $global:UufMainText.Contains('function Set-AccountTabView {') | Should -BeTrue
         $global:UufMainText.Contains('function Show-HelpPage {') | Should -BeTrue
     }
     It 'буфер обмена через безопасную функцию с повторами, прямых вызовов не осталось' {
@@ -1403,8 +1400,7 @@ Describe 'Версия 2.9.0: ручной ввод, вкладки, зерка�
 
 Describe 'Версия 2.9.1: дорисовка вкладок, возобновление проверки, устойчивость остановок' {
     It 'обработчик вкладок привязывает аргументы через param и защищён от падения' {
-        $global:UufMainText.Contains('param($tabSender,$tabArgs)') | Should -BeTrue
-        $global:UufMainText.Contains('if ($tabIndex -lt 0 -or $tabIndex -ge $tabSender.TabPages.Count) { return }') | Should -BeTrue
+        $global:UufMainText.Contains('param($clickSender, $clickArgs) Set-AccountTabView -Index ([int]$clickSender.Tag)') | Should -BeTrue
         $global:UufMainText | Should -Not -Match '\$args\[1\]\.TabIndex'
     }
     It 'кнопки заголовка не рисуют системных рамок' {
@@ -1676,8 +1672,8 @@ Describe 'Версия 2.10.8: закрытие окна проверки сое
 
 Describe 'Версия 2.10.9: стиль окна регистрации и выравнивание проверки соединения' {
     It 'вкладки регистрации в стиле кнопок помощи' {
-        $global:UufMainText.Contains('$tabs.SizeMode = ''Fixed''') | Should -BeTrue
-        $global:UufMainText.Contains('$tabs.ItemSize = New-Object System.Drawing.Size(366, 40)') | Should -BeTrue
+        $global:UufMainText.Contains('$tabButton.FlatStyle = ''Flat''') | Should -BeTrue
+        $global:UufMainText.Contains('$tabButton.Size = New-Object System.Drawing.Size(365, 40)') | Should -BeTrue
     }
     It 'кнопка «Копировать отчёт» убрана из проверки соединения' {
         $global:UufMainText.Contains('Копировать отчёт') | Should -BeFalse
@@ -1745,5 +1741,23 @@ Describe 'Версия 2.10.13: интерфейс, остановка, журн
     }
     It 'обработчик выбора сохранённой записи защищён от исключений' {
         $global:UufMainText.Contains('Выбор сохранённой записи: ') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.14: две кнопки вкладок в стиле помощи и переключение без сдвига' {
+    It 'версия 2.10.14' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.14'''
+    }
+    It 'окно регистрации: вместо TabControl две кнопки и две панели' {
+        $global:UufMainText.Contains('New-Object System.Windows.Forms.TabControl') | Should -BeFalse
+        $global:UufMainText.Contains('$script:AccountTabButtons = @()') | Should -BeTrue
+        $global:UufMainText.Contains('$tabTitles = @(''Регистрация и пароль'', ''Сохранённые аккаунты'')') | Should -BeTrue
+        $global:UufMainText.Contains('New-Object System.Windows.Forms.Panel') | Should -BeTrue
+    }
+    It 'переключение вкладок и стиль кнопок как у помощи' {
+        $global:UufMainText.Contains('Set-AccountTabView -Index 1') | Should -BeTrue
+        $global:UufMainText.Contains('Set-AccountTabView -Index 0') | Should -BeTrue
+        $global:UufMainText.Contains('$tabButton.Size = New-Object System.Drawing.Size(365, 40)') | Should -BeTrue
+        $global:UufMainText.Contains('$tabButton.FlatStyle = ''Flat''') | Should -BeTrue
     }
 }

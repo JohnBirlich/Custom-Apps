@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.13'
+$script:AppVersion = '2.10.14'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -1487,37 +1487,20 @@ function Copy-UufTextToClipboard {
     return $false
 }
 
-function Set-UufTabStyle {
-    param($Tabs,[int]$TabWidth)
-    $Tabs.Appearance = 'FlatButtons'
-    $Tabs.ItemSize = New-Object System.Drawing.Size($TabWidth, 30)
-    $Tabs.Padding = New-Object System.Drawing.Point(12, 3)
-    $Tabs.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-    $Tabs.DrawMode = 'OwnerDrawFixed'
-    $Tabs.Add_DrawItem({
-        param($tabSender,$tabArgs)
-        try {
-            if ($null -eq $tabArgs -or $null -eq $tabArgs.Graphics) { return }
-            if ($null -eq $tabSender -or $tabSender.TabPages.Count -lt 1) { return }
-            $tabIndex = [int]$tabArgs.Index
-            if ($tabIndex -lt 0 -or $tabIndex -ge $tabSender.TabPages.Count) { return }
-            $tabBounds = $tabArgs.Bounds
-            $tabG = $tabArgs.Graphics
-            $tabSelected = ($tabSender.SelectedIndex -eq $tabIndex)
-            if ($tabSelected) { $tabBack = [System.Drawing.Color]::FromArgb(44,56,82) } else { $tabBack = [System.Drawing.Color]::FromArgb(26,33,47) }
-            $tabBrush = New-Object System.Drawing.SolidBrush($tabBack)
-            $tabG.FillRectangle($tabBrush, $tabBounds)
-            $tabBrush.Dispose()
-            if ($tabSelected) {
-                $tabAccent = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(129,108,255))
-                $tabG.FillRectangle($tabAccent, $tabBounds.X, ($tabBounds.Bottom - 3), $tabBounds.Width, 3)
-                $tabAccent.Dispose()
-            }
-            if ($tabSelected) { $tabText = [System.Drawing.Color]::FromArgb(235,240,248) } else { $tabText = [System.Drawing.Color]::FromArgb(148,161,186) }
-            $tabFlags = [System.Windows.Forms.TextFormatFlags]::HorizontalCenter -bor [System.Windows.Forms.TextFormatFlags]::VerticalCenter -bor [System.Windows.Forms.TextFormatFlags]::EndEllipsis
-            [System.Windows.Forms.TextRenderer]::DrawText($tabG, [string]$tabSender.TabPages[$tabIndex].Text, $tabSender.Font, $tabBounds, $tabText, $tabFlags)
-        } catch { }
-    })
+function Set-AccountTabView {
+    param([int]$Index)
+    if ($null -eq $script:AccountPrepareTab -or $null -eq $script:AccountVaultTab) { return }
+    $script:AccountPrepareTab.Visible = ($Index -eq 0)
+    $script:AccountVaultTab.Visible = ($Index -eq 1)
+    foreach ($tabButton in @($script:AccountTabButtons)) {
+        if ([int]$tabButton.Tag -eq $Index) {
+            $tabButton.BackColor = [System.Drawing.Color]::FromArgb(44,56,82)
+            $tabButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(129,108,255)
+        } else {
+            $tabButton.BackColor = [System.Drawing.Color]::FromArgb(26,33,47)
+            $tabButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(64,78,104)
+        }
+    }
 }
 
 function Add-UiLabel {
@@ -2267,27 +2250,38 @@ function Open-AccountTools {
     $script:AccountForm.Font = New-Object System.Drawing.Font($script:UiFontFamily, 9)
     Set-WindowChrome -Window $script:AccountForm
 
-    $tabs = New-Object System.Windows.Forms.TabControl
-    $tabs.Location = New-Object System.Drawing.Point(14, 14)
-    $tabs.Size = New-Object System.Drawing.Size(738, 600)
-    $tabs.Anchor = 'Top, Bottom, Left, Right'
-    $prepareTab = New-Object System.Windows.Forms.TabPage
-    $prepareTab.Text = 'Регистрация и пароль'
+    $navFont = New-Object System.Drawing.Font($script:UiFontFamily,10,[System.Drawing.FontStyle]::Bold)
+    $prepareTab = New-Object System.Windows.Forms.Panel
+    $prepareTab.Location = New-Object System.Drawing.Point(14, 64)
+    $prepareTab.Size = New-Object System.Drawing.Size(738, 560)
     $prepareTab.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
     $prepareTab.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-    $vaultTab = New-Object System.Windows.Forms.TabPage
-    $vaultTab.Text = 'Сохранённые аккаунты'
+    $vaultTab = New-Object System.Windows.Forms.Panel
+    $vaultTab.Location = New-Object System.Drawing.Point(14, 64)
+    $vaultTab.Size = New-Object System.Drawing.Size(738, 560)
     $vaultTab.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
     $vaultTab.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-    [void]$tabs.TabPages.Add($prepareTab)
-    [void]$tabs.TabPages.Add($vaultTab)
-    Set-UufTabStyle -Tabs $tabs -TabWidth 190
-    $tabs.Font = New-Object System.Drawing.Font($script:UiFontFamily,10,[System.Drawing.FontStyle]::Bold)
-    $tabs.SizeMode = 'Fixed'
-    $tabs.ItemSize = New-Object System.Drawing.Size(366, 40)
-    $script:AccountTabs = $tabs
+    $script:AccountForm.Controls.Add($prepareTab)
+    $script:AccountForm.Controls.Add($vaultTab)
+    $script:AccountPrepareTab = $prepareTab
     $script:AccountVaultTab = $vaultTab
-    $script:AccountForm.Controls.Add($tabs)
+    $script:AccountTabButtons = @()
+    $tabTitles = @('Регистрация и пароль', 'Сохранённые аккаунты')
+    for ($tabIndex = 0; $tabIndex -lt 2; $tabIndex++) {
+        $tabButton = New-Object System.Windows.Forms.Button
+        $tabButton.Text = [string]$tabTitles[$tabIndex]
+        $tabButton.Location = New-Object System.Drawing.Point((14 + $tabIndex * 373), 14)
+        $tabButton.Size = New-Object System.Drawing.Size(365, 40)
+        $tabButton.FlatStyle = 'Flat'
+        $tabButton.FlatAppearance.BorderSize = 1
+        $tabButton.Font = $navFont
+        $tabButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+        $tabButton.UseVisualStyleBackColor = $false
+        $tabButton.Tag = $tabIndex
+        $tabButton.Add_Click({ param($clickSender, $clickArgs) Set-AccountTabView -Index ([int]$clickSender.Tag) })
+        $script:AccountForm.Controls.Add($tabButton)
+        $script:AccountTabButtons += $tabButton
+    }
 
     $intro = New-Object System.Windows.Forms.Label
     $intro.Text = 'Выбери ник из списка или введи свой. Платформа берётся из выбранной строки таблицы или из списка «Платформа проверки». Пароль генерируется локально и никуда не отправляется.'
@@ -2606,7 +2600,7 @@ function Open-AccountTools {
             Save-EncryptedAccountRecords -Records $records
             $script:RegistrationConfirmedCheck.Checked = $false
             Refresh-SavedAccountList
-            $script:AccountTabs.SelectedTab = $script:AccountVaultTab
+            Set-AccountTabView -Index 1
             [System.Windows.Forms.MessageBox]::Show("Данные для $storedNick сохранены в зашифрованное хранилище текущего пользователя Windows.", 'Сохранено', 'OK', 'Information') | Out-Null
         } catch {
             Add-ErrorDiagnostic ('Не удалось сохранить учётные данные: ' + $_.Exception.ToString())
@@ -2688,6 +2682,7 @@ function Open-AccountTools {
         }
     } catch { }
     Set-ButtonEdgeStyle -Root $script:AccountForm
+    Set-AccountTabView -Index 0
     Update-AccountPlatformUi
     [void]$script:AccountForm.ShowDialog($script:Form)
 }
@@ -4046,7 +4041,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.13' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.14' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
