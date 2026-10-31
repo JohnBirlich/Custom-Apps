@@ -1782,8 +1782,8 @@ Describe 'правки 2.10.15: Telegram, ручные ники, полный а
 }
 
 Describe 'Версия 2.10.15: исправления ручных ников, Telegram и полного адреса' {
-    It 'версия 2.10.15' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.15'''
+    It 'версия не ниже 2.10.15' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(1[5-9]|[2-9][0-9])'''
     }
 }
 
@@ -1800,5 +1800,11 @@ Describe 'Заставка загрузки: видео digital_word_eye.mp4' {
         $buildText | Should -Match 'digital_word_eye\.mp4'
         $installText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Install-UUF.ps1'))
         $installText | Should -Match 'digital_word_eye\.mp4'
+    }
+}
+
+Describe 'Версия 2.10.16: заставка загрузки' {
+    It 'версия 2.10.16' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.16'''
     }
 }
