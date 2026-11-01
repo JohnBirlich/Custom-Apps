@@ -1964,3 +1964,10 @@ Describe 'Версия 2.10.27: резервная копия паролей с�
     }
 }
 
+Describe 'Версия 2.10.28: заставка без чёрных полос по краям' {
+    It 'видео заполняет окно 1920x1080 без полей' {
+        $global:UufFullText.Contains("`$player.Stretch = 'UniformToFill'") | Should -BeTrue
+        $global:UufFullText.Contains("`$player.Stretch = 'Uniform'") | Should -BeFalse
+    }
+}
+
