@@ -1890,10 +1890,10 @@ Describe 'Версия 2.10.24: видео заставки вшито в UUF.ex
         $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(2[4-9]|[3-9][0-9])'''
     }
     It 'скрипт умеет брать видео из вшитых частей и кэшировать его в папке приложения' {
-        $global:UufMainText.Contains('$script:EmbeddedVideoParts = @()') | Should -BeTrue
-        $global:UufMainText.Contains('function Get-StartupVideoPath') | Should -BeTrue
-        $global:UufMainText.Contains('startup-video.mp4') | Should -BeTrue
-        $global:UufMainText.Contains('[Convert]::FromBase64String') | Should -BeTrue
+        $global:UufFullText.Contains('$script:EmbeddedVideoParts = @()') | Should -BeTrue
+        $global:UufFullText.Contains('function Get-StartupVideoPath') | Should -BeTrue
+        $global:UufFullText.Contains('startup-video.mp4') | Should -BeTrue
+        $global:UufFullText.Contains('[Convert]::FromBase64String((-join') | Should -BeTrue
     }
     It 'сборка встраивает видео во временную копию скрипта и проверяет размер exe' {
         $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
