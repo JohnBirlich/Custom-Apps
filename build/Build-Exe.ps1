@@ -108,9 +108,9 @@ $compilerArguments = @(
     '/target:winexe',
     '/optimize+',
     '/platform:anycpu',
-    '/out:' + $outputPath,
-    '/win32icon:' + $iconFile,
-    '/resource:' + $embeddedScriptPath + ',UniversalUsernameFinder.ps1',
+    ('/out:' + $outputPath),
+    ('/win32icon:' + $iconFile),
+    ('/resource:' + $embeddedScriptPath + ',UniversalUsernameFinder.ps1'),
     $launcherPath,
     $assemblyInfoPath
 )
