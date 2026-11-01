@@ -42,6 +42,12 @@ if (-not [System.IO.File]::Exists($cscPath)) {
     throw ('Не найден компилятор C# (csc.exe): ' + $cscPath)
 }
 
+$smaRoot = Join-Path $env:WINDIR 'Microsoft.NET\assembly\GAC_MSIL\System.Management.Automation'
+$smaDll = Get-ChildItem -LiteralPath $smaRoot -Recurse -Filter 'System.Management.Automation.dll' -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $smaDll) {
+    throw ('Не найдена сборка System.Management.Automation (Windows PowerShell 5.1): ' + $smaRoot)
+}
+
 Write-Host ('Репозиторий:      ' + $repositoryRoot)
 Write-Host ('Исходный скрипт:  ' + $scriptPath)
 Write-Host ('Версия:           ' + $appVersion + ' (файл: ' + $fileVersion + ')')
@@ -108,6 +114,7 @@ $compilerArguments = @(
     '/target:winexe',
     '/optimize+',
     '/platform:anycpu',
+    ('/reference:' + $smaDll.FullName),
     ('/out:' + $outputPath),
     ('/win32icon:' + $iconFile),
     ('/resource:' + $embeddedScriptPath + ',UniversalUsernameFinder.ps1'),

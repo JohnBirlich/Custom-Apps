@@ -1,41 +1,64 @@
 using System;
-using System.Diagnostics;
 using System.IO;
+using System.Management.Automation;
+using System.Management.Automation.Runspaces;
 using System.Reflection;
+using System.Text;
+using System.Threading;
 
 internal static class UufLauncher
 {
     private const string ScriptResourceName = "UniversalUsernameFinder.ps1";
+    private static int exitCode = 0;
 
+    [STAThread]
     private static int Main()
     {
         string localData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         string appDirectory = Path.Combine(localData, "UniversalUsernameFinder", "app");
         Directory.CreateDirectory(appDirectory);
 
-        string scriptPath = Path.Combine(appDirectory, ScriptResourceName);
-        byte[] scriptBytes = ReadEmbeddedScript();
-        if (!SameContent(scriptPath, scriptBytes))
+        string script = ReadEmbeddedScript();
+
+        Thread worker = new Thread(delegate() { RunScript(script, appDirectory); });
+        worker.SetApartmentState(ApartmentState.STA);
+        worker.Start();
+        worker.Join();
+        return exitCode;
+    }
+
+    private static void RunScript(string script, string appDirectory)
+    {
+        try
         {
-            File.WriteAllBytes(scriptPath, scriptBytes);
+            InitialSessionState state = InitialSessionState.CreateDefault();
+            using (Runspace runspace = RunspaceFactory.CreateRunspace(state))
+            {
+                runspace.ApartmentState = ApartmentState.STA;
+                runspace.ThreadOptions = PSThreadOptions.UseCurrentThread;
+                runspace.Open();
+                using (PowerShell shell = PowerShell.Create())
+                {
+                    shell.Runspace = runspace;
+                    shell.AddScript(script);
+                    shell.Invoke();
+                }
+            }
         }
-
-        string powershell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
-        string arguments = "-NoLogo -NoProfile -STA -WindowStyle Hidden -ExecutionPolicy RemoteSigned -File \"" + scriptPath + "\"";
-
-        ProcessStartInfo startInfo = new ProcessStartInfo(powershell, arguments);
-        startInfo.UseShellExecute = false;
-        startInfo.CreateNoWindow = true;
-        startInfo.WorkingDirectory = appDirectory;
-
-        using (Process process = Process.Start(startInfo))
+        catch (Exception ex)
         {
-            process.WaitForExit();
-            return process.ExitCode;
+            exitCode = 1;
+            try
+            {
+                File.WriteAllText(Path.Combine(appDirectory, "launcher-error.log"), ex.ToString(), new UTF8Encoding(false));
+            }
+            catch (Exception)
+            {
+            }
         }
     }
 
-    private static byte[] ReadEmbeddedScript()
+    private static string ReadEmbeddedScript()
     {
         using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ScriptResourceName))
         {
@@ -46,29 +69,13 @@ internal static class UufLauncher
             using (MemoryStream buffer = new MemoryStream())
             {
                 stream.CopyTo(buffer);
-                return buffer.ToArray();
+                string text = Encoding.UTF8.GetString(buffer.ToArray());
+                if (text.Length > 0 && text[0] == '\uFEFF')
+                {
+                    text = text.Substring(1);
+                }
+                return text;
             }
         }
-    }
-
-    private static bool SameContent(string path, byte[] expected)
-    {
-        if (!File.Exists(path))
-        {
-            return false;
-        }
-        byte[] actual = File.ReadAllBytes(path);
-        if (actual.Length != expected.Length)
-        {
-            return false;
-        }
-        for (int i = 0; i < actual.Length; i++)
-        {
-            if (actual[i] != expected[i])
-            {
-                return false;
-            }
-        }
-        return true;
     }
 }

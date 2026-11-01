@@ -1909,9 +1909,12 @@ Describe 'Версия 2.10.25: C#-лаунчер вместо ps2exe и под�
         [System.IO.File]::Exists($launcherPath) | Should -BeTrue
         $launcherText = [System.IO.File]::ReadAllText($launcherPath)
         $launcherText.Contains('UniversalUsernameFinder.ps1') | Should -BeTrue
-        $launcherText.Contains('RemoteSigned') | Should -BeTrue
+        $launcherText.Contains('System.Management.Automation') | Should -BeTrue
+        $launcherText.Contains('PowerShell.Create()') | Should -BeTrue
+        $launcherText.Contains('ApartmentState.STA') | Should -BeTrue
         $launcherText.Contains('Bypass') | Should -BeFalse
         $launcherText.Contains('-EncodedCommand') | Should -BeFalse
+        $launcherText.Contains('powershell.exe') | Should -BeFalse
     }
     It 'сборка компилирует лаунчер через csc.exe, а не ps2exe' {
         $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
@@ -1927,3 +1930,15 @@ Describe 'Версия 2.10.25: C#-лаунчер вместо ps2exe и под�
     }
 }
 
+Describe 'Версия 2.10.26: скрипт в процессе exe и учётные записи в accounts.txt' {
+    It 'лаунчер выполняет скрипт в собственном процессе, без дочернего powershell.exe' {
+        $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
+        $buildText.Contains('System.Management.Automation.dll') | Should -BeTrue
+        $buildText.Contains('/reference:') | Should -BeTrue
+    }
+    It 'учётные записи сохраняются в accounts.txt в формате Логин:пароль' {
+        $global:UufFullText.Contains('accounts.txt') | Should -BeTrue
+        $global:UufFullText.Contains('[string]$record.Username + '':'' + [string]$record.Password') | Should -BeTrue
+        $global:UufFullText.Contains('Import-LegacyEncryptedAccountRecords') | Should -BeTrue
+    }
+}
