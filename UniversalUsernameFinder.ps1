@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.27'
+$script:AppVersion = '2.10.28'
 $script:EmbeddedVideoParts = @()
 
 trap {
@@ -5077,7 +5077,7 @@ try {
     $player = New-Object System.Windows.Controls.MediaElement
     $player.LoadedBehavior = 'Play'
     $player.UnloadedBehavior = 'Close'
-    $player.Stretch = 'Uniform'
+    $player.Stretch = 'UniformToFill'
     $player.Source = New-Object System.Uri($VideoPath)
     $window = New-Object System.Windows.Window
     $window.WindowStyle = 'None'
