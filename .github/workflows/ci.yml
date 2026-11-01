@@ -228,12 +228,53 @@ jobs:
             exit 1
           }
 
-  package:
-    name: Package Windows files (no exe)
+  build:
+    name: Build UUF.exe (ps2exe)
     runs-on: windows-latest
     needs: quality
     steps:
       - uses: actions/checkout@v5
+
+      - name: Build executable
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            & (Join-Path $PWD 'build\Build-Exe.ps1')
+            $exe = Join-Path $PWD 'dist\UUF.exe'
+            if (-not (Test-Path -LiteralPath $exe)) {
+              Write-Host '::error::Executable was not created: dist\UUF.exe'
+              exit 1
+            }
+            $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+            [System.IO.File]::WriteAllText((Join-Path $PWD 'dist\UUF.exe.sha256'), ($hash + '  UUF.exe'), (New-Object System.Text.UTF8Encoding -ArgumentList $false))
+            Write-Host ('SHA256 UUF.exe: ' + $hash)
+          } catch {
+            Write-Host ('::error::BUILD STEP EXCEPTION: ' + $_.Exception.ToString())
+            exit 1
+          }
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v7
+        with:
+          name: uuf-exe
+          path: |
+            dist/UUF.exe
+            dist/UUF.exe.sha256
+          if-no-files-found: error
+
+  package:
+    name: Package Windows files
+    runs-on: windows-latest
+    needs: [quality, build]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download executable
+        uses: actions/download-artifact@v5
+        with:
+          name: uuf-exe
+          path: dist
 
       - name: Build package
         shell: powershell
@@ -241,7 +282,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           try {
             & (Join-Path $PWD 'build\Package-Uuf.ps1') | Out-Null
-            foreach ($required in @('dist\UniversalUsernameFinder-windows.zip', 'dist\UniversalUsernameFinder-windows.zip.sha256')) {
+            foreach ($required in @('dist\UniversalUsernameFinder-windows.zip', 'dist\UniversalUsernameFinder-windows.zip.sha256', 'dist\UUF.exe', 'dist\UUF.exe.sha256')) {
               if (-not (Test-Path -LiteralPath (Join-Path $PWD $required))) {
                 Write-Host ('::error::missing package file: ' + $required)
                 exit 1
@@ -259,4 +300,6 @@ jobs:
           path: |
             dist/UniversalUsernameFinder-windows.zip
             dist/UniversalUsernameFinder-windows.zip.sha256
+            dist/UUF.exe
+            dist/UUF.exe.sha256
           if-no-files-found: error

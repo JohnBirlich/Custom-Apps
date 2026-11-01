@@ -1852,3 +1852,22 @@ Describe 'Версия 2.10.20: распространение без exe' {
         $packageText.Contains('.exe') | Should -BeFalse
     }
 }
+
+Describe 'Версия 2.10.22: готовый UUF.exe в релизе' {
+    It 'версия не ниже 2.10.22' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(2[2-9]|[3-9][0-9])'''
+    }
+    It 'CI собирает UUF.exe отдельной джобой и кладёт его в артефакт пакета' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
+        $ciText.Contains('Build-Exe.ps1') | Should -BeTrue
+        $ciText.Contains('name: uuf-exe') | Should -BeTrue
+        $ciText.Contains('dist/UUF.exe.sha256') | Should -BeTrue
+    }
+    It 'релиз требует UUF.exe и его sha256' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $releaseText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'release.yml'), [System.Text.Encoding]::UTF8)
+        $releaseText.Contains('UUF.exe UUF.exe.sha256') | Should -BeTrue
+    }
+}
+

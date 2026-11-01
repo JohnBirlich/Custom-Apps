@@ -56,7 +56,7 @@ jobs:
         run: |
           set +e
           echo "::notice::tag=$TAG"
-          for required in UniversalUsernameFinder-windows.zip UniversalUsernameFinder-windows.zip.sha256; do
+          for required in UUF.exe UUF.exe.sha256 UniversalUsernameFinder-windows.zip UniversalUsernameFinder-windows.zip.sha256; do
             if [ -z "$(find release-files -type f -name "$required" -print -quit)" ]; then
               echo "::error::missing $required in build artifact"
               exit 1
