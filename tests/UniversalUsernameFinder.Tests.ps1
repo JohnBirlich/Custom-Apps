@@ -1808,9 +1808,11 @@ Describe 'Версия 2.10.18: заставка ждёт готовности �
     It 'версия не ниже 2.10.18' {
         $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(1[89]|[2-9][0-9])'''
     }
-    It 'заставка сообщает о готовности и закрывается после ожидания' {
-        $global:UufFullText | Should -Match 'splash\.ready'
-        $global:UufFullText | Should -Match 'Add_ContentRendered'
+    It 'заставка: видео 1920x1080, после конца видео 10 секунд, затем плавное появление программы' {
+        $global:UufFullText | Should -Match 'FromSeconds\(10\)'
+        $global:UufFullText | Should -Match 'Add_MediaEnded'
+        $global:UufFullText | Should -Match 'function Show-AppFadeIn'
+        $global:UufFullText | Should -Match 'Opacity = 0'
     }
 }
 
@@ -1826,8 +1828,8 @@ Describe 'Версия 2.10.19: заставка без дочернего power
 }
 
 Describe 'Версия 2.10.20: распространение без exe' {
-    It 'версия 2.10.20' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.2[0-9]'''
+    It 'версия не ниже 2.10.20' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(2[0-9]|[3-9][0-9])'''
     }
     It 'Start-UUF.bat запускает скрипт и не ссылается на exe' {
         $launcherPath = Join-Path (Join-Path $PSScriptRoot '..') 'Start-UUF.bat'
