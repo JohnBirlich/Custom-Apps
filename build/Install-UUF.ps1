@@ -26,7 +26,9 @@ trap {
 $installerDirectory = if ($PSScriptRoot) { [string]$PSScriptRoot } else { (Get-Location).Path }
 $appName = 'Universal Username Finder'
 $targetDirectory = Join-Path $env:LOCALAPPDATA 'Programs\UniversalUsernameFinder'
-$targetExe = Join-Path $targetDirectory 'UUF.exe'
+$targetExe = Join-Path $targetDirectory 'UniversalUsernameFinder.ps1'
+$targetLauncher = Join-Path $targetDirectory 'Start-UUF.bat'
+$targetIcon = Join-Path $targetDirectory 'uuf.ico'
 $targetCertificatePath = Join-Path $targetDirectory 'UUF-signing.cer'
 $targetUninstaller = Join-Path $targetDirectory 'AppUninstaller.exe'
 $targetUninstallerScript = Join-Path $targetDirectory 'Uninstall-UUF.ps1'
@@ -118,22 +120,26 @@ function New-InstallShortcut {
     foreach ($shortcutName in @($appName + '.lnk')) {
         $shortcutPath = Join-Path $Directory $shortcutName
         $shortcut = $shell.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath = $targetExe
+        $shortcut.TargetPath = $targetLauncher
         $shortcut.WorkingDirectory = $targetDirectory
-        $shortcut.IconLocation = $targetExe + ',0'
+        $shortcut.IconLocation = $targetIcon + ',0'
         $shortcut.Description = 'Поиск свободных ников и регистрация'
         $shortcut.Save()
         Write-Step ('Ярлык: ' + $shortcutPath)
     }
 }
 
+function Get-RunningUufProcess {
+    return @(Get-Process -Name 'powershell', 'pwsh' -ErrorAction SilentlyContinue | Where-Object { [string]$_.MainWindowTitle -like 'Universal Username Finder*' })
+}
+
 function Stop-RunningApp {
-    $running = @(Get-Process -Name 'UUF' -ErrorAction SilentlyContinue)
+    $running = @(Get-RunningUufProcess)
     if ($running.Count -gt 0) {
         Write-Host 'UUF запущен — закрываю для обновления...'
         $running | ForEach-Object { $_.CloseMainWindow() | Out-Null }
         Start-Sleep -Milliseconds 800
-        Get-Process -Name 'UUF' -ErrorAction SilentlyContinue | Stop-Process -Force
+        Get-RunningUufProcess | Stop-Process -Force
         Start-Sleep -Milliseconds 300
     }
 }
@@ -245,18 +251,26 @@ if (-not $SkipDependencyCheck) {
 }
 
 if ([string]::IsNullOrWhiteSpace($ExePath)) {
-    $candidate = Join-Path $installerDirectory 'UUF.exe'
-    if (-not [System.IO.File]::Exists($candidate)) { $candidate = Join-Path (Get-Location) 'UUF.exe' }
+    $candidate = Join-Path $installerDirectory 'UniversalUsernameFinder.ps1'
+    if (-not [System.IO.File]::Exists($candidate)) { $candidate = Join-Path (Get-Location) 'UniversalUsernameFinder.ps1' }
     $ExePath = $candidate
 }
 if (-not [System.IO.File]::Exists($ExePath)) {
-    throw 'UUF.exe не найден рядом со скриптом установки. Распакуй архив UniversalUsernameFinder-windows в одну папку с Install-UUF.ps1 или укажи путь: -ExePath C:\путь\UUF.exe'
+    throw 'UniversalUsernameFinder.ps1 не найден рядом со скриптом установки. Распакуй архив UniversalUsernameFinder-windows в одну папку с Install-UUF.ps1 или укажи путь: -ExePath C:\путь\UniversalUsernameFinder.ps1'
 }
 
 Stop-RunningApp
 New-Item -ItemType Directory -Force -Path $targetDirectory | Out-Null
 $exeSourceFull = [System.IO.Path]::GetFullPath($ExePath)
 Copy-Item -LiteralPath $exeSourceFull -Destination $targetExe -Force
+$launcherSource = Join-Path (Split-Path -Parent $exeSourceFull) 'Start-UUF.bat'
+if ([System.IO.File]::Exists($launcherSource)) {
+    Copy-Item -LiteralPath $launcherSource -Destination $targetLauncher -Force
+}
+$iconSource = Join-Path (Split-Path -Parent $exeSourceFull) 'uuf.ico'
+if ([System.IO.File]::Exists($iconSource)) {
+    Copy-Item -LiteralPath $iconSource -Destination $targetIcon -Force
+}
 $videoSource = Join-Path (Split-Path -Parent $exeSourceFull) 'digital_word_eye.mp4'
 if ([System.IO.File]::Exists($videoSource)) {
     Copy-Item -LiteralPath $videoSource -Destination (Join-Path $targetDirectory 'digital_word_eye.mp4') -Force
@@ -287,7 +301,7 @@ New-InstallShortcut -Directory $desktopDirectory
 New-InstallShortcut -Directory $programsDirectory
 
 try { Unblock-File -LiteralPath $targetExe } catch { }
-Write-Step 'Метка интернета снята с установленного UUF.exe.'
+Write-Step 'Метка интернета снята с установленного скрипта UUF.'
 
 $trustAppliedNow = $false
 if ($TrustCertificate -and -not $NoTrust) {
@@ -314,11 +328,9 @@ if ($TrustCertificate -and -not $NoTrust) {
 try {
     $displayVersion = $installerVersion
     try {
-        $versionInfo = (Get-Item -LiteralPath $targetExe).VersionInfo
-        if ($null -ne $versionInfo -and -not [string]::IsNullOrWhiteSpace([string]$versionInfo.FileVersion)) {
-            $displayVersion = [string]$versionInfo.FileVersion
-            if ($displayVersion -match '^([0-9]+(\.[0-9]+)+)') { $displayVersion = $Matches[1] }
-        }
+        $scriptText = [System.IO.File]::ReadAllText($targetExe, [System.Text.Encoding]::UTF8)
+        $versionPattern = '\$script:AppVersion = ''([0-9]+(?:\.[0-9]+)+)'''
+        if ($scriptText -match $versionPattern) { $displayVersion = $Matches[1] }
     } catch { }
     New-Item -Path $uninstallRegistryKey -Force | Out-Null
     $sizeBytes = 0L
@@ -331,7 +343,7 @@ try {
     Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name Publisher -Value 'Hasberd'
     Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name DisplayVersion -Value $displayVersion
     Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name InstallLocation -Value $targetDirectory
-    Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name DisplayIcon -Value $targetExe
+    Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name DisplayIcon -Value $targetIcon
     Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name UninstallString -Value $uninstallCommand
         if ([System.IO.File]::Exists($targetUninstaller) -or [System.IO.File]::Exists($targetUninstallerScript)) {
         Set-ItemProperty -LiteralPath $uninstallRegistryKey -Name QuietUninstallString -Value ($uninstallCommand + ' -Silent')
@@ -356,7 +368,7 @@ try {
     if ($signature.SignatureStatus -eq 'Valid') {
         Write-Step 'Подпись проверена: издатель Hasberd в доверенных на этом компьютере.'
     } elseif ($signature.SignatureStatus -eq 'NotSigned') {
-        Write-Host 'Внимание: файл не подписан — это сборка до включения подписи. Скачайте свежий артефакт из GitHub Actions.' -ForegroundColor Yellow
+        Write-Step 'Скрипт UUF не подписан цифровой подписью — это нормально для версии в виде .ps1.'
     } elseif ($trustAppliedNow) {
         Write-Step 'Сертификат добавлен в доверенные; если окно SmartScreen для уже скачанного файла осталось, выполните: Unblock-File "' + $targetExe + '" и перезапустите браузер перед новой загрузкой.'
     } elseif ([System.IO.File]::Exists($targetCertificatePath)) {
@@ -366,7 +378,7 @@ try {
 
 Write-Host ''
 Write-Host ('Готово! UUF установлен: ' + $targetExe)
-Write-Host ('Подпись exe: ' + $signatureStatus)
+Write-Host ('Подпись скрипта: ' + $signatureStatus)
 Write-Host ('Ярлык «' + $appName + '» лежит на рабочем столе и в меню «Пуск».')
 Write-Host ('Данные (история, настройки, сейф, журнал): ' + $dataDirectory)
 $uninstallerHint = 'AppUninstaller.exe'

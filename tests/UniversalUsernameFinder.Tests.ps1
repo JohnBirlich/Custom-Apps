@@ -1286,13 +1286,12 @@ Describe 'Версия 2.8.7: подпись сборки и антивирус�
         $signText.Contains('Get-AuthenticodeSignature') | Should -BeTrue
         $signText.Contains('EphemeralKeySet') | Should -BeTrue
     }
-    It 'CI подписывает exe и публикует sha256 вместе с публичным сертификатом' {
+    It 'CI собирает пакет из скриптов и публикует zip с sha256 (без exe)' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
-        $ciText.Contains('build\Sign-Uuf.ps1') | Should -BeTrue
-        $ciText.Contains('secrets.UUF_SIGN_PFX_BASE64') | Should -BeTrue
-        $ciText.Contains('dist/UUF.exe.sha256') | Should -BeTrue
-        $ciText.Contains('Get-FileHash') | Should -BeTrue
+        $ciText.Contains('Package-Uuf.ps1') | Should -BeTrue
+        $ciText.Contains('dist/UniversalUsernameFinder-windows.zip.sha256') | Should -BeTrue
+        $ciText.Contains('Compile UUF.exe') | Should -BeFalse
     }
     It 'установщик сообщает о подписи и копирует сертификат издателя' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
@@ -1431,8 +1430,8 @@ Describe 'Версия 2.9.1: дорисовка вкладок, возобно�
         $installerText.Contains('trap {') | Should -BeTrue
         $installerText.Contains('Нажмите Enter, чтобы закрыть окно') | Should -BeTrue
         Test-Path ([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.bat')) | Should -BeTrue
-        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
-        $ciText.Contains('build/Install-UUF.bat') | Should -BeTrue
+        $packageText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Package-Uuf.ps1'), [System.Text.Encoding]::UTF8)
+        $packageText.Contains('Install-UUF.bat') | Should -BeTrue
     }
     It 'версия поднята до 2.9.1' {
         $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.\d+)'''
@@ -1472,14 +1471,14 @@ Describe 'Версия 2.9.2: установщик зависимостей и �
         $uninstallText.Contains('while (Get-Process -Id $p -ErrorAction SilentlyContinue)') | Should -BeTrue
         $uninstallText.Contains('Remove-UufDirectory -Path $dataDirectory -Label ''Данные''') | Should -BeTrue
     }
-    It 'bat-обёртки есть и у установки, и у удаления; артефакт их содержит' {
+    It 'bat-обёртки есть и у установки, и у удаления; пакет их содержит' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         Test-Path ([System.IO.Path]::Combine($repoRoot, 'build', 'Uninstall-UUF.bat')) | Should -BeTrue
         $uninstallBatText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Uninstall-UUF.bat'))
         $uninstallBatText.Contains('Uninstall-UUF.ps1') | Should -BeTrue
-        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
-        $ciText.Contains('build/Uninstall-UUF.ps1') | Should -BeTrue
-        $ciText.Contains('build/Uninstall-UUF.bat') | Should -BeTrue
+        $packageText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Package-Uuf.ps1'), [System.Text.Encoding]::UTF8)
+        $packageText.Contains('Uninstall-UUF.ps1') | Should -BeTrue
+        $packageText.Contains('Uninstall-UUF.bat') | Should -BeTrue
     }
     It 'README описывает автодоверие, проверку зависимостей и полное удаление' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
@@ -1504,15 +1503,11 @@ Describe 'Версия 2.9.3: полное удаление — самостоя
         $builderText.Contains('Uninstall-UUF.ps1') | Should -BeTrue
         $builderText.Contains('Invoke-ps2exe') | Should -BeTrue
     }
-    It 'AppUninstaller.exe подписывается общим сертификатом и попадает в артефакт с хэшем' {
+    It 'пакет заменяет AppUninstaller.exe: CI публикует zip, а не exe' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
-        $ciText.Contains('Compile AppUninstaller.exe') | Should -BeTrue
-        $ciText.Contains('dist/AppUninstaller.exe') | Should -BeTrue
-        $ciText.Contains('dist/AppUninstaller.exe.sha256') | Should -BeTrue
-        $ciText.Contains('-ExtraExePaths') | Should -BeTrue
-        $signText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Sign-Uuf.ps1'), [System.Text.Encoding]::UTF8)
-        $signText.Contains('[string[]]$ExtraExePaths = @()') | Should -BeTrue
+        $ciText.Contains('Package-Uuf.ps1') | Should -BeTrue
+        $ciText.Contains('Compile AppUninstaller.exe') | Should -BeFalse
     }
     It 'установщик кладёт AppUninstaller.exe и регистрирует его кнопкой удаления' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
@@ -1820,12 +1815,38 @@ Describe 'Версия 2.10.18: заставка ждёт готовности �
 }
 
 Describe 'Версия 2.10.19: заставка без дочернего powershell' {
-    It 'версия 2.10.19' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.19'''
+    It 'версия не ниже 2.10.19' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(19|[2-9][0-9])'''
     }
     It 'заставка не запускает powershell.exe с EncodedCommand и обходом политики' {
         $global:UufFullText | Should -Not -Match 'EncodedCommand'
         $global:UufFullText | Should -Not -Match 'ExecutionPolicy'
         $global:UufFullText | Should -Match 'RunspaceFactory'
+    }
+}
+
+Describe 'Версия 2.10.20: распространение без exe' {
+    It 'версия 2.10.20' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.2[0-9]'''
+    }
+    It 'Start-UUF.bat запускает скрипт и не ссылается на exe' {
+        $launcherPath = Join-Path (Join-Path $PSScriptRoot '..') 'Start-UUF.bat'
+        Test-Path -LiteralPath $launcherPath | Should -BeTrue
+        $launcherText = [System.IO.File]::ReadAllText($launcherPath)
+        $launcherText.Contains('-File "%~dp0UniversalUsernameFinder.ps1"') | Should -BeTrue
+        $launcherText.Contains('UUF.exe') | Should -BeFalse
+    }
+    It 'установщик ставит скрипт, ярлык на Start-UUF.bat и иконку uuf.ico' {
+        $installText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $installText.Contains("'UniversalUsernameFinder.ps1'") | Should -BeTrue
+        $installText.Contains('$shortcut.TargetPath = $targetLauncher') | Should -BeTrue
+        $installText.Contains('-Name DisplayIcon -Value $targetIcon') | Should -BeTrue
+    }
+    It 'сборщик пакета включает скрипт, видео, иконку и установщик, без exe' {
+        $packageText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Package-Uuf.ps1'), [System.Text.Encoding]::UTF8)
+        $packageText.Contains("'UniversalUsernameFinder.ps1'") | Should -BeTrue
+        $packageText.Contains('digital_word_eye.mp4') | Should -BeTrue
+        $packageText.Contains('uuf.ico') | Should -BeTrue
+        $packageText.Contains('.exe') | Should -BeFalse
     }
 }

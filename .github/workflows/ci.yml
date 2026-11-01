@@ -19,7 +19,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           try {
             Write-Host ('PSVersion: ' + $PSVersionTable.PSVersion.ToString())
-            $targets = @('UniversalUsernameFinder.ps1', 'build/Build-Exe.ps1')
+            $targets = @('UniversalUsernameFinder.ps1', 'build/Build-Exe.ps1', 'build/Package-Uuf.ps1')
             $failed = $false
             foreach ($target in $targets) {
               $path = Join-Path $PWD $target
@@ -55,7 +55,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           try {
             Write-Host ('PSVersion: ' + $PSVersionTable.PSVersion.ToString())
-            $targets = @('UniversalUsernameFinder.ps1', 'build/Build-Exe.ps1')
+            $targets = @('UniversalUsernameFinder.ps1', 'build/Build-Exe.ps1', 'build/Package-Uuf.ps1')
             $failed = $false
             foreach ($target in $targets) {
               $path = Join-Path $PWD $target
@@ -89,7 +89,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           try {
             $failed = $false
-            foreach ($file in @('UniversalUsernameFinder.ps1', 'tests/UniversalUsernameFinder.Tests.ps1', 'build/Build-Exe.ps1')) {
+            foreach ($file in @('UniversalUsernameFinder.ps1', 'tests/UniversalUsernameFinder.Tests.ps1', 'build/Build-Exe.ps1', 'build/Package-Uuf.ps1')) {
               $bytes = [System.IO.File]::ReadAllBytes((Join-Path $PWD $file))
               $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
               Write-Host ($file + ' BOM: ' + $hasBom)
@@ -228,171 +228,35 @@ jobs:
             exit 1
           }
 
-  build:
-    name: Build Windows executable (ps2exe)
+  package:
+    name: Package Windows files (no exe)
     runs-on: windows-latest
     needs: quality
     steps:
       - uses: actions/checkout@v5
 
-      - name: Compile UUF.exe
+      - name: Build package
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           try {
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            try { Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue } catch { }
-            $available = Get-Module -ListAvailable -Name ps2exe | Select-Object -First 1
-            if (-not $available) {
-              foreach ($attempt in 1..4) {
-                try {
-                  Install-Module ps2exe -Force -Scope CurrentUser -Repository PSGallery -AllowClobber -ErrorAction Stop
-                  break
-                } catch {
-                  Write-Host ('Install attempt ' + $attempt + ' failed: ' + $_.Exception.Message)
-                  Start-Sleep -Seconds (15 * $attempt)
-                }
+            & (Join-Path $PWD 'build\Package-Uuf.ps1') | Out-Null
+            foreach ($required in @('dist\UniversalUsernameFinder-windows.zip', 'dist\UniversalUsernameFinder-windows.zip.sha256')) {
+              if (-not (Test-Path -LiteralPath (Join-Path $PWD $required))) {
+                Write-Host ('::error::missing package file: ' + $required)
+                exit 1
               }
-              $available = Get-Module -ListAvailable -Name ps2exe | Select-Object -First 1
             }
-            if (-not $available) {
-              Write-Host '::error::ps2exe is unavailable (PSGallery did not respond): executable was not built'
-              exit 1
-            }
-            & (Join-Path $PWD 'build\Build-Exe.ps1') -SkipInstall
-            $exe = Join-Path $PWD 'dist\UUF.exe'
-            if (-not (Test-Path -LiteralPath $exe)) {
-              Write-Host '::error::Executable was not created: dist\UUF.exe'
-              exit 1
-            }
-            $sizeKb = [int][Math]::Round((Get-Item -LiteralPath $exe).Length / 1KB)
-            Write-Host ('Executable size: ' + $sizeKb + ' KB')
-            if ($sizeKb -lt 20) {
-              Write-Host ('::error::Executable is suspiciously small: ' + $sizeKb + ' KB')
-              exit 1
-            }
-            $exeVersion = (Get-Item -LiteralPath $exe).VersionInfo
-            Write-Host ('Product: ' + $exeVersion.ProductName + ' ' + $exeVersion.ProductVersion)
           } catch {
-            Write-Host ('::error::STEP EXCEPTION: ' + $_.Exception.ToString())
+            Write-Host ('::error::PACKAGE STEP EXCEPTION: ' + $_.Exception.ToString())
             exit 1
           }
 
-      - name: Compile AppUninstaller.exe
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          try {
-            & (Join-Path $PWD 'build\Build-Uninstaller.ps1') -SkipInstall
-            $uninstaller = Join-Path $PWD 'dist\AppUninstaller.exe'
-            if (-not (Test-Path -LiteralPath $uninstaller)) {
-              Write-Host '::error::Uninstaller executable was not created: dist\AppUninstaller.exe'
-              exit 1
-            }
-            $sizeKb = [int][Math]::Round((Get-Item -LiteralPath $uninstaller).Length / 1KB)
-            Write-Host ('Uninstaller size: ' + $sizeKb + ' KB')
-            if ($sizeKb -lt 15) {
-              Write-Host ('::error::Uninstaller is suspiciously small: ' + $sizeKb + ' KB')
-              exit 1
-            }
-          } catch {
-            Write-Host ('::error::UNINSTALLER BUILD EXCEPTION: ' + $_.Exception.ToString())
-            exit 1
-          }
-
-      - name: Verify embedded script
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          try {
-            $exe = Join-Path $PWD 'dist\UUF.exe'
-            $extracted = Join-Path $env:TEMP 'uuf-extracted.ps1'
-            if (Test-Path -LiteralPath $extracted) { Remove-Item -LiteralPath $extracted -Force }
-            & $exe ('-extract:' + $extracted) | Out-Null
-            if (-not (Test-Path -LiteralPath $extracted)) {
-              Write-Host '::warning::Extraction produced no file; embedded script was not verified.'
-              exit 0
-            }
-            $extractedText = [System.IO.File]::ReadAllText($extracted, [System.Text.Encoding]::UTF8)
-            $failed = $false
-            $tokens = $null
-            $parseErrors = $null
-            $null = [System.Management.Automation.Language.Parser]::ParseInput($extractedText, [ref]$tokens, [ref]$parseErrors)
-            $parseErrors = @($parseErrors)
-            Write-Host ('Embedded script characters: ' + $extractedText.Length)
-            Write-Host ('Embedded script parse errors: ' + $parseErrors.Count)
-            foreach ($parseError in $parseErrors) {
-              Write-Host ('::error::embedded script line ' + $parseError.Extent.StartLineNumber + ': ' + $parseError.Message)
-              $failed = $true
-            }
-            foreach ($marker in @('New-AdvancedCandidatePool', 'Get-AppDirectory', 'Migrate-LegacyVault')) {
-              if ($extractedText.Contains($marker)) { continue }
-              Write-Host ('::error::Embedded script does not contain expected marker: ' + $marker)
-              $failed = $true
-            }
-            $crlf = [string][char]13 + [string][char]10
-            $lf = [string][char]10
-            $bom = [string][char]0xFEFF
-            $sourcePath = Join-Path $PWD 'UniversalUsernameFinder.ps1'
-            $sourceText = [System.IO.File]::ReadAllText($sourcePath, [System.Text.Encoding]::UTF8)
-            $sourceNorm = $sourceText.Replace($crlf, $lf).Replace($bom, '').TrimEnd()
-            $extractedNorm = $extractedText.Replace($crlf, $lf).Replace($bom, '').TrimEnd()
-            if ($sourceNorm -ceq $extractedNorm) {
-              Write-Host 'Embedded script matches the repository source exactly.'
-            } else {
-              Write-Host ('::warning::Embedded script differs from the repository source (source ' + $sourceNorm.Length + ' chars, embedded ' + $extractedNorm.Length + ' chars)')
-            }
-            if ($failed) { exit 1 }
-            Write-Host 'Embedded script OK.'
-          } catch {
-            Write-Host ('::error::STEP EXCEPTION: ' + $_.Exception.ToString())
-            exit 1
-          }
-
-      - name: Sign executable (Authenticode)
-        shell: powershell
-        env:
-          UUF_SIGN_PFX_BASE64: ${{ secrets.UUF_SIGN_PFX_BASE64 }}
-          UUF_SIGN_PFX_PASSWORD: ${{ secrets.UUF_SIGN_PFX_PASSWORD }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          try {
-            & (Join-Path $PWD 'build\Sign-Uuf.ps1') -SelfSign -ExtraExePaths @((Join-Path $PWD 'dist\AppUninstaller.exe'))
-          } catch {
-            Write-Host ('::error::SIGN STEP EXCEPTION: ' + $_.Exception.ToString())
-            exit 1
-          }
-
-      - name: Compute checksum
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          try {
-            foreach ($hashed in @(@{Path='dist\UUF.exe'; Name='UUF.exe'}, @{Path='dist\AppUninstaller.exe'; Name='AppUninstaller.exe'})) {
-              $target = Join-Path $PWD $hashed.Path
-              $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
-              [System.IO.File]::WriteAllText((Join-Path $PWD ($hashed.Path + '.sha256')), ($hash + '  ' + $hashed.Name), (New-Object System.Text.UTF8Encoding -ArgumentList $false))
-              Write-Host ('SHA256 ' + $hashed.Name + ': ' + $hash)
-            }
-          } catch {
-            Write-Host ('::error::CHECKSUM STEP EXCEPTION: ' + $_.Exception.ToString())
-            exit 1
-          }
-
-      - name: Upload executable
+      - name: Upload package
         uses: actions/upload-artifact@v7
         with:
           name: UniversalUsernameFinder-windows
           path: |
-            dist/UUF.exe
-            dist/UUF.exe.sha256
-            dist/AppUninstaller.exe
-            dist/AppUninstaller.exe.sha256
-            dist/digital_word_eye.mp4
-            dist/*.cer
-            build/Install-UUF.ps1
-            build/Install-UUF.bat
-            build/Uninstall-UUF.ps1
-            build/Uninstall-UUF.bat
+            dist/UniversalUsernameFinder-windows.zip
+            dist/UniversalUsernameFinder-windows.zip.sha256
           if-no-files-found: error
-          retention-days: 90

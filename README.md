@@ -47,24 +47,28 @@ UUF — приложение для Windows, которое придумывае
 ## Запуск
 
 1. Скачайте релиз или клонируйте репозиторий.
-2. Запустите `UUF.exe` (после сборки лежит в `dist\`) — PowerShell не нужен.
+2. Распакуйте `UniversalUsernameFinder-windows.zip` и запустите `Start-UUF.bat` — PowerShell вручную запускать не нужно (окно PowerShell скрыто).
 3. Либо откройте `UniversalUsernameFinder.ps1` в Windows PowerShell 5.1; если политика выполнения запрещает скрипты, разово выполните `Set-ExecutionPolicy -Scope Process Bypass`.
 
 ## Установка на рабочий стол
 
-Артефакт `UniversalUsernameFinder-windows` из GitHub Actions (или папка `dist\` после локальной сборки) содержит `UUF.exe`, установщик `Install-UUF.ps1` (с обёрткой `Install-UUF.bat`) и **программу полного удаления `AppUninstaller.exe`** (собрана из `build/Uninstall-UUF.ps1`, подписана тем же сертификатом; резервные исходники — `Uninstall-UUF.ps1`/`.bat`). Распакуйте все файлы в одну папку и дважды щёлкните `Install-UUF.bat` — или выполните:
+Артефакт `UniversalUsernameFinder-windows` (из GitHub Actions или из релиза) — архив `UniversalUsernameFinder-windows.zip` и его `.sha256`. Внутри: `UniversalUsernameFinder.ps1`, `Start-UUF.bat` (запуск), `digital_word_eye.mp4` (заставка загрузки), `uuf.ico` (иконка), установщик `Install-UUF.ps1` (с обёрткой `Install-UUF.bat`) и удаление `Uninstall-UUF.ps1` (с обёрткой `Uninstall-UUF.bat`). Исполняемый `UUF.exe` и `AppUninstaller.exe` в релиз больше не входят.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1
 ```
 
-В архиве: `UUF.exe` (подписан Authenticode, SHA-256 + метка времени), `UUF.exe.sha256` (хэш официальной сборки) и, при самоподписанном режиме, `UUF-signing.cer` (публичный ключ издателя). Установщик проверит системные зависимости (.NET Framework 4.6.2+, Windows PowerShell 5.1, TLS 1.2 для старых Windows), положит программу в `%LOCALAPPDATA%\Programs\UniversalUsernameFinder\UUF.exe`, скопирует туда сертификат (если есть), но **не добавляет его в доверенные по умолчанию**: доверие выставляется только по явной команде `-TrustCertificate` (тогда «Доверенные корневые» и «Доверенные издатели» текущего пользователя), снимет метку интернета только с установленного `UUF.exe`, создаст ярлыки на рабочем столе и в меню «Пуск» и зарегистрирует программу в «Приложения и возможности». Все данные программы — история `username_history.json`, настройки, зашифрованный сейф и журнал — живут в `%LOCALAPPDATA%\UniversalUsernameFinder`, поэтому переустановка или перенос `.exe` их не затирают. Полное удаление: двойной щелчок по `AppUninstaller.exe` (он же кладётся в папку программы; резервный вариант — `Uninstall-UUF.bat`; или «Приложения и возможности» → Universal Username Finder → Удалить) — стирает программу, ярлыки, запись в реестре, доверие сертификату и, после подтверждения, данные. Без данных: `.\Install-UUF.ps1 -Uninstall`.
+Проверка целостности: сравните SHA-256 архива с `UniversalUsernameFinder-windows.zip.sha256` (`Get-FileHash .\UniversalUsernameFinder-windows.zip`). Установщик проверит системные зависимости (.NET Framework 4.6.2+, Windows PowerShell 5.1, TLS 1.2 на старых системах) и поставит программу в `%LOCALAPPDATA%\Programs\UniversalUsernameFinder`, ярлык на `Start-UUF.bat`, иконку `uuf.ico` и запись в «Приложения и возможности». Полное удаление — `Uninstall-UUF.bat`.
 
-## Сборка .exe
+## Сборка .exe (не входит в релиз)
 
 Сборка выполняется модулем [ps2exe](https://github.com/MScholtes/PS2EXE): `build\Build-Exe.bat` или `build\Build-Exe.ps1`. Результат — `dist\UUF.exe` с иконкой приложения. `.exe` встраивает скрипт в открытом виде (извлекается параметром `-extract`), поэтому это оболочка запуска, а не защита кода; источник правды — `.ps1`.
 
+С версии 2.10.20 exe не распространяется: CI собирает только пакет из скриптов (`build\Package-Uuf.ps1`). Раздел оставлен на случай локальной сборки.
+
 ## Если антивирус подозревает
+С версии 2.10.20 релиз не содержит `UUF.exe`: Microsoft Defender (эвристика Sabsik `Trojan:Win32/Sabsik.FL.A!ml`) и другие движки реагировали на exe-оболочку ps2exe. Теперь в архиве только скрипты `.ps1` и `.bat`. Если всё же появится предупреждение, сообщите название файла и текст уведомления — и отправьте файл вендору как ложное срабатывание.
+
 
 `UUF.exe` — оболочка ps2exe: встроенный `.ps1`-скрипт и C#-загрузчик PowerShell. Движки, работающие по машинному обучению (Malwarebytes `MachineLearning/Anomalous`, SentinelOne `Static AI`, Elastic, K7, Dr.Web `Trojan.Siggen*`), реагируют на любую неподписанную PS-обёртку с незнакомой энтропией — это вердикт «класс подозрительного», а не сигнатура вредоноса; вирусные базы его не «лечат», и то же самое ловит любой самопальный ps2exe-бинарь.
 
@@ -88,7 +92,7 @@ powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1
 
 1. На GitHub: Releases → Draft a new release → тег `vX.Y.Z` (создаётся при публикации), целевая ветка `main`.
 2. Нажмите **Publish release**.
-3. Workflow `Release` (`.github/workflows/release.yml`) запускает полный CI из `ci.yml` (синтаксис, анализатор, Pester, сборка и подпись `.exe`) и прикладывает к релизу `UUF.exe`, `AppUninstaller.exe`, их `.sha256`, `UUF-signing.cer` и скрипты установки. Если CI падает, файлы не прикрепляются.
+3. Workflow `Release` (`.github/workflows/release.yml`) запускает полный CI из `ci.yml` (синтаксис, анализатор, Pester, сборка пакета `build\Package-Uuf.ps1`) и прикладывает к релизу `UniversalUsernameFinder-windows.zip` и его `.sha256`. Если CI падает, файлы не прикрепляются.
 4. Вручную пересобрать и прикрепить файлы к уже существующему тегу можно через Actions → Release → Run workflow, указав тег.
 
 ## Тесты и CI
@@ -99,7 +103,7 @@ powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1
 
 - `UniversalUsernameFinder.ps1` — всё приложение: словарь, генератор, интерфейс, воркеры проверки.
 - `tests/UniversalUsernameFinder.Tests.ps1` — тесты Pester.
-- `build/` — сборка `.exe` через ps2exe (`Build-Exe.ps1` → `UUF.exe`, `Build-Uninstaller.ps1` → `AppUninstaller.exe`), установщик `Install-UUF.ps1`/`.bat` (зависимости, доверие сертификату, ярлыки, регистрация в «Приложениях») и исходник полного удаления `Uninstall-UUF.ps1`/`.bat`.
+- `build/` — сборка пакета `Package-Uuf.ps1`, установщик `Install-UUF.ps1`/`.bat` (зависимости, ярлыки, регистрация в «Приложениях»), удаление `Uninstall-UUF.ps1`/`.bat`; также исходники для ps2exe (`Build-Exe.ps1`, `Build-Uninstaller.ps1`, `Sign-Uuf.ps1`), которые больше не используются в релизе.
 - `assets/` — логотип и иконка.
 - `.github/workflows/ci.yml` — прогон CI.
 
