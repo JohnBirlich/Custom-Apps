@@ -30,13 +30,17 @@ function Write-Step {
     Write-Host ('· ' + $Text)
 }
 
+function Get-RunningUufProcess {
+    return @(Get-Process -Name 'powershell', 'pwsh' -ErrorAction SilentlyContinue | Where-Object { [string]$_.MainWindowTitle -like 'Universal Username Finder*' })
+}
+
 function Stop-RunningApp {
-    $running = @(Get-Process -Name 'UUF' -ErrorAction SilentlyContinue)
+    $running = @(Get-RunningUufProcess)
     if ($running.Count -gt 0) {
         Write-Step 'Закрываю запущенный UUF...'
         $running | ForEach-Object { $_.CloseMainWindow() | Out-Null }
         Start-Sleep -Milliseconds 800
-        Get-Process -Name 'UUF' -ErrorAction SilentlyContinue | Stop-Process -Force
+        Get-RunningUufProcess | Stop-Process -Force
         Start-Sleep -Milliseconds 300
     }
 }
