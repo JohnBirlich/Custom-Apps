@@ -1808,3 +1808,13 @@ Describe 'Версия 2.10.16: заставка загрузки' {
         $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(1[6-9]|[2-9][0-9])'''
     }
 }
+
+Describe 'Версия 2.10.18: заставка ждёт готовности и держится не меньше 3 секунд' {
+    It 'версия 2.10.18' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.18'''
+    }
+    It 'заставка сообщает о готовности и закрывается после ожидания' {
+        $global:UufFullText | Should -Match 'splash\.ready'
+        $global:UufFullText | Should -Match 'Add_ContentRendered'
+    }
+}
