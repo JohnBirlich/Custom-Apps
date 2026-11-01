@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.26'
+$script:AppVersion = '2.10.27'
 $script:EmbeddedVideoParts = @()
 
 trap {
@@ -120,17 +120,27 @@ function Write-StartupLog {
     } catch { }
 }
 
+function Backup-AccountVault {
+    $backupDirectory = Join-Path $script:VaultDirectory 'backups'
+    $null = [System.IO.Directory]::CreateDirectory($backupDirectory)
+    $stamp = (Get-Date).ToString('yyyyMMdd-HHmmss-fff')
+    $name = 'accounts-' + $stamp + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.dat'
+    [System.IO.File]::Copy($script:VaultPath, [System.IO.Path]::Combine($backupDirectory, $name), $false)
+}
+
 function Migrate-LegacyVault {
     try {
         if ([System.IO.File]::Exists($script:PreviousVaultPath) -and -not [System.IO.File]::Exists($script:VaultPath)) {
             $null = [System.IO.Directory]::CreateDirectory($script:VaultDirectory)
             [System.IO.File]::Copy($script:PreviousVaultPath, $script:VaultPath, $false)
+            Backup-AccountVault
             Write-StartupLog 'Зашифрованное хранилище аккаунтов перенесено в %APPDATA%\UniversalUsernameFinder.'
         }
         if (-not [System.IO.File]::Exists($script:LegacyVaultPath)) { return }
         if ([System.IO.File]::Exists($script:VaultPath)) { return }
         $null = [System.IO.Directory]::CreateDirectory($script:VaultDirectory)
         [System.IO.File]::Copy($script:LegacyVaultPath, $script:VaultPath, $false)
+        Backup-AccountVault
         try { [System.IO.File]::Move($script:LegacyVaultPath, ($script:LegacyVaultPath + '.migrated')) } catch { }
         Write-StartupLog 'Хранилище аккаунтов перенесено из папки RobloxNickFinder в UniversalUsernameFinder.'
     } catch {
@@ -2100,7 +2110,6 @@ function Save-EncryptedAccountRecords {
     try {
         [System.IO.File]::WriteAllBytes($tempPath, $cipher)
         if ([System.IO.File]::Exists($vaultFull)) {
-            try { [System.IO.File]::Copy($vaultFull, [System.IO.Path]::Combine($directoryFull, 'accounts.dat.bak'), $true) } catch { }
             try {
                 [System.IO.File]::Replace($tempPath, $vaultFull, $backupPath)
             } catch {
@@ -2136,6 +2145,7 @@ function Save-EncryptedAccountRecords {
     } finally {
         if ([System.IO.File]::Exists($tempPath)) { try { [System.IO.File]::Delete($tempPath) } catch { } }
     }
+    Backup-AccountVault
 }
 
 function Refresh-SavedAccountList {
@@ -2599,7 +2609,7 @@ function Open-AccountTools {
             $script:RegistrationConfirmedCheck.Checked = $false
             Refresh-SavedAccountList
             Set-AccountTabView -Index 1
-            [System.Windows.Forms.MessageBox]::Show("Данные для $storedNick сохранены в зашифрованное хранилище текущего пользователя Windows.", 'Сохранено', 'OK', 'Information') | Out-Null
+            [System.Windows.Forms.MessageBox]::Show("Данные для $storedNick сохранены в зашифрованное хранилище текущего пользователя Windows.`r`nРезервная копия: $($script:VaultDirectory)\backups", 'Сохранено', 'OK', 'Information') | Out-Null
         } catch {
             Add-ErrorDiagnostic ('Не удалось сохранить учётные данные: ' + $_.Exception.ToString())
             [System.Windows.Forms.MessageBox]::Show('Не удалось сохранить данные. ' + $_.Exception.Message + "`r`n`r`nСм. UniversalUsernameFinder.log.", 'Ошибка сохранения', 'OK', 'Error') | Out-Null

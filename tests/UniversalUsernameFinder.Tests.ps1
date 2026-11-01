@@ -1949,3 +1949,18 @@ Describe 'Версия 2.10.26: скрипт в процессе exe и паро
         $uninstallText.Contains('APPDATA') | Should -BeTrue
     }
 }
+
+Describe 'Версия 2.10.27: резервная копия паролей создаётся всегда' {
+    It 'функция резервной копии пишет в папку backups с меткой времени' {
+        $global:UufFullText.Contains('function Backup-AccountVault') | Should -BeTrue
+        $global:UufFullText.Contains("'backups'") | Should -BeTrue
+        $global:UufFullText.Contains("(Get-Date).ToString('yyyyMMdd-HHmmss-fff')") | Should -BeTrue
+    }
+    It 'резервная копия делается после каждого сохранения и каждого переноса' {
+        ([regex]::Matches($global:UufFullText, 'Backup-AccountVault')).Count | Should -BeGreaterOrEqual 4
+    }
+    It 'старый перезаписываемый accounts.dat.bak больше не используется' {
+        $global:UufFullText.Contains('accounts.dat.bak') | Should -BeFalse
+    }
+}
+
