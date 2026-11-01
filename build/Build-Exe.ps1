@@ -74,7 +74,7 @@ if ([System.IO.File]::Exists($videoSourcePath)) {
     Write-Host ('Видео встраивается в exe: ' + ([System.IO.FileInfo]$videoSourcePath).Length + ' байт')
 }
 
-$workDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ('uuf-build-' + [guid]::NewGuid().ToString('N'))
+$workDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ('uuf-embedded-' + [guid]::NewGuid().ToString('N'))
 $null = [System.IO.Directory]::CreateDirectory($workDirectory)
 $embeddedScriptPath = Join-Path $workDirectory 'UniversalUsernameFinder.ps1'
 $assemblyInfoPath = Join-Path $workDirectory 'AssemblyInfo.cs'
