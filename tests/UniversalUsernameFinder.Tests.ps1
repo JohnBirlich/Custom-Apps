@@ -1808,9 +1808,8 @@ Describe 'Версия 2.10.18: заставка ждёт готовности �
     It 'версия не ниже 2.10.18' {
         $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(1[89]|[2-9][0-9])'''
     }
-    It 'заставка: видео 1920x1080, после конца видео 10 секунд, затем плавное появление программы' {
-        $global:UufFullText | Should -Match 'FromSeconds\(10\)'
-        $global:UufFullText | Should -Match 'Add_MediaEnded'
+    It 'заставка: видео 1920x1080, закрывается сразу по концу видео, затем плавное появление программы' {
+        $global:UufFullText | Should -Match 'Add_MediaEnded\(\{ \$window\.Close\(\) \}\)'
         $global:UufFullText | Should -Match 'function Show-AppFadeIn'
         $global:UufFullText | Should -Match 'Opacity = 0'
     }
@@ -1871,3 +1870,17 @@ Describe 'Версия 2.10.22: готовый UUF.exe в релизе' {
     }
 }
 
+Describe 'Версия 2.10.23: главное окно 1920x1080 на основном мониторе' {
+    It 'версия не ниже 2.10.23' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(2[3-9]|[3-9][0-9])'''
+    }
+    It 'окно масштабируется до 1920x1080 и центрируется на основном мониторе' {
+        $global:UufMainText.Contains('$script:Form.StartPosition = ''Manual''') | Should -BeTrue
+        $global:UufMainText.Contains('[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea') | Should -BeTrue
+        $global:UufMainText.Contains('$uufScale = [Math]::Min(1.0') | Should -BeTrue
+    }
+    It 'сохранённые координаты и состояние окна не восстанавливаются' {
+        $global:UufMainText.Contains('$script:Form.Bounds = $rect') | Should -BeFalse
+        $global:UufMainText.Contains('$script:Form.WindowState = [System.Windows.Forms.FormWindowState]') | Should -BeFalse
+    }
+}

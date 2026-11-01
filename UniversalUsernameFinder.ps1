@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.22'
+$script:AppVersion = '2.10.23'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -1196,28 +1196,18 @@ function New-AdvancedCandidatePool {
 
 $script:Form = New-Object System.Windows.Forms.Form
 $script:Form.Text = ('Universal Username Finder v{0}' -f $script:AppVersion)
-$script:Form.StartPosition = 'CenterScreen'
+$script:Form.StartPosition = 'Manual'
 $designWindowSize = New-Object System.Drawing.Size(1480, 1040)
 $designMinimumSize = New-Object System.Drawing.Size(1240, 960)
-$minimumWidth = 1240
-$minimumHeight = 960
-$windowWidth = 1480
-$windowHeight = 1010
-try {
-    $workingArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-    $areaWidth = [int](@($workingArea.Width)[0])
-    $areaHeight = [int](@($workingArea.Height)[0])
-    if ($areaWidth -ge 600 -and $areaHeight -ge 480) {
-        $minimumWidth = [int][Math]::Min([int]$designMinimumSize.Width, [Math]::Max(760, $areaWidth - 32))
-        $minimumHeight = [int][Math]::Min([int]$designMinimumSize.Height, [Math]::Max(520, $areaHeight - 32))
-        $windowWidth = [int][Math]::Max($minimumWidth, [int][Math]::Min([int]$designWindowSize.Width, $areaWidth))
-        $windowHeight = [int][Math]::Max($minimumHeight, [int][Math]::Min([int]$designWindowSize.Height, $areaHeight))
-        if ($windowWidth -lt $minimumWidth) { $windowWidth = $minimumWidth }
-        if ($windowHeight -lt $minimumHeight) { $windowHeight = $minimumHeight }
-    }
-} catch { }
+$primaryArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+$uufScale = [Math]::Min(1.0, [Math]::Min([double]$primaryArea.Width / 1920.0, [double]$primaryArea.Height / 1080.0))
+$windowWidth = [int][Math]::Round(1920 * $uufScale)
+$windowHeight = [int][Math]::Round(1080 * $uufScale)
+$minimumWidth = [int][Math]::Min([int]$designMinimumSize.Width, $windowWidth)
+$minimumHeight = [int][Math]::Min([int]$designMinimumSize.Height, $windowHeight)
 $script:Form.MinimumSize = New-Object System.Drawing.Size($minimumWidth, $minimumHeight)
 $script:Form.Size = New-Object System.Drawing.Size($windowWidth, $windowHeight)
+$script:Form.Location = New-Object System.Drawing.Point(([int]($primaryArea.X + ($primaryArea.Width - $windowWidth) / 2)), ([int]($primaryArea.Y + ($primaryArea.Height - $windowHeight) / 2)))
 $script:Form.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
 $script:Form.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $script:Form.Font = New-Object System.Drawing.Font($script:UiFontFamily, 9)
@@ -2908,25 +2898,6 @@ function Restore-AppSettingsToUi {
     param([hashtable]$Settings)
     if ($null -eq $Settings -or $Settings.Count -eq 0) { return }
 
-    if ($Settings.ContainsKey('WindowBounds')) {
-        try {
-            $raw = $Settings['WindowBounds']
-            $rect = New-Object System.Drawing.Rectangle([int]$raw.X, [int]$raw.Y, [int]$raw.Width, [int]$raw.Height)
-            if ($rect.Width -ge 400 -and $rect.Height -ge 300) {
-                $visible = $false
-                foreach ($screen in [System.Windows.Forms.Screen]::AllScreens) {
-                    if ($screen.WorkingArea.IntersectsWith($rect)) { $visible = $true; break }
-                }
-                if ($visible) {
-                    $script:Form.StartPosition = 'Manual'
-                    $script:Form.Bounds = $rect
-                }
-            }
-        } catch { }
-    }
-    if ($Settings.ContainsKey('WindowState')) {
-        try { $script:Form.WindowState = [System.Windows.Forms.FormWindowState]([string]$Settings['WindowState']) } catch { }
-    }
 
     Set-ComboFromSettings $script:StatusFilterBox $Settings['StatusFilter']
     Set-ComboFromSettings $script:SortBox $Settings['SortMode']
@@ -4042,7 +4013,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.22' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.23' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -5082,16 +5053,16 @@ try {
     $window.ResizeMode = 'NoResize'
     $window.ShowInTaskbar = $false
     $window.Topmost = $true
-    $window.WindowStartupLocation = 'CenterScreen'
+    $window.WindowStartupLocation = 'Manual'
     $window.Background = [System.Windows.Media.Brushes]::Black
-    $scale = [Math]::Min(1.0, [Math]::Min([System.Windows.SystemParameters]::PrimaryScreenWidth / 1920.0, [System.Windows.SystemParameters]::PrimaryScreenHeight / 1080.0))
+    $area = [System.Windows.SystemParameters]::WorkArea
+    $scale = [Math]::Min(1.0, [Math]::Min($area.Width / 1920.0, $area.Height / 1080.0))
     $window.Width = [Math]::Round(1920 * $scale)
     $window.Height = [Math]::Round(1080 * $scale)
+    $window.Left = $area.Left + ($area.Width - $window.Width) / 2
+    $window.Top = $area.Top + ($area.Height - $window.Height) / 2
     $window.Content = $player
-    $holdTimer = New-Object System.Windows.Threading.DispatcherTimer
-    $holdTimer.Interval = [TimeSpan]::FromSeconds(10)
-    $holdTimer.Add_Tick({ $holdTimer.Stop(); $window.Close() })
-    $player.Add_MediaEnded({ $holdTimer.Start() })
+    $player.Add_MediaEnded({ $window.Close() })
     $player.Add_MediaFailed({ param($sender, $e) try { Add-Content -LiteralPath $LogPath -Value ('MediaFailed: ' + $e.ErrorException.Message) } catch { }; $window.Close() })
     $stopTimer = New-Object System.Windows.Threading.DispatcherTimer
     $stopTimer.Interval = [TimeSpan]::FromMilliseconds(100)
@@ -5144,10 +5115,10 @@ function Wait-StartupVideo {
 
 function Show-AppFadeIn {
     if (-not $script:Form) { return }
-    for ($step = 1; $step -le 20; $step++) {
-        $script:Form.Opacity = [double]$step / 20.0
+    for ($step = 1; $step -le 12; $step++) {
+        $script:Form.Opacity = [double]$step / 12.0
         [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 30
+        Start-Sleep -Milliseconds 25
     }
     $script:Form.Opacity = 1.0
 }
