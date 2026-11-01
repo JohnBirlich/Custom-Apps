@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.18'
+$script:AppVersion = '2.10.19'
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -4042,7 +4042,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.18' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.19' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -5050,7 +5050,10 @@ $uufResizeEdgeRight = New-UufResizeEdge 'ResizeEdgeRight' $uufEdgeRightX 0 6 $uu
 $uufResizeEdgeBottom = New-UufResizeEdge 'ResizeEdgeBottom' 0 $uufEdgeBottomY $uufClientWidth 6 'Bottom, Left, Right' ([System.Windows.Forms.Cursors]::SizeNS) 15
 
 function Show-StartupVideo {
-    $script:StartupSplash = $null
+    $script:SplashShell = $null
+    $script:SplashRunspace = $null
+    $script:SplashAsync = $null
+    $script:SplashState = $null
     try {
         $videoPath = Join-Path (Get-AppDirectory) 'digital_word_eye.mp4'
         if (-not [System.IO.File]::Exists($videoPath)) {
@@ -5061,62 +5064,65 @@ function Show-StartupVideo {
         $logDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
         $null = [System.IO.Directory]::CreateDirectory($logDirectory)
         $splashLog = Join-Path $logDirectory 'splash.log'
-        $videoLiteral = "'" + $videoPath.Replace("'", "''") + "'"
-        $logLiteral = "'" + $splashLog.Replace("'", "''") + "'"
-        $parentId = [int]$PID
         $readyPath = Join-Path $logDirectory 'splash.ready'
-        $readyLiteral = "'" + $readyPath.Replace("'", "''") + "'"
         if ([System.IO.File]::Exists($readyPath)) { [System.IO.File]::Delete($readyPath) }
 
-        $splashScript = @"
-`$ErrorActionPreference = 'Stop'
+        $splashBody = @'
+param($VideoPath, $ReadyPath, $LogPath, $State)
+$ErrorActionPreference = 'Stop'
 try {
     Add-Type -AssemblyName PresentationFramework
     Add-Type -AssemblyName PresentationCore
     Add-Type -AssemblyName WindowsBase
-    `$player = New-Object System.Windows.Controls.MediaElement
-    `$player.LoadedBehavior = 'Play'
-    `$player.UnloadedBehavior = 'Close'
-    `$player.Stretch = 'Uniform'
-    `$player.Source = New-Object System.Uri($videoLiteral)
-    `$player.Add_MediaEnded({ param(`$sender, `$e) try { `$sender.Position = [TimeSpan]::Zero; `$sender.Play() } catch { } })
-    `$player.Add_MediaFailed({ param(`$sender, `$e) try { Add-Content -LiteralPath $logLiteral -Value ('MediaFailed: ' + `$e.ErrorException.Message) } catch { }; try { `$window.Close() } catch { } })
-    `$window = New-Object System.Windows.Window
-    `$window.WindowStyle = 'None'
-    `$window.ResizeMode = 'NoResize'
-    `$window.ShowInTaskbar = `$false
-    `$window.Topmost = `$true
-    `$window.WindowStartupLocation = 'CenterScreen'
-    `$window.Background = [System.Windows.Media.Brushes]::Black
-    `$window.Width = 480
-    `$window.Height = 270
-    `$window.Content = `$player
-    `$timer = New-Object System.Windows.Threading.DispatcherTimer
-    `$timer.Interval = [TimeSpan]::FromSeconds(1)
-    `$timer.Add_Tick({ try { if (-not (Get-Process -Id $parentId -ErrorAction SilentlyContinue)) { `$window.Close() } } catch { `$window.Close() } })
-    `$window.Add_Loaded({ `$timer.Start() })
-    `$window.Add_ContentRendered({ try { [System.IO.File]::WriteAllText($readyLiteral, 'ready') } catch { } })
-    `$app = New-Object System.Windows.Application
-    [void]`$app.Run(`$window)
+    $player = New-Object System.Windows.Controls.MediaElement
+    $player.LoadedBehavior = 'Play'
+    $player.UnloadedBehavior = 'Close'
+    $player.Stretch = 'Uniform'
+    $player.Source = New-Object System.Uri($VideoPath)
+    $player.Add_MediaEnded({ param($sender, $e) try { $sender.Position = [TimeSpan]::Zero; $sender.Play() } catch { } })
+    $player.Add_MediaFailed({ param($sender, $e) try { Add-Content -LiteralPath $LogPath -Value ('MediaFailed: ' + $e.ErrorException.Message) } catch { }; $State['Stop'] = $true })
+    $window = New-Object System.Windows.Window
+    $window.WindowStyle = 'None'
+    $window.ResizeMode = 'NoResize'
+    $window.ShowInTaskbar = $false
+    $window.Topmost = $true
+    $window.WindowStartupLocation = 'CenterScreen'
+    $window.Background = [System.Windows.Media.Brushes]::Black
+    $window.Width = 480
+    $window.Height = 270
+    $window.Content = $player
+    $timer = New-Object System.Windows.Threading.DispatcherTimer
+    $timer.Interval = [TimeSpan]::FromMilliseconds(100)
+    $timer.Add_Tick({ if ($State['Stop']) { $timer.Stop(); $window.Close() } })
+    $window.Add_ContentRendered({ try { [System.IO.File]::WriteAllText($ReadyPath, 'ready') } catch { }; $timer.Start() })
+    $app = New-Object System.Windows.Application
+    [void]$app.Run($window)
 } catch {
-    try { Add-Content -LiteralPath $logLiteral -Value ('Splash error: ' + `$_.Exception.ToString()) } catch { }
+    try { Add-Content -LiteralPath $LogPath -Value ('Splash error: ' + $_.Exception.ToString()) } catch { }
 }
-"@
-        $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($splashScript))
-        $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+'@
+
+        $script:SplashState = [hashtable]::Synchronized(@{ Stop = $false })
+        $script:SplashRunspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+        $script:SplashRunspace.ApartmentState = [System.Threading.ApartmentState]::STA
+        $script:SplashRunspace.ThreadOptions = [System.Management.Automation.Runspaces.PSThreadOptions]::ReuseThread
+        $script:SplashRunspace.Open()
+        $script:SplashShell = [System.Management.Automation.PowerShell]::Create()
+        $script:SplashShell.Runspace = $script:SplashRunspace
+        $null = $script:SplashShell.AddScript($splashBody).AddArgument($videoPath).AddArgument($readyPath).AddArgument($splashLog).AddArgument($script:SplashState)
         $script:StartupSplashStarted = [DateTime]::UtcNow
-        $script:StartupSplash = Start-Process -FilePath $powershellPath -ArgumentList @('-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', $encoded) -WindowStyle Hidden -PassThru
+        $script:SplashAsync = $script:SplashShell.BeginInvoke()
     } catch {
         Write-StartupLog ('Заставка недоступна: ' + $_.Exception.Message)
-        $script:StartupSplash = $null
+        $script:SplashShell = $null
     }
 }
 
 function Close-StartupVideo {
-    if ($script:StartupSplash) {
+    if ($script:SplashShell) {
         $readyPath = Join-Path (Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder') 'splash.ready'
         $deadline = [DateTime]::UtcNow.AddSeconds(10)
-        while (-not [System.IO.File]::Exists($readyPath) -and -not $script:StartupSplash.HasExited -and [DateTime]::UtcNow -lt $deadline) {
+        while (-not [System.IO.File]::Exists($readyPath) -and -not $script:SplashAsync.IsCompleted -and [DateTime]::UtcNow -lt $deadline) {
             Start-Sleep -Milliseconds 100
         }
         if (-not [System.IO.File]::Exists($readyPath)) {
@@ -5124,9 +5130,19 @@ function Close-StartupVideo {
         }
         $shownFor = ([DateTime]::UtcNow - $script:StartupSplashStarted).TotalMilliseconds
         if ($shownFor -lt 3000) { Start-Sleep -Milliseconds ([int](3000 - $shownFor)) }
-        try { if (-not $script:StartupSplash.HasExited) { $script:StartupSplash.Kill() } } catch { }
-        try { $script:StartupSplash.Dispose() } catch { }
-        $script:StartupSplash = $null
+        $script:SplashState['Stop'] = $true
+        $stopDeadline = [DateTime]::UtcNow.AddSeconds(2)
+        while (-not $script:SplashAsync.IsCompleted -and [DateTime]::UtcNow -lt $stopDeadline) {
+            Start-Sleep -Milliseconds 50
+        }
+        if ($script:SplashAsync.IsCompleted) {
+            try { $script:SplashShell.Dispose() } catch { }
+            try { $script:SplashRunspace.Close() } catch { }
+        }
+        $script:SplashShell = $null
+        $script:SplashRunspace = $null
+        $script:SplashAsync = $null
+        $script:SplashState = $null
     }
 }
 
