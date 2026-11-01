@@ -81,9 +81,9 @@ try {
 } catch { }
 
 Add-Type -AssemblyName System.Security
-$script:VaultDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
-$script:VaultPath = Join-Path $script:VaultDirectory 'accounts.txt'
-$script:EncryptedVaultPath = Join-Path $script:VaultDirectory 'accounts.dat'
+$script:VaultDirectory = Join-Path $env:APPDATA 'UniversalUsernameFinder'
+$script:VaultPath = Join-Path $script:VaultDirectory 'accounts.dat'
+$script:PreviousVaultPath = Join-Path (Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder') 'accounts.dat'
 $script:LegacyVaultDirectory = Join-Path $env:LOCALAPPDATA 'RobloxNickFinder'
 $script:LegacyVaultPath = Join-Path $script:LegacyVaultDirectory 'accounts.dat'
 $script:VaultEntropy = [System.Text.Encoding]::UTF8.GetBytes('RobloxNickFinder:account-vault:v1')
@@ -122,10 +122,15 @@ function Write-StartupLog {
 
 function Migrate-LegacyVault {
     try {
+        if ([System.IO.File]::Exists($script:PreviousVaultPath) -and -not [System.IO.File]::Exists($script:VaultPath)) {
+            $null = [System.IO.Directory]::CreateDirectory($script:VaultDirectory)
+            [System.IO.File]::Copy($script:PreviousVaultPath, $script:VaultPath, $false)
+            Write-StartupLog 'Зашифрованное хранилище аккаунтов перенесено в %APPDATA%\UniversalUsernameFinder.'
+        }
         if (-not [System.IO.File]::Exists($script:LegacyVaultPath)) { return }
-        if ([System.IO.File]::Exists($script:EncryptedVaultPath)) { return }
+        if ([System.IO.File]::Exists($script:VaultPath)) { return }
         $null = [System.IO.Directory]::CreateDirectory($script:VaultDirectory)
-        [System.IO.File]::Copy($script:LegacyVaultPath, $script:EncryptedVaultPath, $false)
+        [System.IO.File]::Copy($script:LegacyVaultPath, $script:VaultPath, $false)
         try { [System.IO.File]::Move($script:LegacyVaultPath, ($script:LegacyVaultPath + '.migrated')) } catch { }
         Write-StartupLog 'Хранилище аккаунтов перенесено из папки RobloxNickFinder в UniversalUsernameFinder.'
     } catch {
@@ -2065,56 +2070,69 @@ function New-SecurePassword {
 }
 
 function Get-SavedAccountRecords {
-    if (-not (Test-Path -LiteralPath $script:VaultPath)) {
-        return @(Import-LegacyEncryptedAccountRecords)
-    }
-    $records = @()
-    foreach ($line in [System.IO.File]::ReadAllLines($script:VaultPath, [System.Text.Encoding]::UTF8)) {
-        if ([string]::IsNullOrEmpty($line)) { continue }
-        $separator = $line.IndexOf(':')
-        if ($separator -lt 1) { continue }
-        $records += [pscustomobject]@{Username=$line.Substring(0, $separator); Password=$line.Substring($separator + 1); Platform=''; CreatedAt=''}
-    }
-    return @($records)
-}
-
-function Import-LegacyEncryptedAccountRecords {
-    if (-not (Test-Path -LiteralPath $script:EncryptedVaultPath)) { return @() }
-    $legacy = @()
+    if (-not (Test-Path -LiteralPath $script:VaultPath)) { return @() }
     try {
-        $cipher = [System.IO.File]::ReadAllBytes($script:EncryptedVaultPath)
+        $cipher = [System.IO.File]::ReadAllBytes($script:VaultPath)
         $plain = [System.Security.Cryptography.ProtectedData]::Unprotect($cipher, $script:VaultEntropy, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
         $json = [System.Text.Encoding]::UTF8.GetString($plain)
-        if (-not [string]::IsNullOrWhiteSpace($json)) { $legacy = @(ConvertFrom-Json -InputObject $json -ErrorAction Stop) }
+        if ([string]::IsNullOrWhiteSpace($json)) { return @() }
+        $records = ConvertFrom-Json -InputObject $json -ErrorAction Stop
+        return @($records)
     } catch {
-        Add-ErrorDiagnostic ('Не удалось прочитать старое зашифрованное хранилище accounts.dat: ' + $_.Exception.ToString())
-        throw 'Не удалось перенести старое хранилище accounts.dat. Оно доступно только тому же пользователю Windows, который его создал. Подробности в UniversalUsernameFinder.log'
+        Add-ErrorDiagnostic ('Не удалось прочитать зашифрованное хранилище: ' + $_.Exception.ToString())
+        throw 'Не удалось открыть зашифрованное хранилище. Оно доступно только тому же пользователю Windows, который его создал. Подробности в UniversalUsernameFinder.log.'
     }
-    $records = @()
-    foreach ($item in $legacy) {
-        $records += [pscustomobject]@{Username=[string]$item.Username; Password=[string]$item.Password; Platform=''; CreatedAt=''}
-    }
-    Save-AccountRecords -Records $records
-    try { [System.IO.File]::Move($script:EncryptedVaultPath, ($script:EncryptedVaultPath + '.migrated')) } catch { }
-    return @($records)
 }
 
-function Save-AccountRecords {
+function Save-EncryptedAccountRecords {
     param([object[]]$Records)
     $null = [System.IO.Directory]::CreateDirectory($script:VaultDirectory)
+    $directoryFull = [System.IO.Path]::GetFullPath($script:VaultDirectory)
     $vaultFull = [System.IO.Path]::GetFullPath($script:VaultPath)
-    $lines = @()
-    foreach ($record in @($Records)) {
-        $lines += ([string]$record.Username + ':' + [string]$record.Password)
-    }
-    $tempPath = $vaultFull + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+    $json = ConvertTo-Json -InputObject @($Records) -Depth 5 -Compress
+    if ([string]::IsNullOrWhiteSpace($json)) { $json = '[]' }
+    $plain = [System.Text.Encoding]::UTF8.GetBytes($json)
+    $cipher = [System.Security.Cryptography.ProtectedData]::Protect($plain, $script:VaultEntropy, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+    $suffix = [guid]::NewGuid().ToString('N')
+    $tempPath = [System.IO.Path]::Combine($directoryFull, 'accounts.dat.' + $suffix + '.tmp')
+    $backupPath = [System.IO.Path]::Combine($directoryFull, 'accounts.dat.' + $suffix + '.bak')
+    $oldMoved = $false
     try {
-        [System.IO.File]::WriteAllLines($tempPath, [string[]]$lines, (New-Object System.Text.UTF8Encoding -ArgumentList $false))
+        [System.IO.File]::WriteAllBytes($tempPath, $cipher)
         if ([System.IO.File]::Exists($vaultFull)) {
-            [System.IO.File]::Replace($tempPath, $vaultFull, $null)
+            try { [System.IO.File]::Copy($vaultFull, [System.IO.Path]::Combine($directoryFull, 'accounts.dat.bak'), $true) } catch { }
+            try {
+                [System.IO.File]::Replace($tempPath, $vaultFull, $backupPath)
+            } catch {
+                if ([System.IO.File]::Exists($tempPath)) {
+                    if ([System.IO.File]::Exists($vaultFull)) {
+                        [System.IO.File]::Move($vaultFull, $backupPath)
+                        $oldMoved = $true
+                    }
+                    try {
+                        [System.IO.File]::Move($tempPath, $vaultFull)
+                        $oldMoved = $false
+                    } catch {
+                        if ($oldMoved -and [System.IO.File]::Exists($backupPath) -and -not [System.IO.File]::Exists($vaultFull)) {
+                            try { [System.IO.File]::Move($backupPath, $vaultFull); $oldMoved = $false } catch { }
+                        }
+                        throw
+                    }
+                } elseif (-not [System.IO.File]::Exists($vaultFull)) {
+                    throw
+                }
+            }
+            if ([System.IO.File]::Exists($backupPath)) {
+                try { [System.IO.File]::Delete($backupPath) } catch { }
+            }
         } else {
             [System.IO.File]::Move($tempPath, $vaultFull)
         }
+    } catch {
+        if ($oldMoved -and [System.IO.File]::Exists($backupPath) -and -not [System.IO.File]::Exists($vaultFull)) {
+            try { [System.IO.File]::Move($backupPath, $vaultFull); $oldMoved = $false } catch { }
+        }
+        throw
     } finally {
         if ([System.IO.File]::Exists($tempPath)) { try { [System.IO.File]::Delete($tempPath) } catch { } }
     }
@@ -2124,13 +2142,15 @@ function Refresh-SavedAccountList {
     $script:AccountListBox.Items.Clear()
     $script:AccountRecords = @(Get-SavedAccountRecords)
     foreach ($record in $script:AccountRecords) {
-        [void]$script:AccountListBox.Items.Add([string]$record.Username)
+        $stamp = ''
+        try { $stamp = ([datetime]$record.CreatedAt).ToString('yyyy-MM-dd HH:mm') } catch { $stamp = 'дата не указана' }
+        [void]$script:AccountListBox.Items.Add("$($record.Username)  —  $stamp")
     }
     $script:SavedPasswordBox.Clear()
     if ($script:AccountRecords.Count -eq 0) {
         $script:VaultStatusLabel.Text = 'Сохранённых записей пока нет.'
     } else {
-        $script:VaultStatusLabel.Text = "Записей в файле accounts.txt: $($script:AccountRecords.Count)"
+        $script:VaultStatusLabel.Text = "Записей в зашифрованном хранилище: $($script:AccountRecords.Count)"
     }
 }
 
@@ -2182,7 +2202,7 @@ function Get-AccountSafetyText {
     $lines = @(
         ('1) Скопируй ник{0} → открой {1} → заполни форму и пройди проверки.' -f $passPart,$platformName),
         '2) Вернись сюда: отметь галочку подтверждения и нажми «Сохранить».',
-        'Логин и пароль сохраняются в файле accounts.txt в виде Логин:пароль, без шифрования. Автоматический ввод или обход проверок не выполняется.')
+        'Пароль хранится в DPAPI-шифровании Windows для текущего пользователя. Автоматический ввод или обход проверок не выполняется.')
     if ($platformName -eq 'Mail.ru') { $lines = @($lines[0],'Для Mail.ru ник — это имя почтового ящика: регистрация идёт как ник@' + (Get-PlatformDomain -Platform 'Mail.ru') + ', пароль по желанию (нужен только для хранения).') + @($lines[1..2]) }
     return ($lines -join "`r`n")
 }
@@ -2369,7 +2389,7 @@ function Open-AccountTools {
     $prepareTab.Controls.Add($script:RegistrationConfirmedCheck)
 
     $saveAccountButton = New-Object System.Windows.Forms.Button
-    $saveAccountButton.Text = 'Сохранить в accounts.txt'
+    $saveAccountButton.Text = 'Сохранить в зашифрованное хранилище'
     $saveAccountButton.Location = New-Object System.Drawing.Point(18, 331)
     $saveAccountButton.Size = New-Object System.Drawing.Size(677, 42)
     $saveAccountButton.FlatStyle = 'Flat'
@@ -2575,11 +2595,11 @@ function Open-AccountTools {
             }
             $record = [pscustomobject]@{Username=$storedNick; Password=$password; Platform=([string]$script:AccountPlatform); CreatedAt=(Get-Date).ToString('o')}
             $records = @($records) + @($record)
-            Save-AccountRecords -Records $records
+            Save-EncryptedAccountRecords -Records $records
             $script:RegistrationConfirmedCheck.Checked = $false
             Refresh-SavedAccountList
             Set-AccountTabView -Index 1
-            [System.Windows.Forms.MessageBox]::Show("Данные для $storedNick сохранены в файл accounts.txt (формат Логин:пароль).", 'Сохранено', 'OK', 'Information') | Out-Null
+            [System.Windows.Forms.MessageBox]::Show("Данные для $storedNick сохранены в зашифрованное хранилище текущего пользователя Windows.", 'Сохранено', 'OK', 'Information') | Out-Null
         } catch {
             Add-ErrorDiagnostic ('Не удалось сохранить учётные данные: ' + $_.Exception.ToString())
             [System.Windows.Forms.MessageBox]::Show('Не удалось сохранить данные. ' + $_.Exception.Message + "`r`n`r`nСм. UniversalUsernameFinder.log.", 'Ошибка сохранения', 'OK', 'Error') | Out-Null
@@ -2629,7 +2649,7 @@ function Open-AccountTools {
             for ($i = 0; $i -lt $script:AccountRecords.Count; $i++) {
                 if ($i -ne $index) { $records += $script:AccountRecords[$i] }
             }
-            Save-AccountRecords -Records $records
+            Save-EncryptedAccountRecords -Records $records
             Refresh-SavedAccountList
         } catch {
             Add-ErrorDiagnostic ('Не удалось удалить запись из хранилища: ' + $_.Exception.ToString())
@@ -3668,7 +3688,7 @@ function Show-UsernameFinderHelp {
             @('Что программа не делает', 'Программа не взламывает аккаунты, не подбирает пароли, не входит в чужие учётные записи, не крадёт логины и пароли и не отправляет письма или сообщения от вашего имени.'),
             @('Как устроена проверка', 'Проверка безопасна: это обычные запросы, похожие на открытие страницы регистрации в браузере. Программа не обходит CAPTCHA, блокировки и защитные механизмы платформ. Если платформа ограничила запросы, проверка приостанавливается.'),
             @('Пользовательское соглашение', 'Используя программу, вы подтверждаете, что сами соблюдаете правила платформ и законы своей страны. Не используйте результаты для выдачи себя за другого человека, спама, мошенничества или обхода ограничений сервисов. Ответственность за дальнейшее использование ника и аккаунта лежит на пользователе.'),
-            @('Хранение данных', 'Логины и пароли, созданные в программе, сохраняются только локально в файле accounts.txt в папке %LOCALAPPDATA%\UniversalUsernameFinder в формате Логин:пароль, без шифрования.'),
+            @('Хранение данных', 'Пароли, созданные в программе, сохраняются только локально в зашифрованном хранилище текущего пользователя Windows.'),
             @('Точность результатов', 'Статус «свободен» показывает состояние на момент проверки. Платформа может изменить правила или занять ник раньше вас, поэтому перед регистрацией проверяйте ник на сайте платформы.')
         ) },
         @{ Title = 'Пользование'; Cards = @(
@@ -3677,7 +3697,7 @@ function Show-UsernameFinderHelp {
             @('3. Запуск', 'Нажмите «▶ Найти свободные». Генерация и проверка идут в фоне, таблица заполняется по мере работы. Остановить можно кнопкой «■ Остановить проверку».'),
             @('4. Возобновление', 'После остановки кнопка станет «▶ Возобновить проверку (N)», где N — сколько ников ещё не проверено. Продолжаются только ники со статусом «Ожидает»: уже проверенные не повторяются.'),
             @('5. Свободные ники', 'Свободные ники попадают в «Последние свободные ники». Там можно выделить один или несколько ников («Выделить все» / «Снять все»), скопировать их, открыть сайт или повторить проверку.'),
-            @('6. Регистрация и пароль', 'Кнопка «Регистрация и пароль» открывает генератор пароля, страницу регистрации, поля имени и фамилии (для Google) и сохранение записи в accounts.txt. «Сохранённые аккаунты» открывает список сохранённых записей.'),
+            @('6. Регистрация и пароль', 'Кнопка «Регистрация и пароль» открывает генератор пароля, страницу регистрации, поля имени и фамилии (для Google) и сохранение записи в зашифрованное хранилище. «Сохранённые аккаунты» открывает список сохранённых записей.'),
             @('7. Проверка соединения', 'Кнопка «Проверка соединения» показывает доступность платформ: результат, время ответа (пинг) и HTTP-код.'),
             @('8. Журнал', 'Кнопка «Развернуть журнал» поднимает журнал над таблицей, «Вернуть стандартно» возвращает прежнее положение.')
         ) },

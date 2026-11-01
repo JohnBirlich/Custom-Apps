@@ -1930,15 +1930,22 @@ Describe 'Версия 2.10.25: C#-лаунчер вместо ps2exe и под�
     }
 }
 
-Describe 'Версия 2.10.26: скрипт в процессе exe и учётные записи в accounts.txt' {
+Describe 'Версия 2.10.26: скрипт в процессе exe и пароли вне папки деинсталлятора' {
     It 'лаунчер выполняет скрипт в собственном процессе, без дочернего powershell.exe' {
-        $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
+        $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
         $buildText.Contains('System.Management.Automation.dll') | Should -BeTrue
         $buildText.Contains('/reference:') | Should -BeTrue
     }
-    It 'учётные записи сохраняются в accounts.txt в формате Логин:пароль' {
-        $global:UufFullText.Contains('accounts.txt') | Should -BeTrue
-        $global:UufFullText.Contains('[string]$record.Username + '':'' + [string]$record.Password') | Should -BeTrue
-        $global:UufFullText.Contains('Import-LegacyEncryptedAccountRecords') | Should -BeTrue
+    It 'хранилище паролей лежит в APPDATA и шифруется DPAPI' {
+        $global:UufFullText.Contains('$script:VaultDirectory = Join-Path $env:APPDATA ''UniversalUsernameFinder''') | Should -BeTrue
+        $global:UufFullText.Contains('[System.Security.Cryptography.ProtectedData]::Protect') | Should -BeTrue
+    }
+    It 'старое хранилище из LOCALAPPDATA переносится при запуске' {
+        $global:UufFullText.Contains('$script:PreviousVaultPath') | Should -BeTrue
+    }
+    It 'деинсталлятор не удаляет сохранённые пароли из APPDATA' {
+        $uninstallText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\\Uninstall-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $uninstallText.Contains('Сохранённые пароли не удаляются') | Should -BeTrue
+        $uninstallText.Contains('APPDATA') | Should -BeTrue
     }
 }

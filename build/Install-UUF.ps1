@@ -229,7 +229,7 @@ if ($Uninstall) {
         Remove-Item -LiteralPath $dataDirectory -Recurse -Force
         Write-Step ('Данные удалены: ' + $dataDirectory)
     } elseif ([System.IO.Directory]::Exists($dataDirectory)) {
-        Write-Host ('История, настройки и сейф сохранены: ' + $dataDirectory)
+        Write-Host ('История, настройки и журнал сохранены: ' + $dataDirectory)
     }
     Request-ExitPause
     exit 0
@@ -380,7 +380,8 @@ Write-Host ''
 Write-Host ('Готово! UUF установлен: ' + $targetExe)
 Write-Host ('Подпись скрипта: ' + $signatureStatus)
 Write-Host ('Ярлык «' + $appName + '» лежит на рабочем столе и в меню «Пуск».')
-Write-Host ('Данные (история, настройки, сейф, журнал): ' + $dataDirectory)
+Write-Host ('Данные (история, настройки, журнал): ' + $dataDirectory)
+Write-Host ('Сохранённые пароли: ' + (Join-Path $env:APPDATA 'UniversalUsernameFinder'))
 $uninstallerHint = 'AppUninstaller.exe'
 if (-not [System.IO.File]::Exists($targetUninstaller)) { $uninstallerHint = 'Uninstall-UUF.bat' }
 Write-Host ('Полное удаление: двойным щелчком по «' + (Join-Path $targetDirectory $uninstallerHint) + '» или через «Приложения и возможности» → Universal Username Finder → Удалить.')
