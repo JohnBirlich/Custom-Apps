@@ -1903,3 +1903,27 @@ Describe 'Версия 2.10.24: видео заставки вшито в UUF.ex
     }
 }
 
+Describe 'Версия 2.10.25: C#-лаунчер вместо ps2exe и подпись Authenticode' {
+    It 'лаунчер на C# существует и не обходит политику выполнения' {
+        $launcherPath = Join-Path (Join-Path $PSScriptRoot '..') 'launcher\UUF.Launcher.cs'
+        [System.IO.File]::Exists($launcherPath) | Should -BeTrue
+        $launcherText = [System.IO.File]::ReadAllText($launcherPath)
+        $launcherText.Contains('UniversalUsernameFinder.ps1') | Should -BeTrue
+        $launcherText.Contains('RemoteSigned') | Should -BeTrue
+        $launcherText.Contains('Bypass') | Should -BeFalse
+        $launcherText.Contains('-EncodedCommand') | Should -BeFalse
+    }
+    It 'сборка компилирует лаунчер через csc.exe, а не ps2exe' {
+        $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
+        $buildText.Contains('csc.exe') | Should -BeTrue
+        $buildText.Contains('UUF.Launcher.cs') | Should -BeTrue
+        $buildText.Contains('Invoke-ps2exe') | Should -BeFalse
+        $buildText.Contains('Sign-Uuf.ps1') | Should -BeTrue
+    }
+    It 'CI передаёт секреты подписи в сборку' {
+        $ciText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') '.github\workflows\ci.yml'), [System.Text.Encoding]::UTF8)
+        $ciText.Contains('UUF_SIGN_PFX_BASE64: ${{ secrets.UUF_SIGN_PFX_BASE64 }}') | Should -BeTrue
+        $ciText.Contains('UUF_SIGN_PFX_PASSWORD: ${{ secrets.UUF_SIGN_PFX_PASSWORD }}') | Should -BeTrue
+    }
+}
+

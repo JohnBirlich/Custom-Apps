@@ -229,7 +229,7 @@ jobs:
           }
 
   build:
-    name: Build UUF.exe (ps2exe)
+    name: Build UUF.exe (C# launcher)
     runs-on: windows-latest
     needs: quality
     steps:
@@ -237,6 +237,9 @@ jobs:
 
       - name: Build executable
         shell: powershell
+        env:
+          UUF_SIGN_PFX_BASE64: ${{ secrets.UUF_SIGN_PFX_BASE64 }}
+          UUF_SIGN_PFX_PASSWORD: ${{ secrets.UUF_SIGN_PFX_PASSWORD }}
         run: |
           $ErrorActionPreference = 'Stop'
           try {

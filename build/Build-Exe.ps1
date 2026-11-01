@@ -1,5 +1,4 @@
 ﻿
-
 [CmdletBinding()]
 param(
     [string]$OutputDirectory = '',
@@ -7,15 +6,18 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 $buildDirectory = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($buildDirectory)) { $buildDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path }
 $repositoryRoot = Split-Path -Parent $buildDirectory
 $scriptPath = Join-Path $repositoryRoot 'UniversalUsernameFinder.ps1'
+$launcherPath = Join-Path $repositoryRoot 'launcher\UUF.Launcher.cs'
 
 if (-not [System.IO.File]::Exists($scriptPath)) {
     throw ('Не найден исходный скрипт: ' + $scriptPath)
+}
+if (-not [System.IO.File]::Exists($launcherPath)) {
+    throw ('Не найден исходный код лаунчера: ' + $launcherPath)
 }
 
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
@@ -35,40 +37,24 @@ $appVersion = $versionMatch.Groups[1].Value
 $fileVersion = $appVersion
 while (([regex]::Matches($fileVersion, '\.')).Count -lt 3) { $fileVersion = $fileVersion + '.0' }
 
+$cscPath = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+if (-not [System.IO.File]::Exists($cscPath)) {
+    throw ('Не найден компилятор C# (csc.exe): ' + $cscPath)
+}
+
 Write-Host ('Репозиторий:      ' + $repositoryRoot)
 Write-Host ('Исходный скрипт:  ' + $scriptPath)
 Write-Host ('Версия:           ' + $appVersion + ' (файл: ' + $fileVersion + ')')
+Write-Host ('Компилятор:       ' + $cscPath)
 Write-Host ('Результат:        ' + $outputPath)
-
-$ps2exe = Get-Module -ListAvailable -Name ps2exe | Select-Object -First 1
-if (-not $ps2exe -and -not $SkipInstall) {
-    try { Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue } catch { }
-    foreach ($attempt in 1..4) {
-        try {
-            Install-Module ps2exe -Force -Scope CurrentUser -Repository PSGallery -AllowClobber -ErrorAction Stop
-            break
-        } catch {
-            Write-Host ('Попытка установки ps2exe ' + $attempt + ' не удалась: ' + $_.Exception.Message)
-            Start-Sleep -Seconds (10 * $attempt)
-        }
-    }
-    $ps2exe = Get-Module -ListAvailable -Name ps2exe | Select-Object -First 1
-}
-if (-not $ps2exe) {
-    throw 'Модуль ps2exe недоступен. Установите его командой: Install-Module ps2exe -Scope CurrentUser'
-}
-
-Import-Module ps2exe
-Write-Host ('ps2exe:            ' + (Get-Module ps2exe).Version.ToString())
 
 if ([System.IO.File]::Exists($outputPath)) {
     try { [System.IO.File]::Delete($outputPath) } catch { }
 }
 
-$iconPath = Join-Path $repositoryRoot 'assets\uuf.ico'
+$iconFile = Join-Path $repositoryRoot 'assets\uuf.ico'
 $videoSourcePath = Join-Path $repositoryRoot 'assets\digital_word_eye.mp4'
-$compileScriptPath = $scriptPath
-$embeddedScriptPath = ''
+$embeddedText = $scriptText
 $videoEmbedded = $false
 if ([System.IO.File]::Exists($videoSourcePath)) {
     $videoBase64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($videoSourcePath))
@@ -84,33 +70,61 @@ if ([System.IO.File]::Exists($videoSourcePath)) {
     }
     $replacement = '$script:EmbeddedVideoParts = @(' + [string]::Join(',' + [Environment]::NewLine, $chunks) + ')'
     $embeddedText = $scriptText.Replace($placeholder, $replacement)
-    $embeddedScriptPath = Join-Path ([System.IO.Path]::GetTempPath()) ('uuf-embedded-' + [guid]::NewGuid().ToString('N') + '.ps1')
-    [System.IO.File]::WriteAllText($embeddedScriptPath, $embeddedText, (New-Object System.Text.UTF8Encoding -ArgumentList $true))
-    $compileScriptPath = $embeddedScriptPath
     $videoEmbedded = $true
-    Write-Host ('Видео встраивается в exe: ' + [int]([System.IO.FileInfo]$videoSourcePath).Length + ' байт')
+    Write-Host ('Видео встраивается в exe: ' + ([System.IO.FileInfo]$videoSourcePath).Length + ' байт')
 }
 
-$buildArguments = @{
-    inputFile   = $compileScriptPath
-    outputFile  = $outputPath
-    noConsole   = $true
-    STA         = $true
-    noOutput    = $true
-    noError     = $true
+$workDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ('uuf-embedded-' + [guid]::NewGuid().ToString('N'))
+$null = [System.IO.Directory]::CreateDirectory($workDirectory)
+$embeddedScriptPath = Join-Path $workDirectory 'UniversalUsernameFinder.ps1'
+$assemblyInfoPath = Join-Path $workDirectory 'AssemblyInfo.cs'
+
+$utf8Bom = New-Object System.Text.UTF8Encoding -ArgumentList $true
+$utf8NoBom = New-Object System.Text.UTF8Encoding -ArgumentList $false
+[System.IO.File]::WriteAllText($embeddedScriptPath, $embeddedText, $utf8Bom)
+
+$exeMetadata = @{
     title       = 'Universal Username Finder'
-    product     = 'Universal Username Finder'
     description = 'Генератор никнеймов и проверка доступности на платформах и в Telegram-каналах'
+    product     = 'Universal Username Finder'
     copyright   = 'GPL-3.0-or-later'
     company     = 'Hasberd'
-    version     = $fileVersion
 }
-if ([System.IO.File]::Exists($iconPath)) { $buildArguments['iconFile'] = $iconPath }
+
+$assemblyInfo = @(
+    'using System.Reflection;',
+    ('[assembly: AssemblyTitle("' + $exeMetadata.title + '")]'),
+    ('[assembly: AssemblyDescription("' + $exeMetadata.description + '")]'),
+    ('[assembly: AssemblyProduct("' + $exeMetadata.product + '")]'),
+    ('[assembly: AssemblyCompany("' + $exeMetadata.company + '")]'),
+    ('[assembly: AssemblyCopyright("' + $exeMetadata.copyright + '")]'),
+    ('[assembly: AssemblyVersion("' + $fileVersion + '")]'),
+    ('[assembly: AssemblyFileVersion("' + $fileVersion + '")]')
+) -join [Environment]::NewLine
+[System.IO.File]::WriteAllText($assemblyInfoPath, $assemblyInfo, $utf8NoBom)
+
+$compilerArguments = @(
+    '/nologo',
+    '/target:winexe',
+    '/optimize+',
+    '/platform:anycpu',
+    ('/out:' + $outputPath),
+    ('/win32icon:' + $iconFile),
+    ('/resource:' + $embeddedScriptPath + ',UniversalUsernameFinder.ps1'),
+    $launcherPath,
+    $assemblyInfoPath
+)
 
 try {
-    Invoke-ps2exe @buildArguments
+    $compilerOutput = @(& $cscPath @compilerArguments 2>&1 | ForEach-Object { [string]$_ })
+    foreach ($line in $compilerOutput) { Write-Host $line }
+    if ($LASTEXITCODE -ne 0) {
+        throw ('csc.exe завершился с кодом ' + $LASTEXITCODE + ': ' + (($compilerOutput | Select-Object -Last 8) -join ' | '))
+    }
 } finally {
-    if ($embeddedScriptPath -and [System.IO.File]::Exists($embeddedScriptPath)) { Remove-Item -LiteralPath $embeddedScriptPath -Force }
+    if ([System.IO.Directory]::Exists($workDirectory)) {
+        Remove-Item -LiteralPath $workDirectory -Recurse -Force
+    }
 }
 
 if (-not [System.IO.File]::Exists($outputPath)) {
@@ -125,6 +139,11 @@ if ($sizeKb -lt 20) {
     throw ('Собранный файл подозрительно мал (' + $sizeKb + ' КБ): вероятно, сборка прошла некорректно')
 }
 
+$signScript = Join-Path $buildDirectory 'Sign-Uuf.ps1'
+if ([System.IO.File]::Exists($signScript)) {
+    & $signScript -ExePath $outputPath
+}
+
 $videoSource = Join-Path $repositoryRoot 'assets\digital_word_eye.mp4'
 if ([System.IO.File]::Exists($videoSource)) {
     Copy-Item -LiteralPath $videoSource -Destination (Join-Path $OutputDirectory 'digital_word_eye.mp4') -Force
@@ -132,6 +151,6 @@ if ([System.IO.File]::Exists($videoSource)) {
 
 Write-Host ''
 Write-Host ('Готово: ' + $outputPath + ' (' + $sizeKb + ' КБ)')
-Write-Host 'Важно: .exe содержит исходный скрипт в открытом виде (ps2exe извлекает его'
-Write-Host 'параметром -extract). Это удобная оболочка для запуска, а не защита кода.'
+Write-Host 'Важно: скрипт приложения лежит в ресурсах exe в открытом виде.'
+Write-Host 'Это удобная оболочка для запуска, а не защита кода.'
 return $outputPath

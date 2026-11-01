@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.24'
+$script:AppVersion = '2.10.25'
 $script:EmbeddedVideoParts = @()
 
 trap {

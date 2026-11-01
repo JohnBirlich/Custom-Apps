@@ -62,7 +62,9 @@ powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1
 
 ## Сборка .exe (не входит в релиз)
 
-Сборка выполняется модулем [ps2exe](https://github.com/MScholtes/PS2EXE): `build\Build-Exe.bat` или `build\Build-Exe.ps1`. Результат — `dist\UUF.exe` с иконкой приложения. `.exe` встраивает скрипт в открытом виде (извлекается параметром `-extract`), поэтому это оболочка запуска, а не защита кода; источник правды — `.ps1`.
+Сборка выполняется `build\Build-Exe.bat` или `build\Build-Exe.ps1`. Лаунчер `launcher\UUF.Launcher.cs` компилируется встроенным в Windows компилятором C# (csc.exe, .NET Framework 4). Лаунчер извлекает встроенный скрипт в `%LOCALAPPDATA%\UniversalUsernameFinder\app` и запускает его через Windows PowerShell с `-ExecutionPolicy RemoteSigned`, без `Bypass`. Результат — `dist\UUF.exe` с иконкой приложения. Скрипт лежит в ресурсах exe в открытом виде, поэтому это оболочка запуска, а не защита кода; источник правды — `.ps1`.
+
+Если заданы секреты CI `UUF_SIGN_PFX_BASE64` и `UUF_SIGN_PFX_PASSWORD`, `UUF.exe` подписывается сертификатом Authenticode через `build\Sign-Uuf.ps1`. Без них exe остаётся неподписанным.
 
 С версии 2.10.20 exe не распространяется: CI собирает только пакет из скриптов (`build\Package-Uuf.ps1`). Раздел оставлен на случай локальной сборки.
 
@@ -70,7 +72,7 @@ powershell -ExecutionPolicy Bypass -File .\Install-UUF.ps1
 С версии 2.10.22 в релизе снова есть `UUF.exe` (сборка ps2exe). Microsoft Defender мог сообщать о Trojan:Win32/Sabsik.FL.A!ml на эту оболочку — такое срабатывание ложное, но его может показывать Defender. Если появилось предупреждение: сообщите название файла и текст уведомления и отправьте файл вендору как ложное срабатывание.
 
 
-`UUF.exe` — оболочка ps2exe: встроенный `.ps1`-скрипт и C#-загрузчик PowerShell. Движки, работающие по машинному обучению (Malwarebytes `MachineLearning/Anomalous`, SentinelOne `Static AI`, Elastic, K7, Dr.Web `Trojan.Siggen*`), реагируют на любую неподписанную PS-обёртку с незнакомой энтропией — это вердикт «класс подозрительного», а не сигнатура вредоноса; вирусные базы его не «лечат», и то же самое ловит любой самопальный ps2exe-бинарь.
+`UUF.exe` — оболочка: встроенный `.ps1`-скрипт и C#-загрузчик PowerShell. Движки, работающие по машинному обучению (Malwarebytes `MachineLearning/Anomalous`, SentinelOne `Static AI`, Elastic, K7, Dr.Web `Trojan.Siggen*`), реагируют на любую неподписанную PS-обёртку с незнакомой энтропией — это вердикт «класс подозрительного», а не сигнатура вредоноса; вирусные базы его не «лечат», и то же самое ловит любой самопальный ps2exe-бинарь.
 
 Что сделано, чтобы шума было меньше:
 
