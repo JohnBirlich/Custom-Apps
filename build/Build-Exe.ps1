@@ -116,9 +116,10 @@ $compilerArguments = @(
 )
 
 try {
-    & $cscPath @compilerArguments | Out-Host
+    $compilerOutput = @(& $cscPath @compilerArguments 2>&1 | ForEach-Object { [string]$_ })
+    foreach ($line in $compilerOutput) { Write-Host $line }
     if ($LASTEXITCODE -ne 0) {
-        throw ('csc.exe завершился с кодом ' + $LASTEXITCODE)
+        throw ('csc.exe завершился с кодом ' + $LASTEXITCODE + ': ' + (($compilerOutput | Select-Object -Last 8) -join ' | '))
     }
 } finally {
     if ([System.IO.Directory]::Exists($workDirectory)) {
