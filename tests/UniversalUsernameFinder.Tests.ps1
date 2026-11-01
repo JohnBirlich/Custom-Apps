@@ -1855,7 +1855,7 @@ Describe 'Версия 2.10.20: распространение без exe' {
 
 Describe 'Версия 2.10.22: готовый UUF.exe в релизе' {
     It 'версия не ниже 2.10.22' {
-        $global:UufMainText | Should -Match '\\$script:AppVersion = ''2\\.10\\.(2[2-9]|[3-9][0-9])'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(2[2-9]|[3-9][0-9])'''
     }
     It 'CI собирает UUF.exe отдельной джобой и кладёт его в артефакт пакета' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
