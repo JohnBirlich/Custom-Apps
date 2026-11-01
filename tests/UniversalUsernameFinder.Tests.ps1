@@ -1810,11 +1810,22 @@ Describe 'Версия 2.10.16: заставка загрузки' {
 }
 
 Describe 'Версия 2.10.18: заставка ждёт готовности и держится не меньше 3 секунд' {
-    It 'версия 2.10.18' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.18'''
+    It 'версия не ниже 2.10.18' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(1[89]|[2-9][0-9])'''
     }
     It 'заставка сообщает о готовности и закрывается после ожидания' {
         $global:UufFullText | Should -Match 'splash\.ready'
         $global:UufFullText | Should -Match 'Add_ContentRendered'
+    }
+}
+
+Describe 'Версия 2.10.19: заставка без дочернего powershell' {
+    It 'версия 2.10.19' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.19'''
+    }
+    It 'заставка не запускает powershell.exe с EncodedCommand и обходом политики' {
+        $global:UufFullText | Should -Not -Match 'EncodedCommand'
+        $global:UufFullText | Should -Not -Match 'ExecutionPolicy'
+        $global:UufFullText | Should -Match 'RunspaceFactory'
     }
 }
