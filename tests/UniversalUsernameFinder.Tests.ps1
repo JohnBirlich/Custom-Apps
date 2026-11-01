@@ -1884,3 +1884,22 @@ Describe 'Версия 2.10.23: главное окно 1920x1080 на осно�
         $global:UufMainText.Contains('$script:Form.WindowState = [System.Windows.Forms.FormWindowState]') | Should -BeFalse
     }
 }
+
+Describe 'Версия 2.10.24: видео заставки вшито в UUF.exe' {
+    It 'версия не ниже 2.10.24' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(2[4-9]|[3-9][0-9])'''
+    }
+    It 'скрипт умеет брать видео из вшитых частей и кэшировать его в папке приложения' {
+        $global:UufFullText.Contains('$script:EmbeddedVideoParts = @()') | Should -BeTrue
+        $global:UufFullText.Contains('function Get-StartupVideoPath') | Should -BeTrue
+        $global:UufFullText.Contains('startup-video.mp4') | Should -BeTrue
+        $global:UufFullText.Contains('[Convert]::FromBase64String((-join') | Should -BeTrue
+    }
+    It 'сборка встраивает видео во временную копию скрипта и проверяет размер exe' {
+        $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
+        $buildText.Contains('$script:EmbeddedVideoParts = @()') | Should -BeTrue
+        $buildText.Contains('uuf-embedded-') | Should -BeTrue
+        $buildText.Contains('Видео не вшилось в exe') | Should -BeTrue
+    }
+}
+

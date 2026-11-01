@@ -66,8 +66,33 @@ if ([System.IO.File]::Exists($outputPath)) {
 }
 
 $iconPath = Join-Path $repositoryRoot 'assets\uuf.ico'
+$videoSourcePath = Join-Path $repositoryRoot 'assets\digital_word_eye.mp4'
+$compileScriptPath = $scriptPath
+$embeddedScriptPath = ''
+$videoEmbedded = $false
+if ([System.IO.File]::Exists($videoSourcePath)) {
+    $videoBase64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($videoSourcePath))
+    $chunkSize = 500000
+    $chunks = New-Object System.Collections.Generic.List[string]
+    for ($offset = 0; $offset -lt $videoBase64.Length; $offset += $chunkSize) {
+        $length = [Math]::Min($chunkSize, $videoBase64.Length - $offset)
+        $chunks.Add("'" + $videoBase64.Substring($offset, $length) + "'")
+    }
+    $placeholder = '$script:EmbeddedVideoParts = @()'
+    if (-not $scriptText.Contains($placeholder)) {
+        throw 'В UniversalUsernameFinder.ps1 не найдена метка для встраивания видео'
+    }
+    $replacement = '$script:EmbeddedVideoParts = @(' + [string]::Join(',' + [Environment]::NewLine, $chunks) + ')'
+    $embeddedText = $scriptText.Replace($placeholder, $replacement)
+    $embeddedScriptPath = Join-Path ([System.IO.Path]::GetTempPath()) ('uuf-embedded-' + [guid]::NewGuid().ToString('N') + '.ps1')
+    [System.IO.File]::WriteAllText($embeddedScriptPath, $embeddedText, (New-Object System.Text.UTF8Encoding -ArgumentList $true))
+    $compileScriptPath = $embeddedScriptPath
+    $videoEmbedded = $true
+    Write-Host ('Видео встраивается в exe: ' + [int]([System.IO.FileInfo]$videoSourcePath).Length + ' байт')
+}
+
 $buildArguments = @{
-    inputFile   = $scriptPath
+    inputFile   = $compileScriptPath
     outputFile  = $outputPath
     noConsole   = $true
     STA         = $true
@@ -82,13 +107,20 @@ $buildArguments = @{
 }
 if ([System.IO.File]::Exists($iconPath)) { $buildArguments['iconFile'] = $iconPath }
 
-Invoke-ps2exe @buildArguments
+try {
+    Invoke-ps2exe @buildArguments
+} finally {
+    if ($embeddedScriptPath -and [System.IO.File]::Exists($embeddedScriptPath)) { Remove-Item -LiteralPath $embeddedScriptPath -Force }
+}
 
 if (-not [System.IO.File]::Exists($outputPath)) {
     throw ('Сборка завершилась без результата: файл не создан (' + $outputPath + ')')
 }
 
 $sizeKb = [int][Math]::Round(([System.IO.FileInfo]$outputPath).Length / 1KB)
+if ($videoEmbedded -and $sizeKb -lt 8000) {
+    throw ('Видео не вшилось в exe: размер ' + $sizeKb + ' КБ')
+}
 if ($sizeKb -lt 20) {
     throw ('Собранный файл подозрительно мал (' + $sizeKb + ' КБ): вероятно, сборка прошла некорректно')
 }

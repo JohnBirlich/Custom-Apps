@@ -1,6 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.23'
+$script:AppVersion = '2.10.24'
+$script:EmbeddedVideoParts = @()
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -4013,7 +4014,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.23' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.24' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -5020,17 +5021,30 @@ $uufResizeEdgeLeft = New-UufResizeEdge 'ResizeEdgeLeft' 0 0 6 $uufClientHeight '
 $uufResizeEdgeRight = New-UufResizeEdge 'ResizeEdgeRight' $uufEdgeRightX 0 6 $uufClientHeight 'Top, Bottom, Right' ([System.Windows.Forms.Cursors]::SizeWE) 11
 $uufResizeEdgeBottom = New-UufResizeEdge 'ResizeEdgeBottom' 0 $uufEdgeBottomY $uufClientWidth 6 'Bottom, Left, Right' ([System.Windows.Forms.Cursors]::SizeNS) 15
 
+function Get-StartupVideoPath {
+    $cacheDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
+    if ($script:EmbeddedVideoParts.Count -gt 0) {
+        $null = [System.IO.Directory]::CreateDirectory($cacheDirectory)
+        $videoBytes = [Convert]::FromBase64String((-join $script:EmbeddedVideoParts))
+        $cachedPath = Join-Path $cacheDirectory 'startup-video.mp4'
+        $cachedLength = -1
+        if ([System.IO.File]::Exists($cachedPath)) { $cachedLength = ([System.IO.FileInfo]$cachedPath).Length }
+        if ($cachedLength -ne $videoBytes.Length) { [System.IO.File]::WriteAllBytes($cachedPath, $videoBytes) }
+        return $cachedPath
+    }
+    $videoPath = Join-Path (Get-AppDirectory) 'assets\digital_word_eye.mp4'
+    if ([System.IO.File]::Exists($videoPath)) { return $videoPath }
+    return ''
+}
+
 function Show-StartupVideo {
     $script:SplashShell = $null
     $script:SplashRunspace = $null
     $script:SplashAsync = $null
     $script:SplashState = $null
     try {
-        $videoPath = Join-Path (Get-AppDirectory) 'digital_word_eye.mp4'
-        if (-not [System.IO.File]::Exists($videoPath)) {
-            $videoPath = Join-Path (Get-AppDirectory) 'assets\digital_word_eye.mp4'
-        }
-        if (-not [System.IO.File]::Exists($videoPath)) { return }
+        $videoPath = Get-StartupVideoPath
+        if ([string]::IsNullOrWhiteSpace($videoPath) -or -not [System.IO.File]::Exists($videoPath)) { return }
 
         $logDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
         $null = [System.IO.Directory]::CreateDirectory($logDirectory)
