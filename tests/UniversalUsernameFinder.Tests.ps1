@@ -1338,7 +1338,7 @@ Describe 'Версия 2.8.9: SmartScreen-нюансы' {
         $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
         $installText.Contains('Unblock-File -LiteralPath $targetExe') | Should -BeTrue
         $installText.Contains('$trustAppliedNow') | Should -BeTrue
-        $installText.Contains('Внимание: файл не подписан') | Should -BeTrue
+        $installText.Contains('Скрипт UUF не подписан цифровой подписью') | Should -BeTrue
         $installText.Contains('Подпись проверена: издатель Hasberd') | Should -BeTrue
     }
     It 'журнал приложения фиксирует статус подписи запускаемого файла' {
