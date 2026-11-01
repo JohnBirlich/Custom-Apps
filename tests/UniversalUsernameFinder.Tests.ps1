@@ -273,7 +273,7 @@ Describe 'Структура скрипта' {
     }
 
     It 'хранилище аккаунтов перенесено из папки RobloxNickFinder с миграцией' {
-        $global:UufMainText.Contains('$script:VaultDirectory = Join-Path $env:LOCALAPPDATA ''UniversalUsernameFinder''') | Should -BeTrue
+        $global:UufMainText.Contains('$script:VaultDirectory = Join-Path $env:APPDATA ''UniversalUsernameFinder''') | Should -BeTrue
         $global:UufMainText.Contains('$script:LegacyVaultPath = Join-Path $script:LegacyVaultDirectory ''accounts.dat''') | Should -BeTrue
         $global:UufMainText.Contains('function Migrate-LegacyVault') | Should -BeTrue
         $global:UufMainText.Contains('.migrated') | Should -BeTrue
