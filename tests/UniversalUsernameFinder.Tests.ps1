@@ -273,7 +273,7 @@ Describe 'Структура скрипта' {
     }
 
     It 'хранилище аккаунтов перенесено из папки RobloxNickFinder с миграцией' {
-        $global:UufMainText.Contains('$script:VaultDirectory = Join-Path $env:LOCALAPPDATA ''UniversalUsernameFinder''') | Should -BeTrue
+        $global:UufMainText.Contains('$script:VaultDirectory = Join-Path $env:APPDATA ''UniversalUsernameFinder''') | Should -BeTrue
         $global:UufMainText.Contains('$script:LegacyVaultPath = Join-Path $script:LegacyVaultDirectory ''accounts.dat''') | Should -BeTrue
         $global:UufMainText.Contains('function Migrate-LegacyVault') | Should -BeTrue
         $global:UufMainText.Contains('.migrated') | Should -BeTrue
@@ -1909,9 +1909,12 @@ Describe 'Версия 2.10.25: C#-лаунчер вместо ps2exe и под�
         [System.IO.File]::Exists($launcherPath) | Should -BeTrue
         $launcherText = [System.IO.File]::ReadAllText($launcherPath)
         $launcherText.Contains('UniversalUsernameFinder.ps1') | Should -BeTrue
-        $launcherText.Contains('RemoteSigned') | Should -BeTrue
+        $launcherText.Contains('System.Management.Automation') | Should -BeTrue
+        $launcherText.Contains('PowerShell.Create()') | Should -BeTrue
+        $launcherText.Contains('ApartmentState.STA') | Should -BeTrue
         $launcherText.Contains('Bypass') | Should -BeFalse
         $launcherText.Contains('-EncodedCommand') | Should -BeFalse
+        $launcherText.Contains('powershell.exe') | Should -BeFalse
     }
     It 'сборка компилирует лаунчер через csc.exe, а не ps2exe' {
         $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
@@ -1927,3 +1930,22 @@ Describe 'Версия 2.10.25: C#-лаунчер вместо ps2exe и под�
     }
 }
 
+Describe 'Версия 2.10.26: скрипт в процессе exe и пароли вне папки деинсталлятора' {
+    It 'лаунчер выполняет скрипт в собственном процессе, без дочернего powershell.exe' {
+        $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
+        $buildText.Contains('System.Management.Automation.dll') | Should -BeTrue
+        $buildText.Contains('/reference:') | Should -BeTrue
+    }
+    It 'хранилище паролей лежит в APPDATA и шифруется DPAPI' {
+        $global:UufFullText.Contains('$script:VaultDirectory = Join-Path $env:APPDATA ''UniversalUsernameFinder''') | Should -BeTrue
+        $global:UufFullText.Contains('[System.Security.Cryptography.ProtectedData]::Protect') | Should -BeTrue
+    }
+    It 'старое хранилище из LOCALAPPDATA переносится при запуске' {
+        $global:UufFullText.Contains('$script:PreviousVaultPath') | Should -BeTrue
+    }
+    It 'деинсталлятор не удаляет сохранённые пароли из APPDATA' {
+        $uninstallText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\\Uninstall-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $uninstallText.Contains('Сохранённые пароли не удаляются') | Should -BeTrue
+        $uninstallText.Contains('APPDATA') | Should -BeTrue
+    }
+}

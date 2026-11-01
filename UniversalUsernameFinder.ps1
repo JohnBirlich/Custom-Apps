@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $script:UiFontFamily = 'Tahoma'
-$script:AppVersion = '2.10.25'
+$script:AppVersion = '2.10.26'
 $script:EmbeddedVideoParts = @()
 
 trap {
@@ -81,8 +81,9 @@ try {
 } catch { }
 
 Add-Type -AssemblyName System.Security
-$script:VaultDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
+$script:VaultDirectory = Join-Path $env:APPDATA 'UniversalUsernameFinder'
 $script:VaultPath = Join-Path $script:VaultDirectory 'accounts.dat'
+$script:PreviousVaultPath = Join-Path (Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder') 'accounts.dat'
 $script:LegacyVaultDirectory = Join-Path $env:LOCALAPPDATA 'RobloxNickFinder'
 $script:LegacyVaultPath = Join-Path $script:LegacyVaultDirectory 'accounts.dat'
 $script:VaultEntropy = [System.Text.Encoding]::UTF8.GetBytes('RobloxNickFinder:account-vault:v1')
@@ -121,6 +122,11 @@ function Write-StartupLog {
 
 function Migrate-LegacyVault {
     try {
+        if ([System.IO.File]::Exists($script:PreviousVaultPath) -and -not [System.IO.File]::Exists($script:VaultPath)) {
+            $null = [System.IO.Directory]::CreateDirectory($script:VaultDirectory)
+            [System.IO.File]::Copy($script:PreviousVaultPath, $script:VaultPath, $false)
+            Write-StartupLog 'Зашифрованное хранилище аккаунтов перенесено в %APPDATA%\UniversalUsernameFinder.'
+        }
         if (-not [System.IO.File]::Exists($script:LegacyVaultPath)) { return }
         if ([System.IO.File]::Exists($script:VaultPath)) { return }
         $null = [System.IO.Directory]::CreateDirectory($script:VaultDirectory)
@@ -2094,6 +2100,7 @@ function Save-EncryptedAccountRecords {
     try {
         [System.IO.File]::WriteAllBytes($tempPath, $cipher)
         if ([System.IO.File]::Exists($vaultFull)) {
+            try { [System.IO.File]::Copy($vaultFull, [System.IO.Path]::Combine($directoryFull, 'accounts.dat.bak'), $true) } catch { }
             try {
                 [System.IO.File]::Replace($tempPath, $vaultFull, $backupPath)
             } catch {

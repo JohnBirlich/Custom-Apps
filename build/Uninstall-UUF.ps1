@@ -134,7 +134,7 @@ if ($RemoveData) {
 } elseif ($KeepData) {
     $removeData = $false
 } elseif (-not $Silent) {
-    $answer = Read-Host 'Удалить также историю, настройки, сейф и журнал? [Д/н]'
+    $answer = Read-Host 'Удалить также историю, настройки и журнал? Сохранённые пароли не удаляются. [Д/н]'
     if ($answer -match '^(н|n|Н|N)') { $removeData = $false }
 }
 
@@ -146,7 +146,8 @@ $programRemoved = Remove-UufDirectory -Path $targetDirectory -Label 'Прогр�
 if ($removeData) {
     $null = Remove-UufDirectory -Path $dataDirectory -Label 'Данные'
 } else {
-    Write-Step ('История, настройки и сейф сохранены: ' + $dataDirectory)
+    Write-Step ('История, настройки и журнал сохранены: ' + $dataDirectory)
+    Write-Step ('Сохранённые пароли не тронуты: ' + (Join-Path $env:APPDATA 'UniversalUsernameFinder'))
 }
 if ($programRemoved) {
     Write-Step 'Папка программы удалена полностью.'
