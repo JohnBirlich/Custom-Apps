@@ -1,11 +1,4 @@
-﻿# Сборка AppUninstaller.exe — самостоятельной программы полного удаления
-# Universal Username Finder (исходник: build\Uninstall-UUF.ps1, ps2exe, консольный режим).
-#
-# .exe двойной клик без PowerShell: удаляет программу, ярлыки, запись в
-# «Приложения и возможности», доверие сертификату Hasberd и (после подтверждения) данные.
-#
-# Запуск:  powershell -ExecutionPolicy Bypass -File build\Build-Uninstaller.ps1
-# Результат: ..\dist\AppUninstaller.exe
+﻿
 
 [CmdletBinding()]
 param(
@@ -30,7 +23,6 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
 $null = [System.IO.Directory]::CreateDirectory($OutputDirectory)
 $outputPath = Join-Path $OutputDirectory 'AppUninstaller.exe'
 
-# --- Версия берётся из главного скрипта приложения, чтобы установщик и деинсталлятор не разъезжались по метаданным
 $mainScriptPath = Join-Path $repositoryRoot 'UniversalUsernameFinder.ps1'
 $appVersion = '0.0.0'
 if ([System.IO.File]::Exists($mainScriptPath)) {
@@ -70,7 +62,6 @@ if ([System.IO.File]::Exists($outputPath)) {
     try { [System.IO.File]::Delete($outputPath) } catch { }
 }
 
-# --- Консольный режим (без -noConsole): видны шаги удаления и работает подтверждение ввода.
 $iconPath = Join-Path $repositoryRoot 'assets\uuf.ico'
 $buildArguments = @{
     inputFile   = $scriptPath

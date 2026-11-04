@@ -1,5 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
-$script:AppVersion = '2.9.3'
+$script:UiFontFamily = 'Tahoma'
+$script:AppVersion = '2.10.28'
+$script:EmbeddedVideoParts = @()
 
 trap {
     $trapMessage = $_.Exception.Message
@@ -31,7 +33,6 @@ function Get-AppDirectory {
 }
 
 function Resolve-LogPath {
-    # --- Журнал пишется в %LOCALAPPDATA%\UniversalUsernameFinder, где его не затирает сборка; папка программы — portable-резерв
     $primary = Join-Path (Get-AppDirectory) 'UniversalUsernameFinder.log'
     try {
         $preferredDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
@@ -64,11 +65,9 @@ function Rotate-AppLog {
     } catch { }
 }
 
-# --- Журнал и стартовая диагностика
 $script:LogPath = Resolve-LogPath
 Rotate-AppLog
 
-# --- Статус подписи запускаемого файла: по таким строкам в журнале видно, собрана ли подпись и доверен ли издатель
 try {
     $uufSelfPath = [string]([Environment]::GetCommandLineArgs()[0])
     if ($uufSelfPath -and (Test-Path -LiteralPath $uufSelfPath) -and ($uufSelfPath -notmatch '(?i)\\(powershell(_ise)?|pwsh)(\.cat)?(\.exe)?$')) {
@@ -82,8 +81,9 @@ try {
 } catch { }
 
 Add-Type -AssemblyName System.Security
-$script:VaultDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
+$script:VaultDirectory = Join-Path $env:APPDATA 'UniversalUsernameFinder'
 $script:VaultPath = Join-Path $script:VaultDirectory 'accounts.dat'
+$script:PreviousVaultPath = Join-Path (Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder') 'accounts.dat'
 $script:LegacyVaultDirectory = Join-Path $env:LOCALAPPDATA 'RobloxNickFinder'
 $script:LegacyVaultPath = Join-Path $script:LegacyVaultDirectory 'accounts.dat'
 $script:VaultEntropy = [System.Text.Encoding]::UTF8.GetBytes('RobloxNickFinder:account-vault:v1')
@@ -120,12 +120,27 @@ function Write-StartupLog {
     } catch { }
 }
 
+function Backup-AccountVault {
+    $backupDirectory = Join-Path $script:VaultDirectory 'backups'
+    $null = [System.IO.Directory]::CreateDirectory($backupDirectory)
+    $stamp = (Get-Date).ToString('yyyyMMdd-HHmmss-fff')
+    $name = 'accounts-' + $stamp + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.dat'
+    [System.IO.File]::Copy($script:VaultPath, [System.IO.Path]::Combine($backupDirectory, $name), $false)
+}
+
 function Migrate-LegacyVault {
     try {
+        if ([System.IO.File]::Exists($script:PreviousVaultPath) -and -not [System.IO.File]::Exists($script:VaultPath)) {
+            $null = [System.IO.Directory]::CreateDirectory($script:VaultDirectory)
+            [System.IO.File]::Copy($script:PreviousVaultPath, $script:VaultPath, $false)
+            Backup-AccountVault
+            Write-StartupLog 'Зашифрованное хранилище аккаунтов перенесено в %APPDATA%\UniversalUsernameFinder.'
+        }
         if (-not [System.IO.File]::Exists($script:LegacyVaultPath)) { return }
         if ([System.IO.File]::Exists($script:VaultPath)) { return }
         $null = [System.IO.Directory]::CreateDirectory($script:VaultDirectory)
         [System.IO.File]::Copy($script:LegacyVaultPath, $script:VaultPath, $false)
+        Backup-AccountVault
         try { [System.IO.File]::Move($script:LegacyVaultPath, ($script:LegacyVaultPath + '.migrated')) } catch { }
         Write-StartupLog 'Хранилище аккаунтов перенесено из папки RobloxNickFinder в UniversalUsernameFinder.'
     } catch {
@@ -276,7 +291,6 @@ $script:Modifiers = @(
     @{Word='One'; Meaning='один, единственный'}, @{Word='X'; Meaning='загадочный символ'}
 )
 
-# --- Словарь: категории и слова
 $script:WordCategories = @(
     'Космос','Свет и энергия','Природа','Мифология','Эмоции и характер','Скорость',
     'Абстрактное','Эстетика','Технологии и кибер','Игры и киберспорт','Животные',
@@ -341,7 +355,6 @@ $script:MeaningGroups = @{
     'Русские слова латиницей' = @('Privet','Phizik','Shizik','Cloun','Debil','Poka','Khorosho','Avos','Nibudo','Bardak','Kefir','Pelmeni','Shaurma','Tovarich','Kartoshka','Arbuz')
 }
 
-# --- Слоги и редкие слова
 $script:InventedOnsets = @(
     'k','kr','v','vr','d','dr','t','tr','n','z','s','st','r','l','m','p','b','g','gr','f','fl',
     'th','sh','ch','x','qu','br','pr','sn','sl','sm','sk','c','h','j','w','y','kl','gl','bl',
@@ -394,7 +407,7 @@ $script:LastGridRefresh = [DateTime]::MinValue
 $script:GridRefreshPending = $false
 $script:StatusColors = @{
     'Свободен'            = [System.Drawing.Color]::FromArgb(99,222,151)
-    'Вероятно свободен'   = [System.Drawing.Color]::FromArgb(120,205,250) # legacy: старые записи истории
+    'Вероятно свободен'   = [System.Drawing.Color]::FromArgb(120,205,250)
     'Занят'               = [System.Drawing.Color]::FromArgb(245,120,120)
     'Недопустимый'        = [System.Drawing.Color]::FromArgb(180,188,203)
     'Не подтверждено'      = [System.Drawing.Color]::FromArgb(207,185,255)
@@ -471,7 +484,7 @@ function Get-NickStructure {
 }
 
 function Convert-ToNickToken {
-    param([string]$Text)
+    param([string]$Text, [switch]$KeepSymbols)
     if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
     $value = $Text.Trim().ToLowerInvariant()
     $known = @{
@@ -491,8 +504,10 @@ function Convert-ToNickToken {
         $character = [string]$char
         if ($map.ContainsKey($character)) { [void]$builder.Append([string]$map[$character]) }
         elseif ($character -match '[a-z0-9]') { [void]$builder.Append($character) }
+        elseif ($KeepSymbols -and $character -match '[._-]') { [void]$builder.Append($character) }
     }
     $result = $builder.ToString()
+    if ($KeepSymbols) { $result = $result.Trim('._-') }
     if ($result.Length -gt 0) { return $result.Substring(0,1).ToUpperInvariant() + $result.Substring(1) }
     return ''
 }
@@ -503,7 +518,6 @@ function Test-RobloxUsernameFormat {
     return ($Username.Length -ge 3 -and $Username.Length -le 20 -and $Username -match '^[A-Za-z0-9_]+$' -and $Username -match '[A-Za-z0-9]' -and $Username -notmatch '^_|_$|__')
 }
 
-# --- Платформы и правила длины
 $script:SupportedPlatforms = @('Roblox','Google','Mail.ru','VK','Discord','Outlook','Telegram','Steam','GitHub','YouTube')
 
 function Test-SupportedPlatform {
@@ -583,12 +597,11 @@ function Test-UsernameFormat {
         'VK' { return ($Username.Length -ge 5 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9._]+$' -and $Username -notmatch '(^[._]|[._]$|\.\.|__)' -and $Username -notmatch '^\d+$') }
         'Outlook' { return ($Username.Length -ge 3 -and $Username.Length -le 64 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]?$' -and $Username -notmatch '([._-]$|[._-]{2})') }
         'GitHub' { return ($Username.Length -ge 1 -and $Username.Length -le 39 -and $Username -match '^(?!-)(?!.*--)[A-Za-z0-9-]+(?<!-)$') }
-# --- Discord Api
         'Discord' {
             $discordNameForFormat = $Username.ToLowerInvariant()
             return ($Username.Length -ge 2 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_.]+$' -and $Username -notmatch '(^\.|\.$|\.\.)' -and $discordNameForFormat -notin @('discord','clyde','nitro','here','everyone','system'))
         }
-        'YouTube' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9._-]+$' -and $Username -notmatch '(^\.|\.$|\.\.)') }
+        'YouTube' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$' -and $Username -notmatch '\.\.') }
         'Telegram' { return ($Username.Length -ge 5 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z][A-Za-z0-9_]*$') }
         'Steam' { return ($Username.Length -ge 3 -and $Username.Length -le 30 -and $Username -match '^[A-Za-z0-9][A-Za-z0-9_-]*$') }
         default { return ($Username.Length -ge 3 -and $Username.Length -le 32 -and $Username -match '^[A-Za-z0-9_.-]+$') }
@@ -669,7 +682,6 @@ function Convert-ToLeetWord {
     return (-join $chars)
 }
 
-# --- Генератор ников
 function New-AdvancedCandidatePool {
     param(
         [string[]]$SelectedWordCategories,
@@ -691,7 +703,8 @@ function New-AdvancedCandidatePool {
         [bool]$LeetWords,
         [bool]$RareShort,
         [bool]$Ordered,
-        [bool]$RandomChars
+        [bool]$RandomChars,
+        [bool]$ExactOnly
     )
     if ($null -eq $ExcludeKeys) { $ExcludeKeys = @{} }
     if ($Count -lt 1) { $Count = 1 }
@@ -708,7 +721,7 @@ function New-AdvancedCandidatePool {
         }
     }
     foreach ($rawWord in ($CustomWords -split '[,;\s]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
-        $word = Convert-ToNickToken $rawWord
+        $word = Convert-ToNickToken -Text $rawWord -KeepSymbols
         if ($word.Length -gt 0) { [void]$anchors.Add([pscustomobject]@{Word=$word; Meaning='ваше ключевое слово'; Category='Свои слова'}) }
     }
 
@@ -735,7 +748,7 @@ function New-AdvancedCandidatePool {
     $rareWords = @($script:RareShortWords)
 
     $maximum = $MaxLength
-    if ($OnlyShort) { $maximum = [Math]::Min($maximum, 12) }
+    if ($OnlyShort -and -not $ExactOnly) { $maximum = [Math]::Min($maximum, 12) }
     $joiner = ''
     if ($UseUnderscore) { $joiner = '_' }
 
@@ -802,7 +815,7 @@ function New-AdvancedCandidatePool {
         if (-not $Ordered) { $items = Get-ShuffledArray -Items $items }
         foreach ($base in $items) {
             if ($result.Count -ge $StopAtTotal) { break }
-            $word = [regex]::Replace([string]$base.Word, '[^A-Za-z0-9]', '')
+            $word = [regex]::Replace([string]$base.Word, '[^A-Za-z0-9._-]', '')
             if ($word.Length -lt 1) { continue }
             if (& $tryAccept $word ([string]$base.Meaning) ([string]$base.Category) 'Одно слово') {
                 $counters['Single'] = $counters['Single'] + 1
@@ -842,8 +855,8 @@ function New-AdvancedCandidatePool {
                 $reverse = ($index % 2) -eq 1
                 $baseItem = $baseArray[[int][Math]::Floor($combo / $secondArray.Count)]
                 $secondItem = $secondArray[$combo % $secondArray.Count]
-                $left = [regex]::Replace([string]$baseItem.Word, '[^A-Za-z0-9]', '')
-                $right = [regex]::Replace([string]$secondItem.Word, '[^A-Za-z0-9]', '')
+                $left = [regex]::Replace([string]$baseItem.Word, '[^A-Za-z0-9._-]', '')
+                $right = [regex]::Replace([string]$secondItem.Word, '[^A-Za-z0-9._-]', '')
                 if ($left.Length -lt 1 -or $right.Length -lt 1 -or $left -ieq $right) { continue }
                 if ($reverse) {
                     $name = $right + $joiner + $left
@@ -866,8 +879,8 @@ function New-AdvancedCandidatePool {
             $attempts++
             $baseItem = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
             $secondItem = $secondArray[(Get-Random -Minimum 0 -Maximum $secondArray.Count)]
-            $left = [regex]::Replace([string]$baseItem.Word, '[^A-Za-z0-9]', '')
-            $right = [regex]::Replace([string]$secondItem.Word, '[^A-Za-z0-9]', '')
+            $left = [regex]::Replace([string]$baseItem.Word, '[^A-Za-z0-9._-]', '')
+            $right = [regex]::Replace([string]$secondItem.Word, '[^A-Za-z0-9._-]', '')
             if ($left.Length -lt 1 -or $right.Length -lt 1 -or $left -ieq $right) { $failStreak++; continue }
             if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) {
                 $name = $left + $joiner + $right
@@ -896,7 +909,7 @@ function New-AdvancedCandidatePool {
             $structure = 'Одно слово'
             if ($hasAnchors) {
                 $anchor = $bases[(Get-Random -Minimum 0 -Maximum $bases.Count)]
-                $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9]', '')
+                $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9._-]', '')
                 if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) {
                     $name = $anchorWord + $joiner + $word
                     $meaning = '{0} + выдуманное слово' -f [string]$anchor.Meaning
@@ -932,14 +945,14 @@ function New-AdvancedCandidatePool {
             $meaning = 'два выдуманных слова'
             if ($hasAnchors -and $baseArray.Count -ge 1) {
                 $anchor = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
-                $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9]', '')
+                $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9._-]', '')
                 if ($anchorWord.Length -ge 1) {
                     if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) { $left = $anchorWord } else { $right = $anchorWord }
                     $meaning = '{0} + выдуманное слово' -f [string]$anchor.Meaning
                 }
             } elseif ($baseArray.Count -ge 1 -and $secondArray.Count -ge 1 -and (Get-Random -Minimum 0 -Maximum 2) -eq 0) {
                 $item = $secondArray[(Get-Random -Minimum 0 -Maximum $secondArray.Count)]
-                $itemWord = [regex]::Replace([string]$item.Word, '[^A-Za-z0-9]', '')
+                $itemWord = [regex]::Replace([string]$item.Word, '[^A-Za-z0-9._-]', '')
                 if ($itemWord.Length -ge 1) {
                     if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) { $right = $itemWord } else { $left = $itemWord }
                     $meaning = 'выдуманное слово + {0}' -f [string]$item.Meaning
@@ -971,8 +984,8 @@ function New-AdvancedCandidatePool {
             if ($baseArray.Count -ge 1 -and $secondArray.Count -ge 1 -and $mode -eq 1) {
                 $baseItem = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
                 $secondItem = $secondArray[(Get-Random -Minimum 0 -Maximum $secondArray.Count)]
-                $left = [regex]::Replace([string]$baseItem.Word, '[^A-Za-z0-9]', '')
-                $right = [regex]::Replace([string]$secondItem.Word, '[^A-Za-z0-9]', '')
+                $left = [regex]::Replace([string]$baseItem.Word, '[^A-Za-z0-9._-]', '')
+                $right = [regex]::Replace([string]$secondItem.Word, '[^A-Za-z0-9._-]', '')
                 if ($left.Length -ge 1 -and $right.Length -ge 1 -and $left -ine $right) {
                     $sourceName = $left + $joiner + $right
                     $structure = 'Два слова'
@@ -981,14 +994,14 @@ function New-AdvancedCandidatePool {
                 }
             } elseif ($baseArray.Count -ge 1 -and $mode -eq 0) {
                 $item = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
-                $sourceName = [regex]::Replace([string]$item.Word, '[^A-Za-z0-9]', '')
+                $sourceName = [regex]::Replace([string]$item.Word, '[^A-Za-z0-9._-]', '')
                 $meaning = '{0} + замена символами' -f [string]$item.Meaning
             }
             if ([string]::IsNullOrWhiteSpace($sourceName)) {
                 $inventedWord = New-InventedWord -MinLength ([Math]::Max(3, $MinLength)) -MaxLength $maximum
                 if ($hasAnchors -and $baseArray.Count -ge 1) {
                     $anchor = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
-                    $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9]', '')
+                    $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9._-]', '')
                     if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) { $sourceName = $anchorWord + $joiner + $inventedWord } else { $sourceName = $inventedWord + $joiner + $anchorWord }
                     $structure = 'Два слова'
                     $meaning = '{0} + выдуманное слово + замена символами' -f [string]$anchor.Meaning
@@ -1030,7 +1043,7 @@ function New-AdvancedCandidatePool {
             }
             if ($hasAnchors -and $baseArray.Count -ge 1) {
                 $anchor = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
-                $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9]', '')
+                $anchorWord = [regex]::Replace([string]$anchor.Word, '[^A-Za-z0-9._-]', '')
                 if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) {
                     $name = $anchorWord + $joiner + $name
                     $meaning = '{0} + редкое короткое слово' -f [string]$anchor.Meaning
@@ -1071,7 +1084,7 @@ function New-AdvancedCandidatePool {
             } else {
                 if ($baseArray.Count -ge 1) {
                     $item = $baseArray[(Get-Random -Minimum 0 -Maximum $baseArray.Count)]
-                    $baseName = [regex]::Replace([string]$item.Word, '[^A-Za-z0-9]', '')
+                    $baseName = [regex]::Replace([string]$item.Word, '[^A-Za-z0-9._-]', '')
                     $meaning = '{0} + число' -f [string]$item.Meaning
                     $category = [string]$item.Category
                 } else {
@@ -1143,7 +1156,27 @@ function New-AdvancedCandidatePool {
         Random = $fillRandom
     }
 
-    $perSource = [int][Math]::Ceiling($Count / $activeSources.Count)
+    if ($ExactOnly) {
+        $activeSources.Clear()
+        foreach ($item in $anchors) {
+            if ($result.Count -ge $Count) { break }
+            $exactName = ([string]$item.Word).ToLowerInvariant()
+            [void](& $tryAccept $exactName 'ваше ключевое слово' 'Свои слова' 'Одно слово')
+        }
+        if ($UseNumbers) {
+            for ($number = 1; $number -le 10000 -and $result.Count -lt $Count; $number++) {
+                $fitted = $false
+                foreach ($item in $anchors) {
+                    if ($result.Count -ge $Count) { break }
+                    $candidate = ([string]$item.Word).ToLowerInvariant() + [string]$number
+                    if ($candidate.Length -le $maximum) { $fitted = $true }
+                    [void](& $tryAccept $candidate ('{0} + число' -f [string]$item.Meaning) 'Свои слова' 'Одно слово')
+                }
+                if (-not $fitted) { break }
+            }
+        }
+    }
+    $perSource = [int][Math]::Ceiling($Count / [Math]::Max(1, $activeSources.Count))
     if ($perSource -lt 1) { $perSource = 1 }
     $target = 0
     foreach ($sourceName in $activeSources) {
@@ -1178,41 +1211,30 @@ function New-AdvancedCandidatePool {
     return @($shuffled | Select-Object -First $take)
 }
 
-# --- Интерфейс: окно и заголовок
 $script:Form = New-Object System.Windows.Forms.Form
 $script:Form.Text = ('Universal Username Finder v{0}' -f $script:AppVersion)
-$script:Form.StartPosition = 'CenterScreen'
+$script:Form.StartPosition = 'Manual'
 $designWindowSize = New-Object System.Drawing.Size(1480, 1040)
 $designMinimumSize = New-Object System.Drawing.Size(1240, 960)
-$minimumWidth = 1240
-$minimumHeight = 960
-$windowWidth = 1480
-$windowHeight = 1010
-try {
-    $workingArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-    $areaWidth = [int](@($workingArea.Width)[0])
-    $areaHeight = [int](@($workingArea.Height)[0])
-    if ($areaWidth -ge 600 -and $areaHeight -ge 480) {
-        $minimumWidth = [int][Math]::Min([int]$designMinimumSize.Width, [Math]::Max(760, $areaWidth - 32))
-        $minimumHeight = [int][Math]::Min([int]$designMinimumSize.Height, [Math]::Max(520, $areaHeight - 32))
-        $windowWidth = [int][Math]::Max($minimumWidth, [int][Math]::Min([int]$designWindowSize.Width, $areaWidth))
-        $windowHeight = [int][Math]::Max($minimumHeight, [int][Math]::Min([int]$designWindowSize.Height, $areaHeight))
-        if ($windowWidth -lt $minimumWidth) { $windowWidth = $minimumWidth }
-        if ($windowHeight -lt $minimumHeight) { $windowHeight = $minimumHeight }
-    }
-} catch { }
+$primaryArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+$uufScale = [Math]::Min(1.0, [Math]::Min([double]$primaryArea.Width / 1920.0, [double]$primaryArea.Height / 1080.0))
+$windowWidth = [int][Math]::Round(1920 * $uufScale)
+$windowHeight = [int][Math]::Round(1080 * $uufScale)
+$minimumWidth = [int][Math]::Min([int]$designMinimumSize.Width, $windowWidth)
+$minimumHeight = [int][Math]::Min([int]$designMinimumSize.Height, $windowHeight)
 $script:Form.MinimumSize = New-Object System.Drawing.Size($minimumWidth, $minimumHeight)
 $script:Form.Size = New-Object System.Drawing.Size($windowWidth, $windowHeight)
+$script:Form.Location = New-Object System.Drawing.Point(([int]($primaryArea.X + ($primaryArea.Width - $windowWidth) / 2)), ([int]($primaryArea.Y + ($primaryArea.Height - $windowHeight) / 2)))
 $script:Form.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
 $script:Form.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-$script:Form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$script:Form.Font = New-Object System.Drawing.Font($script:UiFontFamily, 9)
 $script:Form.FormBorderStyle = 'None'
 $script:Form.MinimizeBox = $true
 $script:Form.MaximizeBox = $true
 $script:AppLogoImage = $null
 $script:AppIconCached = $null
-$script:AppLogoB64 = 'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAMAAADVRocKAAABgFBMVEWbnaNX2vckNFgatOWmtsai2uMDLsM/RVQhXugo4flFXoBCX8hAl9YHBw8OERsRFiIMR8sJZ80Id84JVc8KhtIFOckLR5EIRrUKOYoIWK0QJ1EFNrMJKW0PN3ECK7YPZLbq/P4RVZUTlNjV9/0Kh+grZ9YtmeQqZa0odtIrh9UGKIorV5APWOYoWK0qVtGt1fK05PkaJTQRRXgOZ+0OdugOl+wxdeNuqewCHFEsR21GSVJOeNJPtOrF6fpWXGhQpOtueIklKDArmdovotxMaY5GatBqa3JutOt0x/GRyvLHxcjO2+YaNlEmNUgqR4g5VHZTdq9Nled0dHpmidpsmNAOcrokS8wqZuYzhuU3qOVPhLOSq8iX2ParxusDG2cKSu8LpN0ydrZEe+ZQg9VPiuN6lLO2tbgKqeUZyvc4OD0mSKUyZJJTZXxW5v9ui6+KipGVreuBuO2pq7DW1dfr6OgADSMBPuQZ0/YvxPNRUllBaqBYcY5Mq9x+g45to81o2Ph0Y3ojAAAAgHRSTlP//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////xUHpOoAAAZbSURBVHja7Zj3U9tKFIVFyuvWalf2aiVLkeRecAODMcb03nsnLwRI773nX393ZZOYyWAL8TLvh+c7ZsAz6Hw65+6uViv4fnIJbUAb0Ab8zwBiY/3rgDOSF4AIbu8cfqE+TdN1XdOQ2GDnsoC6ioh0pijZytra2lFl4oEODHd5Ce7kNVCXpGz2z4nK2vqzg4NnE0xz1xHBTVMRkyUpAHXDqeDmxNqz400DuSEILvS1TLQykQ2c1i8cEtjczCpuTAit9Y1MZf2opv/mb6g3dSsBKeiCILSMx4gel27zgKSt25XK8vJypbcTvgV5VkBALQhCqzlFEyul3k4J5NeWl67ofJiWPxxtBSTHRWuC0FQfiQZx9KWtyniZBWEkQSnMiN/u7JQcAmpBEJrraxj0sST1ZhYfZLObUq2yGUY5IQg5pUSELgr4ro/U7aljrASjdHEiC8qyLDvDVZJYKtrtEHhIzTwIzforGompIYKDGZaZcG5dlmqEYFAKpqKdnbzXPCR0EUCDPjKHppNEiS5morVsQN6ZcQACwm/dMmdp3gFGcjrmVxPpB1EpGu2VA1zd0ce9CaykWHe3BCmxphkJ5+sjpA4N+Im6yyD+rTqAVwBHMU5Iyk0ZCGCh0MzCuQC4RiNjoyE1sahAMNwBT4d/JIyDSkJRGFiAqJq3uRmgyz866lcPU9Jp4ePS89I2gJRapXCxW1aCBnfrAYDs0NgoNheDdXm5VA1X81Wruu3MNkWRU0qxKMtBilADoQXgTAvGxkbVQ70efeeM9TwBwyeZs2KS40JWUpEilikteADABQVzZ8wvx1MBZ3TKM9a2VP8rjGHGYSLLqWKEYACIngCaOTYKl6f4/JWlIWtF6s2Fq6XcCg5PcQB8GIlEALAgnm9BODchAPyVxBzACd35nFysWjM5yyrJM3ksY3CAGe6JEErnPQLUJADYDafB29aQNAU/MnRAngoTTDCWCY33RDDz4oD/v0YToMJg3QELK1YE53n2M1ZELgEA9LEDMJl9FiC6dsBME5M6YChcJOEcxJ4H8Zk8B0AxAKjMLiBvAJ2aakIJOk0esiLFMETvD+8TUp0mnGBiFu2J0EsADFUtZoISjyNmxfC+NR3LW/meaStGCPET02SJHj+jNkLnT7UmgIKuU4XEHQAm1X0M6tb+tBW2YAn0wwebNBkhjHaJ7h00dhnpfYziBDyHYUziAWsAEz6sYgMxUA+FgGDGk9ACdV70FBEAbuqMJlXeY7Awbe2DcqwjRJzbh+pR15OEMrUguo/o7DjlBIJhV8oBZCAf5jXg5A/6d/3xA4K/tUB0F1HjWoGMm9AGWPg5gcvGBgZ2Qo44/Ny9p+49J6rRPKGmyzVY0JkeN2Hd5G2uVy0e/617oXgVEvphDInuH5mwqwYASyqNBK4fAv2375SDKT8YMETPAD6ZdarbEJKqOmMVsqnd/923j9UnuQjpsn8wILrdVTiXGQalumo6AH77cO/+UCh09ffHZnwu5re7zPnmBppuW3hIi0baNuyMopqngFDo1r2Or2p6bqdno8vuaqHfAsBDMjKwE02DBacD/tCtd4+vf6Ifcjt+Qm2K0IUBDVt3fqFOaTpNafzQUR+72tHx9ZNKT3I7ZMMGfbF5B1oDYHun2EAw0rujsVCoB6aBGT+B8bNhUttc8rUy0HR3fUpQqWEYumY83F1f/7K+t3fty5Fpgyl7+Ynv7KPGE4A/2qihaVpfX59mlMvlLihbNQ8fFsbHF5DoAXDmUMIZSzpjDDxwRp9uUBOeNw8fId+v6eVx5OEF5Oyph3OHSGMqX1NNmA5FglUDjUyuXklvpIW91yLy/o72vRGcYVAVCuJyvvY/2iC7Lz+/OPFd7i2zkVE/FKmtU4921aVVYe799WEfujTgW8O/lYg+fhzu943Mzg7OLdUJ3l7EzykglIXBEbH/pbA6N++7+Jt+SwQQhmeBMDm7KuSQz8NZhQvC59l+ET29M3hnzxOgFQIIwuyC7/7w0/7ZYZ8nQMtOaNfujPjuTw73z5V9ohdAK4Jv4eULaPTq5OQc8nwo2JxQfvUUof7h/hfnheTu1PF8im/81SoaeT+49MflD2ZP53H9DLV+tPn6yatJVLg/rv2ko2XRh07uTA4Oln/i2TVaGh+cF9un721AG9AGtAFtQBvQBrQB/zHgH3+DfXu0Vi7vAAAAAElFTkSuQmCC'
-$script:AppIconB64 = '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CP8SCQf/EggH/xEIB/8QBwb/EAcG/w8GBv8OBQX/DQUF/wsEBf8LBAT/CQME/wkDBP8LBAX/DAUF/w0FBf8PBgb/EAcH/xAIB/8RCAf/EgkI/xMJCP8TCgj/FAoJ/xQKCf8VCgn/FQoJ/xQKCf8UCwn/FQsJ/xQKCf8UCgn/FAoJ/xMKCP8TCQj/EgkI/xEIB/8RCAf/EAcH/w8HBv8OBgX/DAUF/wsEBf8KBAT/CgQE/wsFBf8MBQX/DgYG/w8HBv8QCAf/EQkI/xIJCP8TCgj/EwoI/xQLCf8VCwn/FQsJ/xULCf8WDAr/FgwJ/xYMCv8VCwr/FQsK/xULCv8UCwr/FQwK/xYNC/8VCwr/EwoI/xIJCP8RCAf/DwcG/w4HBv8NBgb/DAUF/woEBP8LBAX/CwUF/w0GBv8OBwb/EAgH/xEIB/8SCQj/EwoJ/xQLCf8UCwn/FQwK/xYMCv8XDQr/Fw0K/xgNCv8XDQv/Fw0K/xcNCv8VDAr/FQwK/xQMCv8QCQj/CQAA/w4GBv8SCgn/EwoI/xEJCP8QCAf/DwcG/w0GBv8MBQX/CwQF/wsEBf8MBQb/DgYG/w8HB/8QCAf/EQkI/xIKCP8UCwn/FQwK/xYNCv8XDQr/GA4L/xgOC/8ZDgz/GQ8M/xkODP8ZDwv/GQ4L/xgOC/8YDgv/FAsJ/xYLB/9dTED/Oykd/xQJBv8VDAr/EwoJ/xEJCP8QBwf/DgcG/w0FBv8LBQX/DAUF/w0GBv8OBwb/EAgH/xEJCP8TCgn/EwsJ/xUMCv8XDQv/GA4M/xkPDP8aEAz/GhAN/xoQDf8bEA3/GxAN/xsQDf8bEA3/GxAN/xwSD/8TBgL/gHFn/15ZWv9tXlT/Oyog/w8HBv8WDAr/EgoJ/xEJCP8PBwf/DQYG/wwFBf8MBQX/DQYG/w4HB/8QCAj/EgoI/xMLCf8VDAr/Fw0L/xgODP8ZDwz/GhAN/xsRDv8cEQ7/HBEO/x4SDv8eEg7/HhIO/x4SDv8eExD/EgYC/2pbUv9jXl3/WlNT/41+dP8fFBD/FQwK/xUMCv8TCwr/EQkI/xAIB/8OBwb/DAUG/wwFBv8NBwb/DwgH/xEJCP8TCwn/FAwK/xYNC/8YDwz/GRAN/xsRDv8cEQ7/HhIP/x8TD/8bEg//FhAP/xQOEP8VDxD/GxMR/xsOCf9SQTj/YF1e/2Ng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'
+$script:AppLogoB64 = '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'
+$script:AppIconB64 = 'AAABAAMAEBAAAAAAIADNAgAANgAAACAgAAAAACAA8AcAAAMDAAAwMAAAAAAgAAgPAADzCgAAiVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAClElEQVR4nH2TT4scZRDGf1Vvd0/P7g69ScaQWWbX1UAChkBiDgpihCB4UBTBswezH0PJISD5ENl7vkDAgwQvOSYsiIQED+omDOxs1DgzOzPd71vloSc3sU5V1FP/qOcRgBsff7K3XCy/retmCCgg/Lc5YHmePS863ds/PfhhXz748MbNpq7vxhhx9xYm0kJZxcjK91VaybKMPMtvytVr743dvA+YCOoI4hGVhEsAd9wTTg4EwGixqgjHWYqx33YVNQcl0ugmE94i2jqFZmxkU7T5BbcTRArA1T0B9NXM3N0xc0g1UwYc1lc4mRwTpgfY5ICTGXSLrwjaJ6UlZo6ZkVLyzMxERBCMmnXG8SLV4iG9juP5FrlmpPpnFtMZ53pfcNjss5oOIGpmmIFbzZRdus0hG0WkKS6R6wa5VpzZuE7tT8lT5FT2Dk06wQ0sJdTMcE8kc6CiK39hYUAXhbQkt4DUUzp6iia+oNJtmlRjbpgbqw2clCKlZAQpyQkUUrKmPXphk1JLXi3/oApnITUkS7R1hrq3jnkiiyOq7rssFr9RSkEuAbWG4/kTBGGQXeDF7BGBAksRMyMzM0QcKJjPH3O2e42q+pTR5EeKsMkrj+CRz9/4njXrMfMxySIiAceQN3ffbt+A4B7Bci6e/ppzazs06YiSdU7rNi9nv3Oh+xHj+Iz7f99imWYI4rK9s+uvyYoo7pGYFlTZec50ziNuHC2ecNQ84/Lal3xW3eFgfo8HszuUUiHD4c4YkT7uhqAgCEK0BdFrADItyaXDPP3Ddnif2if2J79qID+Wra3hN6K633L+tXjanUSE9jQDHBGlthkqgVxLUrI9ARgMhnsifGdmQ3eX/5OzSnBVeW4eb49Go7v/Ak5eZGHPU35zAAAAAElFTkSuQmCCiVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAHt0lEQVR4nI2XXYxdVRXHf2uffc65nzO90850mGE+irRYBCKJgFo0Rt/aBCraEKNGNPJiDAlREomvajQxfuATiYgm+NQHY0AxkEhQE6Q11qQNpS0UatppucN83Tt37rn3nL2XD+fOnTt3hsSdnJyPtc9e//9/rb323gJw4sSJ4OTJk+6xx544ePny5ccbzcbRNE2nVb0FASFvqmw1AXTgPmiS7a9IZq29WqpW/jx/8+wvnn76qUubPmXz4YEHvvj11bXVnyZJMpZlGap+18FFZADHIIBdgAzBsNYSx4Xl2tjYd57/48nfnjhxIhCAo0cffGSt0Xh2Y2MDwImIYYv3DnI7AQy3YaXyj6rqQYNSqUKpUn7k5b88/zs5fvzhQ9dvLJzpdDoFYwQQMziA6qai/z/TTfvWv9tsXhWiKEr27R3/qL1Rv/69NE1LqDpVgt2c5Iy3O92VI7rN+QcoYwCXuay0uLT4pO12Oseccwpi1OsA4uERegZ1QIawFQ5FgQAkAAyqDukNtDsQjHdOvfPHbObcBD2GW/HdJau9w4gDWyYzk6RUUGKMeCwJoa7i02W86yImQnU4eXMSve+S32XCeufJY7+tw8CfBlyKCYusBwdYSydIumXQkEAMViyRMRSsoxyvEvqLdJPLiEQ9FbRHavNZe4AE7x12q8NApPofBPEdfLSPG/4wzXaVAEfsrxP6ZQLtYiREbA38DJmdxdpZSuULtFp/RzQYCIUOjZ0LbYcZ999FEJ+ShTWuZ3eSdGOK1Cl1zxHqMoFkCB7F4zODT6pkhTsISp8klo8RlYosr7/YU2KY2Oa7zwGoah9pbgDUoWKp+8N0sgIV/S+VzmnC0BAEliDajwT7EAnAr9LtXKPbeY2GW6Q8+gXK9m5cXGe5/To2KKPqdhJVMIPS9C8An9KUGdquRkmXqXT/RRRF2KiEVO4niz9LJnOozFEofI7x2sNUytOk7i2W11/GEjARHSE0o3jfHVIgD7tXnwMYvlCHI6SlU4RiKHbfILKCCQKy4mfoZkVo/gGb/gPffonG2nO4dIPJkYcoxHtY756l1bnIiJ1hLLydzHdAt3LB+6160QewpQLgM7paQaVG7NcIdQkx4KPDqIux7RcoV++hUv0KtdGHuGnvV2m2TxP6kNH4MCod1pKzRGIZCw+iPo/3li/tAdlNAUDVkWmJwBQJtYGRDCRE7CFM5wxRfBtRcA8ry79no/UGZb2FNFvBZYuUzCSIkGTvgU+omv0YIrw61OdOc1/5vQ9gy6B4VRRLZCIsebYjRUIpgV+iEN2F65wnzRYQugS6QsetUDBVvGsDgqODQSlIBdTg1fcq5oDS20OwGX9FvceoIxKLNcWeKkosFhCKZoRAHJlmTJU/zUb3KqVwgpqd5/3kHEJIICFFKSLe4XwKSp+599p/tjvnp6II4lpECDYcJ2lHONckFqFjJ2lu/Jtbxr7EvsI0kY6wpzjJZGGWt9ZeYMPVUa9Uw0mqZg9r2QW6boOCqaD4foFTVdRrXge2r/EeJQC3hPVNiuEMzk6SpJdot88wu+fzvP3+U5x/71cYCVjtXGK8eBdREFFvnyM0Rdq+wXzpPopapN4+jyPdMQ03qe6ohLnRoLqO67xNIZ4nqhzhxupVVlr/pGzHuWviCVbbp0myRSbLhxiL5gipsJq8S7NbZ758H7cWj9DsXOfd9imsxDjvGFyucxV2zALfS0aHMREbrdNotsRIdDvTe46Bet5dPsmb7z0LLmZveCcVM81S6wqn6s+w1r3OZOk2jtQepahVriSvUU8vEklxYOw8AfsVeP7AQd2swgN7GUQC0nSdgr2VgxPfpBgU2cjOcbXxMivJZVLXRlXyuIpQDvdysPop7hn5MrEbBe8R43il8UvebLxKydbwmu0oxzI3/yHd2nKB9CcLiBg63SYj0Uf48PjXqEWTqKzRSC/Q7F6h69axJmY0uImp+E6m7R34zONcilEDHkxgeKnxYy6sv0Ix2IMfWBNUFZmdO6AiOzeW/S9i6KZNQsY5VHuQ2eq9jIbjxEGIxWAJCX2Iuozl5B1eX36OdrbO8f0/AvWkWUYQWP668RMutf5GLGV8bzaoKjIzO68yuPcfANDf84ohyxLSLKFiZ9hfvJ2xeI6SqYE6WlmdenKRheQsKS2cZsxH9/PA3h/iSMlcijGGPzWfZDG9gJUC2qs7MjN7wKv63M8HKJEDERTIXELqkt6UMr3J5DHGEgclAhMiCOvpErP2Exwd+wEBltCXeLH5fd52r1CQai8UgszMzN1QmBhUfhiGDgEZ7rFpU/UgeS9DQCtbYjq4l4+XH6WenudU8mtMIEjeCVVdlOnp2WfEyDe8eidIsJvzQSfDALdVkaGDgMHQces4lwOLbQkjAeSHn8B7/6xMT99yENL/IFLolUOzm/MdznZtwyclRdQwqKGi3hhBlSRSe7e5du3yJVX3LckdG6/qNG/5kul9XkQGFqptV77Y92v7dnueH4qiOPV4h2BAjKp++52Fdy4KEABuav/UI2rkZ2JMTb0f4LKTlfbYyFAufNBJcbPlB1tdEZHvLixc/Q3QD3kOYmrqkIg8DnLMe3+zcw56aTXooZ8PuyXFwKfeCUADI15EroK8KKI/X1hYuLjp83+8N8HzUz9UTgAAAABJRU5ErkJggolQTkcNChoKAAAADUlIRFIAAAAwAAAAMAgGAAAAVwL5hwAADs9JREFUeJydmfmvXVd1xz9r732Ge++bbT9Psf1iZyBB4CS0pYLSlFKgpKDSghECSkKBIlVtVfil5T8oAkQlqKrCD6XQMral8EOaBBBKiioIlCEkOGTyFMfxs/3mO5xh79Ufzh3Ove/ZQWzp6J6zx++a19pXqLUTJ07Yr371q94Yw5//1Yd+7/y5Z9+5tbn5qrworgvex6oqINXk/g+qw/WDN0HGvsZHGfUPpkmtWxURgzGSuTg6O9Wc/u7eAwf/7TP/+Ilvq+oQY22XcfAf/ODfHH/m1Km/W1ld+f2sl1GWBSEEXqiNQZYxun7lJiK4KCKJE2bn5v/7+iPHPvypT33kp3UiBODOO+90Dz74YPmud73n3ecvPP/pzc2NpCwKNcYEEYzqGI+uelidy9cmoGL7zoTWRaKqSgghmCiKZHpmpre4d++fffkL//L5AREyeHnLiXfefWn54mc3NtYxxpYi4nTb7vXvcTXZDkZ3mLd93XbVGvRPnKxaqqqbmZllbmH33d/42hc/d+LECSsA73rPB46ffuqpH25ubhhrLX2u79AmFfZabdIGXnieqiJyzTUhhEBrajrsO3jwZf/xpc89YlTVnD31zKe63Y4TEVVVE8JgU514QFWpJPNCTyWRF5pbzRnMG71PntN/NyJo1uu6i8+d/6SqGnnDG974hstXVu/N8zyIiAG2cWFn9biad9mpXU1Vajvq4Nyd1o6fqRpCFMVmenb+Lre6tvHesiy1bzA1sNo3zBFXpHbCSNzjIMbOrH3shG1wzrb147NGO9WOD8Hr5sbqn7qiKF4RghfAjIANgA+o1tr3DoABMKgG0ADqQbS/TFEExCJiqYSs2/aUCW5MMmzifOO9l6C80pXe7+tzXnYGWm1U76urWCWdgGiOdQ5xLdS2UElRcRgCohn4Nlpu4YsuAYsxEePc387+ARGTjJTKWCGE/c6XpRhjJgDKGGeuxvlqk5wonaKIj7Khi7SLBkXPEYJBEKwYnBEaETQaGUljGfLT5L3LgMMYN0ZI/YxKnesOZZxYX5a4Sa+xXa/HN682NWgocVbw0zfzfHkdGxsOX5QYCVgTsGIQIwiCeqFXKnk3JXI3MZXeTHP2HHnnR+TZJtY2gO3RvsIjO+KoSFLc9sERx8dFWAkxYFCf4eIW68lLubgxgy8yYifEUQOjJTZsYUIHU3qMiTBmCuvmcW4Kp0rRLVF7I9OtI1j7IJ32KZxrXkUS2zlftw031K6r6NvYBgihzLDpLJfsy7i8KkTSI4lbmNAm7p7Eleex2kbwSN+AFUOQJmV0ENt8KWlyBAk5eTum1XgTlm+x0X4MZ1s7SuJqRKkqDtVKicao0x1EJmgoMa7BZXM7KxtKYkFMkzj7BWn2KE5yrEswtjHwCoyClceXT9JbfwIf38r87GtJbIrvlcymdxFCxmbnKSLbRAnXVJ26FEw96o1HwO3UinjW3ItZ2XLEFkQSGp3vM5X/kCS2xI05XJTgjCeynigyRJEjisA5JU6apOk0vnyUKyv/SghtEpcS8pLF9C4iO0MZ8uF5v8wjt9z6Uq3r1KTvHaiOhIw8PsyF8iWYkGNsSqPzMA3/NC6ZxRiDkGPjFia5kWAPIzKDFYcjx+gliuwxet3zQEqebwALLO16H7FERJLS1Uc4u/5fY6q0UzwY4gpaSWCS0+PvgAZUHOu6BKHE2CZxfop0CF4QclzrGEXzzXT0dopeTtl5mqJ9krx3CdGjLEzfw8Lsq4GcOJ4l6GWW1+8ltlOIFszZl9CMDuJDj3rs3o5p8IRxL7Q9CvdbyMnsfnphGmcUpzlp/hguavY5nyHNW2jbOzGdp4nKhyFcBkq8CkEisjb4xqvYN/cmjCrL698hTebZ7P2Mdu9JFtKbcRj2JLdzKv861iQ7xJ+Jb2As5x94oW3BSwM9WUTU4ExElD2OkzbGzYLmSLKXzL4C0/sFUf4dECVt3UIS34CGVTrdx2k2jrDV/ilrm7PsnX4tm52fk5WrWGu53Pk+i40XY9SzK7qJszQIwe8YRCcoqvKfSQrHjTjg1VEwh0OwIrjyOYxxCFVgK6PbEd8jKr6HqtKauZNG463gD5G4X2PP3NtZSN9KYo+w2v0fInXMxrfgNSOyDbby0xR+DSeWltlFanbjQ17LtUbReNKIx7zQTmJCA54IpYU1FkuB0U3ERKAFaucRcxhXPon3q8TNW0jcb9Hb+jGr65/m8srnMEUDyTsUxTJlaBPKdVp2f1/aFq9t8uISERGxNGiaXfhQgI7sMIRQy151QA47lI31JqgGgjqECGcsLvQwFIg4oACzGycpwV9AxNGIb0fKLbrZd/vgtjC6gTWWImygCAbFqq3CnAhBAnnYwEqEwxDLFEFHXmhSQ4ZSUUZeaFKF6hWRqmCNxYnFjC5WqoBjpokQ1G8iMkUiiwT/PCG0AYcQ03J78OUVytDBSZOWmScrL6Ha56oqqMdhsVgMlqABHa/Gxrg/kIWpA67r2BCiAlrixGDF4iSBfk6vChYhNpYq7Y6JTRNDTggleblFKz7IlN1HN3+OXrnG7vRWGjLNpexRBIdqdcWT2CZODA6LDxkMmThg7qiwqgjXkRFrbfJO8UBChsVjsUS2hUiTEHy1uW+TSIqzs5TlJo6SufQocTzPdPMAN8y9DYcl02X2TL2I2+bew7n2g6wXp7EkhOAxRMy4RawKVoVuuQZIjQidwNjHN7CBuu8fudKBoAwaeljfIbLzRMYRor0U2QrWxZTlRSIRptJb2Or+jPXOwxye/UNuW/xbDMKF9YeJm1Mc330PMTHn1x/msY0vYUlRlDLkNNwu5txBrCre99gsnscY17cD3Zbm1+sRV9f/QT1c/Q5SMQFKKC/g0mNYAo30ZvLezwFHUVwky55gT+uVdLJHOL/2DXr580zHh9jKn2YlO8lK9xFmoiOsZD9nvXyGWKaqkhMofI8bWrfRknlsCCznp9jyF0lM6yoGXLuP1FoyN6CUvn4N+1UR4/DZMzgCVpVWfIw0OUJZdhCJuLx5H6HscPPuD7Bv7uWsZv/H02tfZLnzI1SV5ezHnO3ez9GFV3Bs+jXkoYNg8b4gsdO8aPq1EAoSaXCm8zClZgzqksnUQev4qoJmZCgiOqjDq3cFCBiTkGUXKHunaDRvxYSSxbnXce7SPxMCqK7xzJV/4tj8O3nxwl9ww9yztIszFH6DSGJm3SEW41uR0vDQ+kerwl6FbrnBK/e8n3m5DtWSdrHCk+2HSGyrAkpddSZLy4oguf7ojTq61+xfgWy7DRBK38Owm0OL78fgSUyTQh/n1KUvIiQYU+0xn7yEvc07mE8Ok9gmEgq6xRWWu49ytvO/5GELKwntYoXju9/Ib069j6Lo0TJzfHP54zzWvpeZdA9hrLCpq08dV5+A8Yp/tGbEAUFVyLI15qdezaHdbybkqzSiOTI9yVOXv0JWdIhtk0BOwCPqELGoerwWADhJ8aEgSMEde/6IO5rvIBQBQUhIOZndy7cv/QOxaWKNQ3corIYXIgpBA7J0/Q01CUwYyUSNGoKS51scWng7B+Z+m7JYpWFnwF3h3Mb9LG8+SuHz6v5nwC2tQn7QEjHCYuModyyc4JD9DfKiixOHCQ400HKznPT3cd+Fj+EkxYhFr1FihhCQI0vHagQYRLZfoVTDVX0bQkme97h+19s5PPe7BL+FxdCIUjKe5XL3Uday03SLNbwWGLGkdoaF5DDXpbdxMD6OKWJ8KGjZBXzZI6hHsIRQ0DCzPKEPcP/yx7AaY4wd2sNk0xCQw0eODiuyyTv+7SsGRHjyvM3+6ddw8+630HJTBN/BiiWxCdYqIgWCYiUiCk0ijaEEQiC1LSyWR1bv41B6BwvRATLfRjCUviA1szzNN3ng0kcxRH1J6CgAVGAHBFyvo76rX4WPkdaPhN18naY9yA3zf8DhmZfTsnNYAkLAqGAw/czG4oiIJSWEkvOdn/CD1a/wxOZDHEiP87b9n6BlZuj5NmApfU4qM5wy3+ZbVz6OaHUlqQMEfbXQEJBDh5f0asCvdbNfuVuhKLvkZY8pt599zdvZ37yV+eQQTTdHLCmoUoYOm/lFlruPc6b9A57PToJAM5qjU66yy97EicW/J5UWvdCXRChomQUe06/x4MoniU1VJ2udAFXkukNLOqk6k2XlVYtqHUXE0vfIfRdVwZESmSZWIhRPEbrkoUOgILJJ5V5NZaAGS6dYZcHcxB/v/gSpaVZEiEW94sn42sZf0mMNIxFoGDvfGCNhMvpqGGV7g4kawrB/MmNVAtYmNON5mvEsLnJ40yVnjUK2EAeNeJrpZDepm6q41/cuAU8zmudK+AX/efmv2fJbxDJNCCWRNCl8TubboDIehfvnG5QLfWUZK+CGAPuEjAZ1+1MjBFGMMTgb4VyCszFWLFXwDX3gNWkPiHALXPFP8PUrH2K1OE/CLGXo8b32Z+iFdQy2bsQDTboghw8f+XJQTqhqAOxYTL6aUY9yj3HPMEQl4/Pq/X1myA59BkOv3MSFKXa5G9n0z7HFBRpuetIgvYgYVf13WVpaen1RhvuobpKGRf7VDPhaBegv3Sbz43o/Bh9yitDFSkxk0mHmWrPFoKrGueguc/fdd39Tg39IEKOqfqgyw4xvpFKhlqHWH51cs0Pf2Pz+fpNrKgZ5jDhSO4MzCUpVWlZrAqrqq7Jav3vPPX9yvwAsHVw6nmv5QzFmUCObnVRjTPQ7jDExfq35v2IL1Z8zQaOo+etnzjz5EwPY0+dP/1SCvldDMIIYVMtJ+INIWM/Fh5xhXBrbJFC7Btme4088w7lMrvWAqKoF874zZ578CX2bBXBAuW/fwXeL8GljTBKCat/pmnFGTvK6XvLJ8LhxztfuOcd6JmW0bW8FCYgYIyLe+9wY+4Hnnjv32QHm+moL+AMHjtwWQvkREV4nUmWgChiRGm9qZ9dF9UJ/B4+Ny4R+6XBPYaf/6OSBOLYfPnv27I8GWMdZUyMCYGlp6fVZlr3DWfc7qnqol2XVv4MDxuzEuW3uc2LOcJy6ALe9C6i11ouYcxAecs594dlnzz3Q33aIEeD/AaQEzG91Xp2mAAAAAElFTkSuQmCC'
 $script:UufDwmAvailable = $false
 try {
     $null = Add-Type -TypeDefinition @'
@@ -1306,7 +1328,7 @@ $script:Form.Controls.Add($header)
 
 $title = New-Object System.Windows.Forms.Label
 $title.Text = ('UNIVERSAL USERNAME FINDER  •  v{0}' -f $script:AppVersion)
-$title.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 17, [System.Drawing.FontStyle]::Bold)
+$title.Font = New-Object System.Drawing.Font($script:UiFontFamily, 17, [System.Drawing.FontStyle]::Bold)
 $title.ForeColor = [System.Drawing.Color]::FromArgb(112,164,255)
 $title.AutoSize = $true
 $title.Location = New-Object System.Drawing.Point(66, 14)
@@ -1314,7 +1336,7 @@ $header.Controls.Add($title)
 
 $subtitle = New-Object System.Windows.Forms.Label
 $subtitle.Text = 'Автоматическая генерация и проверка имён для популярных платформ'
-$subtitle.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$subtitle.Font = New-Object System.Drawing.Font($script:UiFontFamily, 9)
 $subtitle.ForeColor = [System.Drawing.Color]::FromArgb(177,188,207)
 $subtitle.AutoSize = $true
 $subtitle.Location = New-Object System.Drawing.Point(66, 50)
@@ -1351,7 +1373,7 @@ $script:HistoryButton.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
 $script:HistoryButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
 $header.Controls.Add($script:HistoryButton)
 $script:AccountButton = New-Object System.Windows.Forms.Button
-$script:AccountButton.Text = 'Пароль / регистрация'
+$script:AccountButton.Text = 'Регистрация и пароль'
 $script:AccountButton.Location = New-Object System.Drawing.Point(1307, 34)
 $script:AccountButton.Size = New-Object System.Drawing.Size(167, 38)
 $script:AccountButton.Anchor = 'Top, Right'
@@ -1359,11 +1381,10 @@ $script:AccountButton.FlatStyle = 'Flat'
 $script:AccountButton.FlatAppearance.BorderSize = 0
 $script:AccountButton.BackColor = [System.Drawing.Color]::FromArgb(67,123,235)
 $script:AccountButton.ForeColor = [System.Drawing.Color]::FromArgb(255,255,255)
-$script:AccountButton.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 9.5, [System.Drawing.FontStyle]::Bold)
+$script:AccountButton.Font = New-Object System.Drawing.Font($script:UiFontFamily, 9.5, [System.Drawing.FontStyle]::Bold)
 $script:AccountButton.Cursor = [System.Windows.Forms.Cursors]::Hand
 $header.Controls.Add($script:AccountButton)
 
-# --- Интерфейс: кастомная строка заголовка
 $script:UufEdgeColor = [System.Drawing.Color]::FromArgb(15,19,27)
 $uufCaptionMouseDown = {
     param($sender,$e)
@@ -1445,10 +1466,8 @@ $header.Add_MouseDown($uufCaptionMouseDown)
 $title.Add_MouseDown($uufCaptionMouseDown)
 $subtitle.Add_MouseDown($uufCaptionMouseDown)
 if ($headerLogo) { $headerLogo.Add_MouseDown($uufCaptionMouseDown) }
-# --- Полка шапки: подгоняем под фактическую ширину окна, чтобы кнопки не вылезали за край
 try { $header.Width = [Math]::Max(880,[int]$script:Form.ClientSize.Width) } catch { }
 
-# --- Интерфейс: левая панель
 $left = New-Object System.Windows.Forms.Panel
 $left.Location = New-Object System.Drawing.Point(14, 104)
 $left.Size = New-Object System.Drawing.Size(390, [Math]::Max(320,[int]$script:Form.ClientSize.Height - 114))
@@ -1475,37 +1494,20 @@ function Copy-UufTextToClipboard {
     return $false
 }
 
-function Set-UufTabStyle {
-    param($Tabs,[int]$TabWidth)
-    $Tabs.Appearance = 'FlatButtons'
-    $Tabs.ItemSize = New-Object System.Drawing.Size($TabWidth, 30)
-    $Tabs.Padding = New-Object System.Drawing.Point(12, 3)
-    $Tabs.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-    $Tabs.DrawMode = 'OwnerDrawFixed'
-    $Tabs.Add_DrawItem({
-        param($tabSender,$tabArgs)
-        try {
-            if ($null -eq $tabArgs -or $null -eq $tabArgs.Graphics) { return }
-            if ($null -eq $tabSender -or $tabSender.TabPages.Count -lt 1) { return }
-            $tabIndex = [int]$tabArgs.TabIndex
-            if ($tabIndex -lt 0 -or $tabIndex -ge $tabSender.TabPages.Count) { return }
-            $tabBounds = $tabArgs.Bounds
-            $tabG = $tabArgs.Graphics
-            $tabSelected = ($tabSender.SelectedIndex -eq $tabIndex)
-            if ($tabSelected) { $tabBack = [System.Drawing.Color]::FromArgb(44,56,82) } else { $tabBack = [System.Drawing.Color]::FromArgb(26,33,47) }
-            $tabBrush = New-Object System.Drawing.SolidBrush($tabBack)
-            $tabG.FillRectangle($tabBrush, $tabBounds)
-            $tabBrush.Dispose()
-            if ($tabSelected) {
-                $tabAccent = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(129,108,255))
-                $tabG.FillRectangle($tabAccent, $tabBounds.X, ($tabBounds.Bottom - 3), $tabBounds.Width, 3)
-                $tabAccent.Dispose()
-            }
-            if ($tabSelected) { $tabText = [System.Drawing.Color]::FromArgb(235,240,248) } else { $tabText = [System.Drawing.Color]::FromArgb(148,161,186) }
-            $tabFlags = [System.Windows.Forms.TextFormatFlags]::HorizontalCenter -bor [System.Windows.Forms.TextFormatFlags]::VerticalCenter -bor [System.Windows.Forms.TextFormatFlags]::EndEllipsis
-            [System.Windows.Forms.TextRenderer]::DrawText($tabG, [string]$tabSender.TabPages[$tabIndex].Text, $tabSender.Font, $tabBounds, $tabText, $tabFlags)
-        } catch { }
-    })
+function Set-AccountTabView {
+    param([int]$Index)
+    if ($null -eq $script:AccountPrepareTab -or $null -eq $script:AccountVaultTab) { return }
+    $script:AccountPrepareTab.Visible = ($Index -eq 0)
+    $script:AccountVaultTab.Visible = ($Index -eq 1)
+    foreach ($tabButton in @($script:AccountTabButtons)) {
+        if ([int]$tabButton.Tag -eq $Index) {
+            $tabButton.BackColor = [System.Drawing.Color]::FromArgb(44,56,82)
+            $tabButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(129,108,255)
+        } else {
+            $tabButton.BackColor = [System.Drawing.Color]::FromArgb(26,33,47)
+            $tabButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(64,78,104)
+        }
+    }
 }
 
 function Add-UiLabel {
@@ -1572,7 +1574,7 @@ function Get-TextBoxValue {
     if (-not $Box) { return '' }
     $value = [string]$Box.Text
     $hint = [string]$Box.Tag
-    if ($hint -and $value -eq $hint) { return '' }
+    if ($hint -and ($value.Trim() -eq $hint.Trim() -or $Box.ForeColor -eq [System.Drawing.Color]::FromArgb(149,164,187))) { return '' }
     return $value
 }
 function New-CheckBox {
@@ -1608,7 +1610,7 @@ $script:CategoryList.CheckOnClick = $true
 $script:CategoryList.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
 $script:CategoryList.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
 $script:CategoryList.BorderStyle = 'FixedSingle'
-$script:CategoryList.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$script:CategoryList.Font = New-Object System.Drawing.Font($script:UiFontFamily, 10)
 $script:CategoryList.IntegralHeight = $false
 $script:CategoryList.HorizontalScrollbar = $true
 [void]$script:CategoryList.Items.AddRange([object[]]@($script:WordCategories | Sort-Object))
@@ -1669,32 +1671,34 @@ $script:ExcludeCheckedCheck = New-CheckBox 'Исключать проверен�
 $script:OnlyFreeCheck = New-CheckBox 'Показывать свободные' 14 779 180 $false
 $script:OrderedCheck = New-CheckBox 'Генерация по порядку' 194 779 170 $false
 $script:RandomCharsCheck = New-CheckBox 'Случайные символы' 14 803 180 $true
+$script:ExactOnlyCheck = New-CheckBox 'Поиск только введенных ников' 14 827 360 $false
 
-Add-UiLabel 'Исключить слова/части ника (пример: xxx, test, 123)' 14 835 350 20 | Out-Null
-$script:ExcludeBox = New-TextBox 14 856 350 27 ''
-Add-UiLabel 'Пауза (мс)' 14 891 110 18 | Out-Null
-Add-UiLabel 'Тайм-аут (мс)' 134 891 110 18 | Out-Null
-Add-UiLabel 'Потоки' 254 891 110 18 | Out-Null
-$script:DelayBox = New-NumberBox 14 910 110 500 15000 700
-$script:TimeoutBox = New-NumberBox 134 910 110 1000 30000 8000
-$script:ThreadsBox = New-NumberBox 254 910 110 1 8 2
-$script:ThreadsLabel = Add-UiLabel 'Рекомендуется 2–4 потока. Пауза адаптивная: растёт при HTTP 429 и снижается после успехов.' 14 943 350 40
+Add-UiLabel 'Исключить слова/части ника (пример: xxx, test, 123)' 14 859 350 20 | Out-Null
+$script:ExcludeBox = New-TextBox 14 880 350 27 ''
+Add-UiLabel 'Пауза (мс)' 14 915 110 18 | Out-Null
+Add-UiLabel 'Тайм-аут (мс)' 134 915 110 18 | Out-Null
+Add-UiLabel 'Потоки' 254 915 110 18 | Out-Null
+$script:DelayBox = New-NumberBox 14 934 110 500 15000 700
+$script:TimeoutBox = New-NumberBox 134 934 110 1000 30000 8000
+$script:ThreadsBox = New-NumberBox 254 934 110 1 8 2
+$script:ThreadsLabel = Add-UiLabel 'Рекомендуется 2–4 потока. Пауза адаптивная: растёт при HTTP 429 и снижается после успехов.' 14 967 350 40
 
-$script:GenerateButton = Add-UiButton 'Сгенерировать и проверить' 14 991 350 $true 37
-$script:StartButton = Add-UiButton '▶  Найти свободные' 14 1034 350 $true 37
+$script:GenerateButton = Add-UiButton 'Сгенерировать и проверить' 14 1015 350 $true 37
+$script:StartButton = Add-UiButton '▶  Найти свободные' 14 1058 350 $true 37
 $script:StartButton.Visible = $false
-$script:StopButton = Add-UiButton '■  Остановить проверку' 14 1034 350 $false 35
+$script:StopButton = Add-UiButton '■  Остановить проверку' 14 1058 350 $false 35
 $script:StopButton.Enabled = $false
-$script:RetryButton = Add-UiButton '↻  Повторить ошибки' 14 1077 170 $false 33
-$script:ClearButton = Add-UiButton '✕  Очистить результаты' 194 1077 170 $false 33
-$script:SaveButton = Add-UiButton '↓  TXT свободные' 14 1117 170 $false 33
-$script:CsvButton = Add-UiButton '↓  CSV все результаты' 194 1117 170 $false 33
-$script:CopyButton = Add-UiButton '⧉  Копировать свободные' 14 1157 350 $false 33
-$script:CheckedNamesButton = Add-UiButton '≡  Проверенные ники (0)' 14 1197 350 $false 33
+$script:RetryButton = Add-UiButton '↻  Повторить ошибки' 14 1101 170 $false 33
+$script:ClearButton = Add-UiButton '✕  Очистить результаты' 194 1101 170 $false 33
+$script:SaveButton = Add-UiButton '↓  TXT свободные' 14 1141 170 $false 33
+$script:CsvButton = Add-UiButton '↓  CSV все результаты' 194 1141 170 $false 33
+$script:CopyButton = Add-UiButton '⧉  Копировать свободные' 14 1181 350 $false 33
+$script:CheckedNamesButton = Add-UiButton '≡  Проверенные ники (0)' 14 1221 350 $false 33
+$script:ConnectionTestButton = Add-UiButton '⇄  Проверка соединения' 14 1261 350 $false 33
 
 $right = New-Object System.Windows.Forms.Panel
 $right.Location = New-Object System.Drawing.Point(418, 104)
-$right.Size = New-Object System.Drawing.Size(1040, 926)  # design size; below, after all children are added, snapped to the client
+$right.Size = New-Object System.Drawing.Size(1040, 926)
 $right.Anchor = 'Top, Bottom, Left, Right'
 $right.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
 $script:Form.Controls.Add($right)
@@ -1716,10 +1720,9 @@ for ($i=0; $i -lt $statLabels.Count; $i++) {
     $statLabels[$i].BackColor = [System.Drawing.Color]::FromArgb(31,40,56)
     $statLabels[$i].ForeColor = $statColors[$i]
     $statLabels[$i].TextAlign = 'MiddleCenter'
-    $statLabels[$i].Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
+    $statLabels[$i].Font = New-Object System.Drawing.Font($script:UiFontFamily,8.5,[System.Drawing.FontStyle]::Bold)
     $right.Controls.Add($statLabels[$i])
 }
-# --- Полоса статистики: ширины блоков считаются от фактической панели, поэтому «Недопустимо» и «Ошибки» не вылезают за край ни на одном разрешении
 $right.Add_SizeChanged({
     $uufPanelW = [int]$script:Form.ClientSize.Width - 440
     if ($uufPanelW -lt 520) { $uufPanelW = 520 }
@@ -1836,7 +1839,7 @@ $script:Grid.GridColor = [System.Drawing.Color]::FromArgb(42,52,70)
 $script:Grid.EnableHeadersVisualStyles = $false
 $script:Grid.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(35,46,63)
 $script:Grid.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-$script:Grid.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
+$script:Grid.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font($script:UiFontFamily,8.5,[System.Drawing.FontStyle]::Bold)
 $script:Grid.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(20,27,38)
 $script:Grid.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
 $script:Grid.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(50,75,112)
@@ -1877,7 +1880,6 @@ $script:Grid.add_CellDoubleClick({
         }
     }
 })
-# --- Подсказки статуса: оформление не должно уметь ронять запуск
 try {
     $script:GridToolTip = New-Object System.Windows.Forms.ToolTip
     $script:GridToolTip.InitialDelay = 250
@@ -1921,7 +1923,7 @@ $diagnosticHeader.Text = 'ДИАГНОСТИКА И ЖУРНАЛ'
 $diagnosticHeader.Location = New-Object System.Drawing.Point(14,720)
 $diagnosticHeader.Anchor = 'Bottom, Left'
 $diagnosticHeader.Size = New-Object System.Drawing.Size(250,20)
-$diagnosticHeader.Font = New-Object System.Drawing.Font('Segoe UI Semibold',8.5,[System.Drawing.FontStyle]::Bold)
+$diagnosticHeader.Font = New-Object System.Drawing.Font($script:UiFontFamily,8.5,[System.Drawing.FontStyle]::Bold)
 $diagnosticHeader.ForeColor = [System.Drawing.Color]::FromArgb(194,207,226)
 $right.Controls.Add($diagnosticHeader)
 $script:DiagnosticBox = New-Object System.Windows.Forms.TextBox
@@ -1937,6 +1939,15 @@ $script:DiagnosticBox.ForeColor = [System.Drawing.Color]::FromArgb(255,198,112)
 $script:DiagnosticBox.Font = New-Object System.Drawing.Font('Consolas',8.5)
 $script:DiagnosticBox.Text = 'Готово. Здесь отображаются события, ошибки сети и ответы API.'
 $right.Controls.Add($script:DiagnosticBox)
+$script:DiagnosticHeader = $diagnosticHeader
+$script:DiagnosticsExpanded = $false
+$script:DiagnosticsToggleButton = Add-UiButton '▲  Развернуть журнал' 880 716 144 $false 26 $right
+$script:DiagnosticsToggleButton.Anchor = 'Bottom, Right'
+$script:DiagnosticsToggleButton.Add_Click({
+    $script:DiagnosticsExpanded = -not $script:DiagnosticsExpanded
+    if ($script:DiagnosticsExpanded) { $script:DiagnosticsToggleButton.Text = '▼  Вернуть стандартно' } else { $script:DiagnosticsToggleButton.Text = '▲  Развернуть журнал' }
+    Set-UufRightLayout
+})
 $script:CopyLogButton = Add-UiButton 'Копировать журнал' 14 844 184 $false 28 $right
 $script:CopyLogButton.Anchor = 'Bottom, Left'
 $script:ClearLogButton = Add-UiButton 'Очистить журнал' 208 844 184 $false 28 $right
@@ -1949,22 +1960,58 @@ $script:SummaryLabel.Anchor = 'Bottom, Left, Right'
 $script:SummaryLabel.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
 $script:SummaryLabel.TextAlign = 'MiddleRight'
 $right.Controls.Add($script:SummaryLabel)
+$script:VpnNoticePlatforms = @('YouTube','Telegram','Outlook','Google','Discord')
+$script:VpnNoticeText = 'Проверка некоторых платформ возможно потребует VPN/Proxy, если вы проживаете в странах СНГ, где работают блокировки.'
+function Update-VpnNotice {
+    if ($null -eq $script:FooterNotice -or $null -eq $script:PlatformBox) { return }
+    $noticePlatform = [string]$script:PlatformBox.SelectedItem
+    $needNotice = ($script:VpnNoticePlatforms -contains $noticePlatform)
+    $script:FooterNotice.Visible = $needNotice
+    if ($needNotice) { $script:FooterNotice.Text = '!  ' + $script:VpnNoticeText }
+}
 $footer = New-Object System.Windows.Forms.Label
-$footer.Text = '!  «Свободен» означает, что платформа не нашла занятым это имя публичным способом; финальное подтверждение — форма регистрации. Неясные ответы остаются в «Не подтверждено».'
+$footer.Text = ''
 $footer.Location = New-Object System.Drawing.Point(14,878)
 $footer.Size = New-Object System.Drawing.Size(1008,34)
 $footer.Anchor = 'Bottom, Left, Right'
 $footer.ForeColor = [System.Drawing.Color]::FromArgb(20,20,24)
 $footer.BackColor = [System.Drawing.Color]::FromArgb(248,185,65)
-$footer.Font = New-Object System.Drawing.Font('Segoe UI',9.5,[System.Drawing.FontStyle]::Bold)
+$footer.Font = New-Object System.Drawing.Font($script:UiFontFamily,9.5,[System.Drawing.FontStyle]::Bold)
 $footer.TextAlign = 'MiddleLeft'
 $footer.Padding = New-Object System.Windows.Forms.Padding(8,0,4,0)
 $right.Controls.Add($footer)
-# --- Правая панель: подгонка под клиентское окно после добавления детей — якоря Bottom поднимают журнал и футер вверх
+$script:FooterNotice = $footer
+Update-VpnNotice
+function Set-UufRightLayout {
+    if ($null -eq $script:DiagnosticBox -or $null -eq $script:Grid -or $null -eq $script:DiagnosticHeader) { return }
+    $layoutPanel = $script:DiagnosticBox.Parent
+    $panelHeight = [int]$layoutPanel.ClientSize.Height
+    $panelWidth = [int]$layoutPanel.ClientSize.Width
+    if ($panelHeight -lt 420 -or $panelWidth -lt 520) { return }
+    $contentWidth = $panelWidth - 32
+    $standardGridHeight = $panelHeight - 358
+    $expandPx = 0
+    if ($script:DiagnosticsExpanded) { $expandPx = [Math]::Max(0, [Math]::Min(300, $standardGridHeight - 180)) }
+    $script:Grid.Location = New-Object System.Drawing.Point(14,146)
+    $script:Grid.Size = New-Object System.Drawing.Size($contentWidth, ($standardGridHeight - $expandPx))
+    $headerTop = $panelHeight - 206 - $expandPx
+    $boxTop = $panelHeight - 184 - $expandPx
+    $script:DiagnosticHeader.Location = New-Object System.Drawing.Point(14,$headerTop)
+    $script:DiagnosticBox.Location = New-Object System.Drawing.Point(14,$boxTop)
+    $script:DiagnosticBox.Size = New-Object System.Drawing.Size($contentWidth, ($panelHeight - 88 - $boxTop))
+    if ($script:DiagnosticsToggleButton) { $script:DiagnosticsToggleButton.Location = New-Object System.Drawing.Point(($contentWidth - 130), ($headerTop - 3)) }
+    if ($script:CopyLogButton) { $script:CopyLogButton.Location = New-Object System.Drawing.Point(14,($panelHeight - 82)) }
+    if ($script:ClearLogButton) { $script:ClearLogButton.Location = New-Object System.Drawing.Point(208,($panelHeight - 82)) }
+    if ($script:SummaryLabel) { $script:SummaryLabel.Location = New-Object System.Drawing.Point(402,($panelHeight - 82)); $script:SummaryLabel.Size = New-Object System.Drawing.Size([Math]::Max(200,$contentWidth - 388),28) }
+    if ($script:FooterNotice) { $script:FooterNotice.Location = New-Object System.Drawing.Point(14,($panelHeight - 48)); $script:FooterNotice.Size = New-Object System.Drawing.Size($contentWidth,34) }
+}
+
 try {
     $uufClientFit = $script:Form.ClientSize
     $right.Size = New-Object System.Drawing.Size([Math]::Max(520,[int]$uufClientFit.Width - 440),[Math]::Max(320,[int]$uufClientFit.Height - 114))
 } catch { }
+$right.Add_Resize({ Set-UufRightLayout })
+Set-UufRightLayout
 
 $script:AvailableNames = New-Object System.Collections.Generic.List[string]
 $script:PlatformAvailableNames = New-Object System.Collections.Generic.List[string]
@@ -2007,7 +2054,6 @@ function Get-CryptoRandomIndex {
     return [int]($value % $MaxExclusive)
 }
 
-# --- Пароль и регистрация
 function New-SecurePassword {
     param([ValidateRange(16,32)][int]$Length = 20)
     $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
@@ -2043,7 +2089,7 @@ function Get-SavedAccountRecords {
         $records = ConvertFrom-Json -InputObject $json -ErrorAction Stop
         return @($records)
     } catch {
-        Write-AppLog ('Не удалось прочитать зашифрованное хранилище: ' + $_.Exception.ToString())
+        Add-ErrorDiagnostic ('Не удалось прочитать зашифрованное хранилище: ' + $_.Exception.ToString())
         throw 'Не удалось открыть зашифрованное хранилище. Оно доступно только тому же пользователю Windows, который его создал. Подробности в UniversalUsernameFinder.log.'
     }
 }
@@ -2099,6 +2145,7 @@ function Save-EncryptedAccountRecords {
     } finally {
         if ([System.IO.File]::Exists($tempPath)) { try { [System.IO.File]::Delete($tempPath) } catch { } }
     }
+    Backup-AccountVault
 }
 
 function Refresh-SavedAccountList {
@@ -2170,6 +2217,16 @@ function Get-AccountSafetyText {
     return ($lines -join "`r`n")
 }
 
+$script:GoogleFirstNames = @('Alex','Daniel','Maria','Sophie','Liam','Emma','Lucas','Olivia','Ethan','Mia','Noah','Anna','Leo','Clara','Max','Julia','Ryan','Nora','Adam','Lena','Oscar','Eva','Henry','Ruby')
+$script:GoogleLastNames = @('Miller','Schmidt','Brown','Novak','Weber','Clark','Wagner','Hughes','Fischer','Bennett','Hoffmann','Reed','Keller','Morgan','Becker','Carter','Lang','Foster','Wolf','Hayes','Berger','Ward','Krause','Shaw')
+function Set-RandomGoogleNameFields {
+    if ($null -eq $script:GoogleFirstNameBox -or $null -eq $script:GoogleLastNameBox) { return }
+    $firstPick = $script:GoogleFirstNames[(Get-Random -Minimum 0 -Maximum $script:GoogleFirstNames.Count)]
+    $lastPick = $script:GoogleLastNames[(Get-Random -Minimum 0 -Maximum $script:GoogleLastNames.Count)]
+    $script:GoogleFirstNameBox.Text = [string]$firstPick
+    $script:GoogleLastNameBox.Text = [string]$lastPick
+}
+
 function Update-AccountPlatformUi {
     $platform = [string]$script:PlatformBox.SelectedItem
     if ([string]::IsNullOrWhiteSpace($platform)) { return }
@@ -2181,39 +2238,58 @@ function Update-AccountPlatformUi {
     if ($script:AccountUsernameLabel) { $script:AccountUsernameLabel.Text = 'Никнейм ' + $platform + $suffix }
     if ($script:OpenRegisterButton) { $script:OpenRegisterButton.Text = 'Открыть ' + $platform + ' для регистрации' }
     if ($script:SafetyInfoLabel) { $script:SafetyInfoLabel.Text = Get-AccountSafetyText -Platform $platform }
+    $isGoogleAccount = ($platform -eq 'Google')
+    foreach ($googleNameControl in @($script:GoogleNameLabel, $script:GoogleFirstNameBox, $script:GoogleLastNameBox, $script:GoogleRandomNameButton)) {
+        if ($googleNameControl) { $googleNameControl.Visible = $isGoogleAccount }
+    }
+    if ($isGoogleAccount -and $script:GoogleFirstNameBox -and [string]::IsNullOrWhiteSpace($script:GoogleFirstNameBox.Text)) { Set-RandomGoogleNameFields }
 }
 
 function Open-AccountTools {
     $script:AccountForm = New-Object System.Windows.Forms.Form
     $script:AccountForm.Text = 'UUF — регистрация'
     $script:AccountForm.StartPosition = 'CenterParent'
-    $script:AccountForm.Size = New-Object System.Drawing.Size(780, 610)
-    $script:AccountForm.MinimumSize = New-Object System.Drawing.Size(780, 610)
+    $script:AccountForm.Size = New-Object System.Drawing.Size(780, 690)
+    $script:AccountForm.MinimumSize = New-Object System.Drawing.Size(780, 690)
     $script:AccountForm.MaximizeBox = $false
     $script:AccountForm.MinimizeBox = $false
     $script:AccountForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
     $script:AccountForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-    $script:AccountForm.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+    $script:AccountForm.Font = New-Object System.Drawing.Font($script:UiFontFamily, 9)
     Set-WindowChrome -Window $script:AccountForm
 
-    $tabs = New-Object System.Windows.Forms.TabControl
-    $tabs.Location = New-Object System.Drawing.Point(14, 14)
-    $tabs.Size = New-Object System.Drawing.Size(738, 535)
-    $tabs.Anchor = 'Top, Bottom, Left, Right'
-    $prepareTab = New-Object System.Windows.Forms.TabPage
-    $prepareTab.Text = 'Пароль и регистрация'
+    $navFont = New-Object System.Drawing.Font($script:UiFontFamily,10,[System.Drawing.FontStyle]::Bold)
+    $prepareTab = New-Object System.Windows.Forms.Panel
+    $prepareTab.Location = New-Object System.Drawing.Point(14, 64)
+    $prepareTab.Size = New-Object System.Drawing.Size(738, 560)
     $prepareTab.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
     $prepareTab.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-    $vaultTab = New-Object System.Windows.Forms.TabPage
-    $vaultTab.Text = 'Сохранённые аккаунты'
+    $vaultTab = New-Object System.Windows.Forms.Panel
+    $vaultTab.Location = New-Object System.Drawing.Point(14, 64)
+    $vaultTab.Size = New-Object System.Drawing.Size(738, 560)
     $vaultTab.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
     $vaultTab.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-    [void]$tabs.TabPages.Add($prepareTab)
-    [void]$tabs.TabPages.Add($vaultTab)
-    Set-UufTabStyle -Tabs $tabs -TabWidth 190
-    $script:AccountTabs = $tabs
+    $script:AccountForm.Controls.Add($prepareTab)
+    $script:AccountForm.Controls.Add($vaultTab)
+    $script:AccountPrepareTab = $prepareTab
     $script:AccountVaultTab = $vaultTab
-    $script:AccountForm.Controls.Add($tabs)
+    $script:AccountTabButtons = @()
+    $tabTitles = @('Регистрация и пароль', 'Сохранённые аккаунты')
+    for ($tabIndex = 0; $tabIndex -lt 2; $tabIndex++) {
+        $tabButton = New-Object System.Windows.Forms.Button
+        $tabButton.Text = [string]$tabTitles[$tabIndex]
+        $tabButton.Location = New-Object System.Drawing.Point((14 + $tabIndex * 373), 14)
+        $tabButton.Size = New-Object System.Drawing.Size(365, 40)
+        $tabButton.FlatStyle = 'Flat'
+        $tabButton.FlatAppearance.BorderSize = 1
+        $tabButton.Font = $navFont
+        $tabButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+        $tabButton.UseVisualStyleBackColor = $false
+        $tabButton.Tag = $tabIndex
+        $tabButton.Add_Click({ param($clickSender, $clickArgs) Set-AccountTabView -Index ([int]$clickSender.Tag) })
+        $script:AccountForm.Controls.Add($tabButton)
+        $script:AccountTabButtons += $tabButton
+    }
 
     $intro = New-Object System.Windows.Forms.Label
     $intro.Text = 'Выбери ник из списка или введи свой. Платформа берётся из выбранной строки таблицы или из списка «Платформа проверки». Пароль генерируется локально и никуда не отправляется.'
@@ -2341,6 +2417,38 @@ function Open-AccountTools {
     $safetyInfo.Padding = New-Object System.Windows.Forms.Padding(8, 6, 8, 4)
     $script:SafetyInfoLabel = $safetyInfo
     $prepareTab.Controls.Add($safetyInfo)
+    $script:GoogleNameLabel = New-Object System.Windows.Forms.Label
+    $script:GoogleNameLabel.Text = 'Имя и фамилия для формы Google'
+    $script:GoogleNameLabel.Location = New-Object System.Drawing.Point(18, 486)
+    $script:GoogleNameLabel.Size = New-Object System.Drawing.Size(677, 20)
+    $script:GoogleNameLabel.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
+    $script:GoogleNameLabel.Visible = $false
+    $prepareTab.Controls.Add($script:GoogleNameLabel)
+    $script:GoogleFirstNameBox = New-Object System.Windows.Forms.TextBox
+    $script:GoogleFirstNameBox.Location = New-Object System.Drawing.Point(18, 510)
+    $script:GoogleFirstNameBox.Size = New-Object System.Drawing.Size(220, 28)
+    $script:GoogleFirstNameBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:GoogleFirstNameBox.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $script:GoogleFirstNameBox.Visible = $false
+    $prepareTab.Controls.Add($script:GoogleFirstNameBox)
+    $script:GoogleLastNameBox = New-Object System.Windows.Forms.TextBox
+    $script:GoogleLastNameBox.Location = New-Object System.Drawing.Point(248, 510)
+    $script:GoogleLastNameBox.Size = New-Object System.Drawing.Size(220, 28)
+    $script:GoogleLastNameBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:GoogleLastNameBox.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $script:GoogleLastNameBox.Visible = $false
+    $prepareTab.Controls.Add($script:GoogleLastNameBox)
+    $script:GoogleRandomNameButton = New-Object System.Windows.Forms.Button
+    $script:GoogleRandomNameButton.Text = 'Случайное имя и фамилия'
+    $script:GoogleRandomNameButton.Location = New-Object System.Drawing.Point(478, 508)
+    $script:GoogleRandomNameButton.Size = New-Object System.Drawing.Size(217, 32)
+    $script:GoogleRandomNameButton.FlatStyle = 'Flat'
+    $script:GoogleRandomNameButton.FlatAppearance.BorderSize = 0
+    $script:GoogleRandomNameButton.BackColor = [System.Drawing.Color]::FromArgb(93,73,222)
+    $script:GoogleRandomNameButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $script:GoogleRandomNameButton.Visible = $false
+    $script:GoogleRandomNameButton.Add_Click({ Set-RandomGoogleNameFields })
+    $prepareTab.Controls.Add($script:GoogleRandomNameButton)
 
     $script:AccountListBox = New-Object System.Windows.Forms.ListBox
     $script:AccountListBox.Location = New-Object System.Drawing.Point(18, 18)
@@ -2411,7 +2519,7 @@ function Open-AccountTools {
     $refreshNicks.Add_Click({
         $keep = $script:AccountUsernameBox.Text.Trim()
         $script:AccountUsernameBox.Items.Clear()
-        foreach ($availableNick in $script:PlatformAvailableNames) { [void]$script:AccountUsernameBox.Items.Add([string]$availableNick) }
+        foreach ($availableNick in $script:PlatformAvailableNames) { [void]$script:AccountUsernameBox.Items.Add((Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name ([string]$availableNick))) }
         $script:AccountUsernameBox.Text = $keep
         if ($script:AccountUsernameBox.Items.Count -eq 0) {
             [System.Windows.Forms.MessageBox]::Show('В основном окне пока нет найденных свободных ников. Можно ввести ник вручную, но его доступность не подтверждена.', 'Список ников', 'OK', 'Information') | Out-Null
@@ -2423,7 +2531,7 @@ function Open-AccountTools {
             $script:AccountPasswordBox.Text = New-SecurePassword -Length ([int]$script:PasswordLengthBox.Value)
             $script:RegistrationConfirmedCheck.Checked = $false
         } catch {
-            Write-AppLog ('Ошибка генерации пароля: ' + $_.Exception.ToString())
+            Add-ErrorDiagnostic ('Ошибка генерации пароля: ' + $_.Exception.ToString())
             [System.Windows.Forms.MessageBox]::Show('Не удалось создать пароль: ' + $_.Exception.Message, 'Ошибка', 'OK', 'Error') | Out-Null
         }
     })
@@ -2471,7 +2579,6 @@ function Open-AccountTools {
             [System.Windows.Forms.MessageBox]::Show(('Проверь ник: ' + (Get-PlatformFormatHint -Platform ([string]$script:AccountPlatform)) + '.'), 'Неверный ник', 'OK', 'Warning') | Out-Null
             return
         }
-        # --- Пункт 6: для Mail.ru пароль при регистрации создаётся сайтом, поэтому сохранение без пароля допустимо
         $passwordOptionalPlatform = ([string]$script:AccountPlatform -eq 'Mail.ru')
         if ([string]::IsNullOrWhiteSpace($password)) {
             if (-not $passwordOptionalPlatform) {
@@ -2488,31 +2595,36 @@ function Open-AccountTools {
             return
         }
         try {
+            $storedNick = Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name $nick
             $records = @(Get-SavedAccountRecords)
-            $existing = @($records | Where-Object { [string]$_.Username -ieq $nick })
+            $existing = @($records | Where-Object { [string]$_.Username -ieq $storedNick -or [string]$_.Username -ieq $nick })
             if ($existing.Count -gt 0) {
-                $choice = [System.Windows.Forms.MessageBox]::Show("Запись для ника $nick уже существует. Перезаписать пароль?", 'Запись уже есть', 'YesNo', 'Question')
+                $choice = [System.Windows.Forms.MessageBox]::Show("Запись для ника $storedNick уже существует. Перезаписать пароль?", 'Запись уже есть', 'YesNo', 'Question')
                 if ($choice -ne [System.Windows.Forms.DialogResult]::Yes) { return }
-                $records = @($records | Where-Object { [string]$_.Username -ine $nick })
+                $records = @($records | Where-Object { [string]$_.Username -ine $storedNick -and [string]$_.Username -ine $nick })
             }
-            $record = [pscustomobject]@{Username=$nick; Password=$password; Platform=([string]$script:AccountPlatform); CreatedAt=(Get-Date).ToString('o')}
+            $record = [pscustomobject]@{Username=$storedNick; Password=$password; Platform=([string]$script:AccountPlatform); CreatedAt=(Get-Date).ToString('o')}
             $records = @($records) + @($record)
             Save-EncryptedAccountRecords -Records $records
             $script:RegistrationConfirmedCheck.Checked = $false
             Refresh-SavedAccountList
-            $script:AccountTabs.SelectedTab = $script:AccountVaultTab
-            [System.Windows.Forms.MessageBox]::Show("Данные для $nick сохранены в зашифрованное хранилище текущего пользователя Windows.", 'Сохранено', 'OK', 'Information') | Out-Null
+            Set-AccountTabView -Index 1
+            [System.Windows.Forms.MessageBox]::Show("Данные для $storedNick сохранены в зашифрованное хранилище текущего пользователя Windows.`r`nРезервная копия: $($script:VaultDirectory)\backups", 'Сохранено', 'OK', 'Information') | Out-Null
         } catch {
-            Write-AppLog ('Не удалось сохранить учётные данные: ' + $_.Exception.ToString())
+            Add-ErrorDiagnostic ('Не удалось сохранить учётные данные: ' + $_.Exception.ToString())
             [System.Windows.Forms.MessageBox]::Show('Не удалось сохранить данные. ' + $_.Exception.Message + "`r`n`r`nСм. UniversalUsernameFinder.log.", 'Ошибка сохранения', 'OK', 'Error') | Out-Null
         }
     })
 
     $script:AccountListBox.Add_SelectedIndexChanged({
-        if ($script:AccountListBox.SelectedIndex -ge 0 -and $script:AccountListBox.SelectedIndex -lt $script:AccountRecords.Count) {
-            $script:SavedPasswordBox.Text = [string]$script:AccountRecords[$script:AccountListBox.SelectedIndex].Password
-        } else {
-            $script:SavedPasswordBox.Clear()
+        try {
+            if ($script:AccountListBox.SelectedIndex -ge 0 -and $script:AccountListBox.SelectedIndex -lt $script:AccountRecords.Count) {
+                $script:SavedPasswordBox.Text = [string]$script:AccountRecords[$script:AccountListBox.SelectedIndex].Password
+            } else {
+                $script:SavedPasswordBox.Clear()
+            }
+        } catch {
+            Add-ErrorDiagnostic ('Выбор сохранённой записи: ' + $_.Exception.ToString())
         }
     })
 
@@ -2550,13 +2662,13 @@ function Open-AccountTools {
             Save-EncryptedAccountRecords -Records $records
             Refresh-SavedAccountList
         } catch {
-            Write-AppLog ('Не удалось удалить запись из хранилища: ' + $_.Exception.ToString())
+            Add-ErrorDiagnostic ('Не удалось удалить запись из хранилища: ' + $_.Exception.ToString())
             [System.Windows.Forms.MessageBox]::Show('Не удалось изменить хранилище: ' + $_.Exception.Message, 'Ошибка', 'OK', 'Error') | Out-Null
         }
     })
 
     try {
-        foreach ($availableNick in $script:PlatformAvailableNames) { [void]$script:AccountUsernameBox.Items.Add([string]$availableNick) }
+        foreach ($availableNick in $script:PlatformAvailableNames) { [void]$script:AccountUsernameBox.Items.Add((Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name ([string]$availableNick))) }
         $preferredNick = ''
         if ($script:Grid.CurrentRow -and $script:Grid.CurrentRow.Index -ge 0) {
             $candidateNick = [string]$script:Grid.CurrentRow.Cells['Nick'].Value
@@ -2564,12 +2676,13 @@ function Open-AccountTools {
             if ($candidateStatus -eq 'Свободен') { $preferredNick = $candidateNick }
         }
         if (-not $preferredNick -and $script:PlatformAvailableNames.Count -gt 0) { $preferredNick = [string]$script:PlatformAvailableNames[0] }
+        if ($preferredNick) { $preferredNick = Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name $preferredNick }
         $script:AccountUsernameBox.Text = $preferredNick
         $script:AccountPasswordBox.Text = New-SecurePassword -Length ([int]$script:PasswordLengthBox.Value)
         Refresh-SavedAccountList
     } catch {
         $script:VaultStatusLabel.Text = 'Не удалось прочитать хранилище: ' + $_.Exception.Message
-        Write-AppLog ('Ошибка открытия инструментов аккаунта: ' + $_.Exception.ToString())
+        Add-ErrorDiagnostic ('Ошибка открытия инструментов аккаунта: ' + $_.Exception.ToString())
     }
     try {
         if ($script:Grid.CurrentRow -and $script:Grid.CurrentRow.Index -ge 0) {
@@ -2578,8 +2691,14 @@ function Open-AccountTools {
         }
     } catch { }
     Set-ButtonEdgeStyle -Root $script:AccountForm
+    Set-AccountTabView -Index 0
     Update-AccountPlatformUi
     [void]$script:AccountForm.ShowDialog($script:Form)
+}
+
+function Add-ErrorDiagnostic {
+    param([string]$Message)
+    Add-Diagnostic ('ОШИБКА: ' + $Message)
 }
 
 function Add-Diagnostic {
@@ -2619,7 +2738,6 @@ function Touch-Candidates {
     $script:CandidateRevision = $script:CandidateRevision + 1
 }
 
-# --- Атомарная запись файлов
 
 function Write-AtomicFile {
     param(
@@ -2661,7 +2779,6 @@ function Write-AtomicJsonFile {
     Write-AtomicFile -Path $Path -Bytes $bytes
 }
 
-# --- Хранилище истории ников
 function Save-UsernameHistory {
     try {
         if (-not (Test-Path -LiteralPath $script:HistoryDirectory)) { [void](New-Item -ItemType Directory -Path $script:HistoryDirectory -Force) }
@@ -2676,12 +2793,32 @@ function Save-UsernameHistory {
         Write-AtomicJsonFile -Path $historyFull -Json $json
         $script:HistoryDirty = $false
         $script:HistoryDirtySince = $null
-    } catch { Write-AppLog ('Не удалось сохранить историю ников: ' + $_.Exception.Message) }
+    } catch { Add-ErrorDiagnostic ('Не удалось сохранить историю ников: ' + $_.Exception.Message) }
 }
 
 function Mark-HistoryDirty {
     $script:HistoryDirty = $true
     if (-not $script:HistoryDirtySince) { $script:HistoryDirtySince = [DateTime]::UtcNow }
+}
+
+function Register-InvalidNick {
+    param([string]$Name, [string]$Platform)
+    if ([string]::IsNullOrWhiteSpace($Name) -or [string]::IsNullOrWhiteSpace($Platform)) { return }
+    $key = Get-HistoryKey -Name $Name -Platform $Platform
+    if ($script:RetiredNames.ContainsKey($key)) { return }
+    $script:RetiredNames[$key] = $true
+    Mark-HistoryDirty
+}
+
+function Register-ProgressOutcome {
+    param($Candidate)
+    if (-not $Candidate) { return }
+    $status = [string]$Candidate.Status
+    if ($status -eq 'Недопустимый') {
+        Register-InvalidNick -Name ([string]$Candidate.Name) -Platform ([string]$Candidate.Platform)
+    } elseif ($status -eq 'Ошибка сети') {
+        Add-ErrorDiagnostic ('{0} · {1}: {2}' -f [string]$Candidate.Platform, [string]$Candidate.Name, [string]$Candidate.Reason)
+    }
 }
 
 function Flush-HistoryIfDue {
@@ -2691,7 +2828,6 @@ function Flush-HistoryIfDue {
     if (([DateTime]::UtcNow - $script:HistoryDirtySince).TotalSeconds -ge $IntervalSeconds) { Save-UsernameHistory }
 }
 
-# --- Настройки приложения
 
 function Export-AppSettings {
     param(
@@ -2719,7 +2855,6 @@ function Import-AppSettings {
     return $result
 }
 
-# --- Безопасное применение значений к контролам
 
 function Add-SettingValue {
     param([hashtable]$Target, [string]$Key, [scriptblock]$Getter)
@@ -2763,7 +2898,6 @@ function Set-CheckedListFromSettings {
     }
 }
 
-# --- Настройки и геометрия окна
 function Get-AppSettingsFromUi {
     $settings = @{}
     Add-SettingValue $settings 'AppVersion' { $script:AppVersion }
@@ -2782,25 +2916,6 @@ function Restore-AppSettingsToUi {
     param([hashtable]$Settings)
     if ($null -eq $Settings -or $Settings.Count -eq 0) { return }
 
-    if ($Settings.ContainsKey('WindowBounds')) {
-        try {
-            $raw = $Settings['WindowBounds']
-            $rect = New-Object System.Drawing.Rectangle([int]$raw.X, [int]$raw.Y, [int]$raw.Width, [int]$raw.Height)
-            if ($rect.Width -ge 400 -and $rect.Height -ge 300) {
-                $visible = $false
-                foreach ($screen in [System.Windows.Forms.Screen]::AllScreens) {
-                    if ($screen.WorkingArea.IntersectsWith($rect)) { $visible = $true; break }
-                }
-                if ($visible) {
-                    $script:Form.StartPosition = 'Manual'
-                    $script:Form.Bounds = $rect
-                }
-            }
-        } catch { }
-    }
-    if ($Settings.ContainsKey('WindowState')) {
-        try { $script:Form.WindowState = [System.Windows.Forms.FormWindowState]([string]$Settings['WindowState']) } catch { }
-    }
 
     Set-ComboFromSettings $script:StatusFilterBox $Settings['StatusFilter']
     Set-ComboFromSettings $script:SortBox $Settings['SortMode']
@@ -2810,7 +2925,7 @@ function Restore-AppSettingsToUi {
 function Save-AppSettings {
     try {
         Export-AppSettings -Settings (Get-AppSettingsFromUi) -Path $script:SettingsPath
-    } catch { Write-AppLog ('Не удалось сохранить настройки: ' + $_.Exception.Message) }
+    } catch { Add-ErrorDiagnostic ('Не удалось сохранить настройки: ' + $_.Exception.Message) }
 }
 
 function Restore-AppSettings {
@@ -2818,13 +2933,13 @@ function Restore-AppSettings {
         $settings = Import-AppSettings -Path $script:SettingsPath
         if ($settings.Count -eq 0) {
             if (Test-Path -LiteralPath $script:SettingsPath) {
-                Write-AppLog 'Файл настроек повреждён или пуст; применены значения по умолчанию.'
+                Add-ErrorDiagnostic 'Файл настроек повреждён или пуст; применены значения по умолчанию.'
             }
             return
         }
         Restore-AppSettingsToUi -Settings $settings
         Add-Diagnostic ('Восстановлены настройки предыдущего сеанса (платформа: {0}).' -f [string]$script:PlatformBox.SelectedItem)
-    } catch { Write-AppLog ('Не удалось восстановить настройки: ' + $_.Exception.Message) }
+    } catch { Add-ErrorDiagnostic ('Не удалось восстановить настройки: ' + $_.Exception.Message) }
 }
 
 function Update-FreeHistoryFromCandidate {
@@ -2866,11 +2981,10 @@ function Refresh-FreeHistoryList {
     if ($script:HistoryListBox.Items.Count -eq 0) {
         $script:HistoryDescription.Text = 'Пока нет имён, которые проверка признала свободными.'
     } else {
-        $script:HistoryDescription.Text = 'Выбери ник и нажми «Повторная проверка». Если он уже занят, он исчезнет из истории и больше не будет генерироваться.'
+        $script:HistoryDescription.Text = 'Выбери один или несколько ников (Ctrl/Shift или «Выделить все») и нажми «Повторная проверка». Если ник уже занят, он исчезнет из истории и больше не будет генерироваться.'
     }
 }
 
-# --- Проверенные ники и история свободных
 function Update-CheckedNamesButtonText {
     if (-not $script:CheckedNamesButton) { return }
     $script:CheckedNamesButton.Text = ('Проверенные ники ({0})' -f $script:CheckedNames.Count)
@@ -2915,7 +3029,7 @@ function Open-CheckedNamesWindow {
     $checkedForm.MinimumSize = New-Object System.Drawing.Size(480,480)
     $checkedForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
     $checkedForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-    $checkedForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
+    $checkedForm.Font = New-Object System.Drawing.Font($script:UiFontFamily,9)
     Set-WindowChrome -Window $checkedForm
     $script:CheckedNamesDescription = New-Object System.Windows.Forms.Label
     $script:CheckedNamesDescription.Location = New-Object System.Drawing.Point(16,14)
@@ -3055,7 +3169,7 @@ function Open-FreeHistoryWindow {
     $script:HistoryForm.MinimumSize = New-Object System.Drawing.Size(560,480)
     $script:HistoryForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
     $script:HistoryForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
-    $script:HistoryForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
+    $script:HistoryForm.Font = New-Object System.Drawing.Font($script:UiFontFamily,9)
     Set-WindowChrome -Window $script:HistoryForm
     $script:HistoryDescription = New-Object System.Windows.Forms.Label
     $script:HistoryDescription.Location = New-Object System.Drawing.Point(16,12)
@@ -3084,9 +3198,34 @@ function Open-FreeHistoryWindow {
     $script:HistoryListBox.Size = New-Object System.Drawing.Size(480,360)
     $script:HistoryListBox.Anchor = 'Top, Bottom, Left, Right'
     $script:HistoryListBox.DisplayMember = 'Display'
+    $script:HistoryListBox.SelectionMode = 'MultiExtended'
     $script:HistoryListBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
     $script:HistoryListBox.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
     $script:HistoryForm.Controls.Add($script:HistoryListBox)
+    $selectAllHistory = New-Object System.Windows.Forms.Button
+    $selectAllHistory.Text = 'Выделить все'
+    $selectAllHistory.Location = New-Object System.Drawing.Point(16,466)
+    $selectAllHistory.Size = New-Object System.Drawing.Size(84,34)
+    $selectAllHistory.Anchor = 'Bottom, Left'
+    $selectAllHistory.FlatStyle = 'Flat'
+    $selectAllHistory.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $selectAllHistory.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $script:HistoryForm.Controls.Add($selectAllHistory)
+    $clearHistorySelection = New-Object System.Windows.Forms.Button
+    $clearHistorySelection.Text = 'Снять все'
+    $clearHistorySelection.Location = New-Object System.Drawing.Point(104,466)
+    $clearHistorySelection.Size = New-Object System.Drawing.Size(76,34)
+    $clearHistorySelection.Anchor = 'Bottom, Left'
+    $clearHistorySelection.FlatStyle = 'Flat'
+    $clearHistorySelection.BackColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $clearHistorySelection.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $script:HistoryForm.Controls.Add($clearHistorySelection)
+    $selectAllHistory.Add_Click({
+        if ($script:HistoryListBox) { for ($historyIndex = 0; $historyIndex -lt $script:HistoryListBox.Items.Count; $historyIndex++) { $script:HistoryListBox.SetSelected($historyIndex, $true) } }
+    })
+    $clearHistorySelection.Add_Click({
+        if ($script:HistoryListBox) { $script:HistoryListBox.ClearSelected() }
+    })
     $recheck = New-Object System.Windows.Forms.Button
     $recheck.Text = '↻ Повторная проверка'
     $recheck.Location = New-Object System.Drawing.Point(188,466)
@@ -3116,20 +3255,26 @@ function Open-FreeHistoryWindow {
     $open.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
     $script:HistoryForm.Controls.Add($open)
     $copy.Add_Click({
-        $selected = $script:HistoryListBox.SelectedItem
-        if ($selected) { Copy-UufTextToClipboard -Text ([string]$selected.Name) -Context 'копирование ника из свободных' | Out-Null }
+        $selectedItems = @($script:HistoryListBox.SelectedItems)
+        if ($selectedItems.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show('Сначала выбери ник (или несколько) в списке.','Копирование','OK','Information') | Out-Null; return }
+        $selectedNames = @($selectedItems | ForEach-Object { [string]$_.Name })
+        Copy-UufTextToClipboard -Text ($selectedNames -join [Environment]::NewLine) -Context 'копирование ников из свободных' | Out-Null
     })
     $open.Add_Click({
         $selected = $script:HistoryListBox.SelectedItem
         if ($selected) { Start-Process (Get-PlatformWebsiteUrl -Platform ([string]$selected.Platform) -Username ([string]$selected.Name)) }
     })
     $recheck.Add_Click({
-        $selected = $script:HistoryListBox.SelectedItem
-        if (-not $selected) { [System.Windows.Forms.MessageBox]::Show('Сначала выбери ник в списке.','Повторная проверка','OK','Information') | Out-Null; return }
-        $selectedName = [string]$selected.Name
-        $selectedPlatform = [string]$selected.Platform
+        $selectedItems = @($script:HistoryListBox.SelectedItems)
+        if ($selectedItems.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show('Сначала выбери ник (или несколько) в списке.','Повторная проверка','OK','Information') | Out-Null; return }
+        $selectedPlatforms = @($selectedItems | ForEach-Object { [string]$_.Platform } | Sort-Object -Unique)
+        if ($selectedPlatforms.Count -gt 1) {
+            [System.Windows.Forms.MessageBox]::Show('Повторная проверка работает для ников одной платформы за раз. Выдели ники только одной платформы.','Повторная проверка','OK','Information') | Out-Null
+            return
+        }
+        $selectedPlatform = [string]$selectedPlatforms[0]
         if (-not (Test-SupportedPlatform -Platform $selectedPlatform)) {
-            [System.Windows.Forms.MessageBox]::Show(("Платформа «{0}» больше не поддерживается этой версией программы.`r`n`r`nПовторная проверка доступна для: {1}." -f $selectedPlatform, ($script:SupportedPlatforms -join ', ')),'Повторная проверка','OK','Information') | Out-Null
+            [System.Windows.Forms.MessageBox]::Show(("Платформа «{0}» больше не поддерживается этой версией программы." -f $selectedPlatform),'Повторная проверка','OK','Information') | Out-Null
             Add-Diagnostic ("Повторная проверка отменена: платформа $selectedPlatform не поддерживается.")
             return
         }
@@ -3139,22 +3284,24 @@ function Open-FreeHistoryWindow {
         }
         $script:HistoryForm.Close()
         $script:PlatformBox.SelectedItem = $selectedPlatform
-        $candidate = Find-Candidate -Name $selectedName -Platform $selectedPlatform
-        if (-not $candidate) {
-            $candidate = [pscustomobject]@{Name=$selectedName; Platform=$selectedPlatform; Meaning='Повторная проверка из истории'; Category='История свободных'; Structure=(Get-NickStructure -Name $selectedName); Status='Ожидает'; Time=''; Reason='Запрошена повторная проверка'; Checked=$false}
-            [void]$script:Candidates.Add($candidate)
-            Register-Candidate $candidate
+        foreach ($selectedItem in $selectedItems) {
+            $selectedName = [string]$selectedItem.Name
+            $candidate = Find-Candidate -Name $selectedName -Platform $selectedPlatform
+            if (-not $candidate) {
+                $candidate = [pscustomobject]@{Name=$selectedName; Platform=$selectedPlatform; Meaning='Повторная проверка из истории'; Category='История свободных'; Structure=(Get-NickStructure -Name $selectedName); Status='Ожидает'; Time=''; Reason='Запрошена повторная проверка'; Checked=$false}
+                [void]$script:Candidates.Add($candidate)
+                Register-Candidate $candidate
+            }
+            $candidate.Status = 'Ожидает'
+            $candidate.Time = ''
+            $candidate.Reason = 'Запрошена повторная проверка'
+            $candidate.Checked = $false
+            $script:CheckedNames.Remove((Get-HistoryKey -Name $selectedName -Platform $selectedPlatform))
         }
-        $candidate.Status = 'Ожидает'
-        $candidate.Time = ''
-        $candidate.Reason = 'Запрошена повторная проверка'
-        $candidate.Checked = $false
         Touch-Candidates
-        $key = Get-HistoryKey -Name $selectedName -Platform $selectedPlatform
-        $script:CheckedNames.Remove($key)
         Update-ResultGrid
-        Add-Diagnostic "Повторная проверка: $selectedName ($selectedPlatform)."
-        Start-Checking -RetryErrorsOnly $false
+        Add-Diagnostic ("Повторная проверка: {0} ник(ов), платформа {1}." -f $selectedItems.Count, $selectedPlatform)
+        Start-Checking -RetryErrorsOnly $false -ResumePending $true
     })
     Set-ButtonEdgeStyle -Root $script:HistoryForm
     $historyOrderedPlatforms = @($script:SupportedPlatforms)
@@ -3180,188 +3327,453 @@ function Open-FreeHistoryWindow {
     [void]$script:HistoryForm.ShowDialog($script:Form)
 }
 
-# --- Помощь
+$script:ConnectionEndpoints = @(
+    [pscustomobject]@{Platform='Telegram';  Url='https://t.me/'},
+    [pscustomobject]@{Platform='YouTube';   Url='https://www.youtube.com/'},
+    [pscustomobject]@{Platform='Google';    Url='https://accounts.google.com/'},
+    [pscustomobject]@{Platform='Outlook';   Url='https://signup.live.com/'},
+    [pscustomobject]@{Platform='Discord';   Url='https://discord.com/api/v9/gateway'},
+    [pscustomobject]@{Platform='GitHub';    Url='https://api.github.com/zen'},
+    [pscustomobject]@{Platform='Steam';     Url='https://steamcommunity.com/'},
+    [pscustomobject]@{Platform='Roblox';    Url='https://www.roblox.com/'},
+    [pscustomobject]@{Platform='VK';        Url='https://vk.com/'},
+    [pscustomobject]@{Platform='Mail.ru';   Url='https://account.mail.ru/'}
+)
+$script:HttpStatusNotes = @{
+    200 = 'OK — запрос выполнен';
+    201 = 'Created — ресурс создан';
+    204 = 'No Content — успех без тела ответа';
+    301 = 'Moved Permanently — адрес перенесён навсегда';
+    302 = 'Found — временное перенаправление';
+    303 = 'See Other — смотри другой адрес';
+    304 = 'Not Modified — ресурс не изменился';
+    307 = 'Temporary Redirect — временное перенаправление';
+    308 = 'Permanent Redirect — постоянное перенаправление';
+    400 = 'Bad Request — неверный запрос';
+    401 = 'Unauthorized — нужна аутентификация';
+    403 = 'Forbidden — доступ запрещён сервером';
+    404 = 'Not Found — ресурс не найден';
+    405 = 'Method Not Allowed — метод не разрешён';
+    408 = 'Request Timeout — сервер не дождался запроса';
+    409 = 'Conflict — конфликт с состоянием ресурса';
+    410 = 'Gone — ресурс удалён';
+    418 = 'I''m a teapot — сервер отказывается варить кофе';
+    429 = 'Too Many Requests — превышен лимит запросов';
+    500 = 'Internal Server Error — ошибка на стороне сервера';
+    501 = 'Not Implemented — метод не поддерживается';
+    502 = 'Bad Gateway — плохой ответ вышестоящего сервера';
+    503 = 'Service Unavailable — сервис временно недоступен';
+    504 = 'Gateway Timeout — вышестоящий сервер не ответил вовремя'
+}
+
+function Get-ConnectionVerdict {
+    param([int]$Code, [string]$ErrorText)
+    if ($Code -le 0) {
+        if ($ErrorText -match 'timed out|timeout|время|таймаут') { return [pscustomobject]@{Result='Долго отвечает'; Note=('таймаут: ' + $ErrorText)} }
+        $noteText = 'соединение не установлено'
+        if ($ErrorText) { $noteText = $ErrorText }
+        return [pscustomobject]@{Result='Нет связи'; Note=$noteText}
+    }
+    $codeNote = 'HTTP ' + $Code
+    if ($script:HttpStatusNotes.ContainsKey($Code)) { $codeNote = [string]$script:HttpStatusNotes[$Code] }
+    if ($Code -ge 200 -and $Code -lt 400) { return [pscustomobject]@{Result='pass'; Note='Clear'} }
+    if ($Code -ge 400 -and $Code -lt 500) { return [pscustomobject]@{Result='denied'; Note=$codeNote} }
+    if ($Code -ge 500) { return [pscustomobject]@{Result='error'; Note=$codeNote} }
+    return [pscustomobject]@{Result='unknown'; Note=$codeNote}
+}
+
+$script:ConnectionScript = @'
+param($Url, $TimeoutSec, $Proxy, $UserAgent, $Queue, $Platform)
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
+$code = 0
+$errorText = ''
+$watch = [System.Diagnostics.Stopwatch]::StartNew()
+try {
+    $requestArgs = @{ Uri = $Url; Method = 'Get'; TimeoutSec = $TimeoutSec; UseBasicParsing = $true; Headers = @{ 'User-Agent' = $UserAgent }; MaximumRedirection = 0 }
+    if ($Proxy) { $requestArgs.Proxy = $Proxy }
+    $response = Invoke-WebRequest @requestArgs
+    $code = [int]$response.StatusCode
+} catch {
+    try { if ($null -ne $_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode } } catch { $code = 0 }
+    if ($code -eq 0) {
+        $inner = $_.Exception
+        while ($null -ne $inner.InnerException) { $inner = $inner.InnerException }
+        $errorText = [string]$inner.Message
+    }
+}
+$watch.Stop()
+$null = $Queue.Enqueue([pscustomobject]@{ Platform = $Platform; Code = $code; Ms = [int]$watch.ElapsedMilliseconds; Error = $errorText })
+'@
+
+function Stop-ConnectionTest {
+    try { if ($script:ConnTimer) { $script:ConnTimer.Stop() } } catch { }
+    $oldPowerShells = $script:ConnPowerShells
+    $oldRunspaces = $script:ConnRunspaces
+    $script:ConnPowerShells = New-Object 'System.Collections.Generic.List[object]'
+    $script:ConnRunspaces = New-Object 'System.Collections.Generic.List[object]'
+    if ($null -ne $oldPowerShells) {
+        for ($psIndex = 0; $psIndex -lt $oldPowerShells.Count; $psIndex++) {
+            try { $connPs = $oldPowerShells[$psIndex]; if ($null -ne $connPs) { $connPs.Stop(); $connPs.Dispose() } } catch { }
+        }
+    }
+    if ($null -ne $oldRunspaces) {
+        for ($rsIndex = 0; $rsIndex -lt $oldRunspaces.Count; $rsIndex++) {
+            try { $connRs = $oldRunspaces[$rsIndex]; if ($null -ne $connRs) { $connRs.Close(); $connRs.Dispose() } } catch { }
+        }
+    }
+}
+
+function Get-ConnectionReportLines {
+    $reportLines = New-Object 'System.Collections.Generic.List[string]'
+    $reportIndex = 0
+    if ($null -eq $script:ConnGrid) { return @() }
+    foreach ($reportRow in $script:ConnGrid.Rows) {
+        $reportIndex++
+        $pingCell = [string]$reportRow.Cells['Ping'].Value
+        $resultCell = [string]$reportRow.Cells['Result'].Value
+        $noteCell = [string]$reportRow.Cells['Note'].Value
+        $reportLines.Add(("{0}. {1}.api - {2}, ping: {3}, Error: {4}" -f $reportIndex, [string]$reportRow.Cells['Platform'].Value, $resultCell, $pingCell, $noteCell))
+    }
+    return @($reportLines)
+}
+
+function Start-ConnectionTest {
+    if ($null -eq $script:ConnGrid) { return }
+    Stop-ConnectionTest
+    $script:ConnGrid.Rows.Clear()
+    $connProxy = ''
+    try { $connProxy = [string]$script:ProxyBox.Text.Trim() } catch { $connProxy = '' }
+    if ($connProxy -and $connProxy -notmatch '^[A-Za-z][A-Za-z0-9+.-]*://') { $connProxy = 'http://' + $connProxy }
+    $connUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36'
+    $script:ConnQueue = [System.Collections.Concurrent.ConcurrentQueue[object]]::new()
+    $script:ConnTotal = @($script:ConnectionEndpoints).Count
+    $script:ConnDone = 0
+    foreach ($connEndpoint in $script:ConnectionEndpoints) {
+        [void]$script:ConnGrid.Rows.Add([object[]]@([string]$connEndpoint.Platform, [string]$connEndpoint.Url, 'проверяется…', '—', '—', ''))
+        $connRunspace = [RunspaceFactory]::CreateRunspace()
+        $connRunspace.Open()
+        $connPowerShell = [PowerShell]::Create()
+        $connPowerShell.Runspace = $connRunspace
+        [void]$connPowerShell.AddScript($script:ConnectionScript).AddArgument([string]$connEndpoint.Url).AddArgument(8).AddArgument($connProxy).AddArgument($connUserAgent).AddArgument($script:ConnQueue).AddArgument([string]$connEndpoint.Platform)
+        $null = $connPowerShell.BeginInvoke()
+        $script:ConnPowerShells.Add($connPowerShell)
+        $script:ConnRunspaces.Add($connRunspace)
+    }
+    if ($null -eq $script:ConnTimer) {
+        $script:ConnTimer = New-Object System.Windows.Forms.Timer
+        $script:ConnTimer.Interval = 150
+        $script:ConnTimer.Add_Tick({
+            try {
+                if ($null -eq $script:ConnGrid -or $null -eq $script:ConnQueue) { $script:ConnTimer.Stop(); return }
+                $connEntry = $null
+                while ($script:ConnQueue -and $script:ConnQueue.TryDequeue([ref]$connEntry)) {
+                    if ($null -eq $connEntry) { continue }
+                    $verdict = Get-ConnectionVerdict -Code ([int]$connEntry.Code) -ErrorText ([string]$connEntry.Error)
+                    $pingText = ('{0}ms' -f [int]$connEntry.Ms)
+                    if ([int]$connEntry.Code -le 0) { $pingText = 'нет ответа' }
+                    $codeText = '—'
+                    if ([int]$connEntry.Code -gt 0) { $codeText = [string]$connEntry.Code }
+                    foreach ($connRow in $script:ConnGrid.Rows) {
+                        if ([string]$connRow.Cells['Platform'].Value -eq [string]$connEntry.Platform) {
+                            $connRow.Cells['Result'].Value = $verdict.Result
+                            $connRow.Cells['Ping'].Value = $pingText
+                            $connRow.Cells['Code'].Value = $codeText
+                            $connRow.Cells['Note'].Value = [string]$verdict.Note
+                            if ($verdict.Result -eq 'pass') { $connRow.Cells['Result'].Style.ForeColor = [System.Drawing.Color]::FromArgb(110,220,150) }
+                            elseif ($verdict.Result -eq 'denied' -or $verdict.Result -eq 'error' -or $verdict.Result -eq 'Нет связи' -or $verdict.Result -eq 'Долго отвечает') { $connRow.Cells['Result'].Style.ForeColor = [System.Drawing.Color]::FromArgb(255,138,128) }
+                            break
+                        }
+                    }
+                    $script:ConnDone++
+                    Add-Diagnostic ('Соединение: {0}.api - {1}, ping: {2}, HTTP: {3}' -f [string]$connEntry.Platform, $verdict.Result, $pingText, $codeText)
+                    $connEntry = $null
+                }
+                if ($script:ConnTotal -gt 0 -and $script:ConnDone -ge $script:ConnTotal) {
+                    $script:ConnTimer.Stop()
+                    if ($script:ConnStatus) { $script:ConnStatus.Text = ('Готово: проверено платформ — {0}. Пинг — время HTTP-ответа.' -f $script:ConnDone) }
+                    Stop-ConnectionTest
+                }
+            } catch {
+                try { $script:ConnTimer.Stop() } catch { }
+                try { Add-ErrorDiagnostic ('Ошибка проверки соединения: ' + [string]$_.Exception.Message) } catch { }
+            }
+        })
+    }
+    if ($script:ConnStatus) { $script:ConnStatus.Text = 'Проверка идёт…' }
+    $script:ConnTimer.Start()
+}
+
+function Open-ConnectionTestWindow {
+    $connForm = New-Object System.Windows.Forms.Form
+    $connForm.Text = 'Проверка соединения'
+    $connForm.StartPosition = 'CenterParent'
+    $connForm.ClientSize = New-Object System.Drawing.Size(900,660)
+    $connForm.MinimumSize = New-Object System.Drawing.Size(760,620)
+    $connForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
+    $connForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $connForm.Font = New-Object System.Drawing.Font($script:UiFontFamily,9)
+    Set-WindowChrome -Window $connForm
+    $connInfo = New-Object System.Windows.Forms.Label
+    $connInfo.Text = 'Тестовый запрос к публичным адресам платформ. «pass» — сервер ответил (2xx/3xx), «denied» — отказ (4xx), «error» — ошибка сервера (5xx), «Нет связи» — соединение не открылось. Пинг — время ответа сервера.'
+    $connInfo.Location = New-Object System.Drawing.Point(16,12)
+    $connInfo.Size = New-Object System.Drawing.Size(868,44)
+    $connInfo.Anchor = 'Top, Left, Right'
+    $connInfo.ForeColor = [System.Drawing.Color]::FromArgb(190,202,221)
+    $connForm.Controls.Add($connInfo)
+    $script:ConnGrid = New-Object System.Windows.Forms.DataGridView
+    $script:ConnGrid.Location = New-Object System.Drawing.Point(16,62)
+    $script:ConnGrid.Size = New-Object System.Drawing.Size(868,280)
+    $script:ConnGrid.Anchor = 'Top, Left, Right'
+    $script:ConnGrid.BackgroundColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:ConnGrid.BorderStyle = 'None'
+    $script:ConnGrid.GridColor = [System.Drawing.Color]::FromArgb(42,52,70)
+    $script:ConnGrid.EnableHeadersVisualStyles = $false
+    $script:ConnGrid.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(30,38,52)
+    $script:ConnGrid.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(203,213,228)
+    $script:ConnGrid.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $script:ConnGrid.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(225,232,242)
+    $script:ConnGrid.ReadOnly = $true
+    $script:ConnGrid.AllowUserToAddRows = $false
+    $script:ConnGrid.AllowUserToDeleteRows = $false
+    $script:ConnGrid.RowHeadersVisible = $false
+    $script:ConnGrid.SelectionMode = 'FullRowSelect'
+    $script:ConnGrid.AutoSizeColumnsMode = 'Fill'
+    foreach ($colSpec in @(@('Platform','Платформа',110),@('Url','Адрес',250),@('Result','Результат',120),@('Ping','Пинг',90),@('Code','HTTP',60),@('Note','Error (пояснение HTTP-кода)',226))) {
+        $column = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+        $column.Name = $colSpec[0]
+        $column.HeaderText = $colSpec[1]
+        $column.FillWeight = [int]$colSpec[2]
+        [void]$script:ConnGrid.Columns.Add($column)
+    }
+    $connForm.Controls.Add($script:ConnGrid)
+    $legendBox = New-Object System.Windows.Forms.TextBox
+    $legendBox.Multiline = $true
+    $legendBox.ReadOnly = $true
+    $legendBox.ScrollBars = 'Vertical'
+    $legendBox.Location = New-Object System.Drawing.Point(16,352)
+    $legendBox.Size = New-Object System.Drawing.Size(868,240)
+    $legendBox.Anchor = 'Top, Bottom, Left, Right'
+    $legendBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $legendBox.ForeColor = [System.Drawing.Color]::FromArgb(190,202,221)
+    $legendBox.Font = New-Object System.Drawing.Font('Consolas',8.5)
+    $legendLines = @('Таблица HTTP-кодов (MDN Web Docs):')
+    foreach ($legendCode in @($script:HttpStatusNotes.Keys | Sort-Object)) { $legendLines += ('{0} — {1}' -f $legendCode, $script:HttpStatusNotes[$legendCode]) }
+    $legendBox.Text = ($legendLines -join [Environment]::NewLine)
+    $connForm.Controls.Add($legendBox)
+    $connRunButton = New-Object System.Windows.Forms.Button
+    $connRunButton.Text = '↻ Проверить снова'
+    $connRunButton.Location = New-Object System.Drawing.Point(16,610)
+    $connRunButton.Size = New-Object System.Drawing.Size(160,34)
+    $connRunButton.Anchor = 'Bottom, Left'
+    $connRunButton.FlatStyle = 'Flat'
+    $connRunButton.BackColor = [System.Drawing.Color]::FromArgb(93,73,222)
+    $connRunButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $connForm.Controls.Add($connRunButton)
+    $script:ConnStatus = New-Object System.Windows.Forms.Label
+    $script:ConnStatus.Location = New-Object System.Drawing.Point(192,614)
+    $script:ConnStatus.Size = New-Object System.Drawing.Size(692,26)
+    $script:ConnStatus.Anchor = 'Bottom, Left, Right'
+    $script:ConnStatus.ForeColor = [System.Drawing.Color]::FromArgb(149,164,187)
+    $script:ConnStatus.TextAlign = 'MiddleLeft'
+    $connForm.Controls.Add($script:ConnStatus)
+    $connRunButton.Add_Click({ Start-ConnectionTest })
+    $connForm.Add_Shown({ Start-ConnectionTest })
+    $connForm.Add_FormClosed({
+        try { Stop-ConnectionTest } catch { }
+        $script:ConnGrid = $null
+        $script:ConnStatus = $null
+    })
+    Set-ButtonEdgeStyle -Root $connForm
+    [void]$connForm.ShowDialog($script:Form)
+}
+
+function Add-HelpCard {
+    param([System.Windows.Forms.Panel]$CardHost, [string]$Heading, [string]$Body, [System.Drawing.Font]$HeadingFont, [System.Drawing.Font]$BodyFont)
+    $Body = $Body.Replace('<br>', [Environment]::NewLine)
+    $card = New-Object System.Windows.Forms.Panel
+    $card.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
+    $accent = New-Object System.Windows.Forms.Panel
+    $accent.Dock = 'Left'
+    $accent.Width = 4
+    $accent.BackColor = [System.Drawing.Color]::FromArgb(93,73,222)
+    $headingLabel = New-Object System.Windows.Forms.Label
+    $headingLabel.Text = $Heading
+    $headingLabel.Location = New-Object System.Drawing.Point(18,10)
+    $headingLabel.Size = New-Object System.Drawing.Size(600,22)
+    $headingLabel.Font = $HeadingFont
+    $headingLabel.ForeColor = [System.Drawing.Color]::FromArgb(147,189,255)
+    $headingLabel.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
+    $bodyLabel = New-Object System.Windows.Forms.Label
+    $bodyLabel.Text = $Body
+    $bodyLabel.Location = New-Object System.Drawing.Point(18,36)
+    $bodyLabel.Size = New-Object System.Drawing.Size(600,20)
+    $bodyLabel.Font = $BodyFont
+    $bodyLabel.ForeColor = [System.Drawing.Color]::FromArgb(208,216,230)
+    $bodyLabel.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
+    $card.Controls.Add($bodyLabel)
+    $card.Controls.Add($headingLabel)
+    $card.Controls.Add($accent)
+    $card.Tag = $bodyLabel
+    $CardHost.Controls.Add($card)
+}
+
+function Set-HelpCardLayout {
+    param([System.Windows.Forms.Panel]$CardHost)
+    if ($script:HelpLayoutBusy) { return }
+    $script:HelpLayoutBusy = $true
+    try {
+        $cardWidth = [Math]::Max(300, $CardHost.ClientSize.Width - 40)
+        $bodyWidth = $cardWidth - 40
+        $y = 12
+        foreach ($card in @($CardHost.Controls)) {
+            $bodyLabel = $card.Tag
+            if ($null -eq $bodyLabel) { continue }
+            $measured = [System.Windows.Forms.TextRenderer]::MeasureText([string]$bodyLabel.Text, $bodyLabel.Font, (New-Object System.Drawing.Size($bodyWidth, 5000)), [System.Windows.Forms.TextFormatFlags]::WordBreak)
+            $bodyHeight = [int]$measured.Height + 6
+            $bodySize = New-Object System.Drawing.Size($bodyWidth, $bodyHeight)
+            if ($bodyLabel.Size -ne $bodySize) { $bodyLabel.Size = $bodySize }
+            foreach ($inner in @($card.Controls)) {
+                if ($inner -is [System.Windows.Forms.Label] -and $inner -ne $bodyLabel) {
+                    $innerSize = New-Object System.Drawing.Size($bodyWidth, 22)
+                    if ($inner.Size -ne $innerSize) { $inner.Size = $innerSize }
+                }
+            }
+            $cardSize = New-Object System.Drawing.Size($cardWidth, (46 + $bodyHeight))
+            if ($card.Size -ne $cardSize) { $card.Size = $cardSize }
+            $cardLocation = New-Object System.Drawing.Point(16,$y)
+            if ($card.Location -ne $cardLocation) { $card.Location = $cardLocation }
+            $y += $card.Height + 12
+        }
+        $minSize = New-Object System.Drawing.Size(0, ($y + 8))
+        if ($CardHost.AutoScrollMinSize -ne $minSize) { $CardHost.AutoScrollMinSize = $minSize }
+    } finally {
+        $script:HelpLayoutBusy = $false
+    }
+}
+
+function Show-HelpPage {
+    param([System.Windows.Forms.Panel]$PageHost, $Pages, [int]$Index, $NavButtons, $HeadingFont, $BodyFont)
+    if ($Index -lt 0 -or $Index -ge @($Pages).Count) { return }
+    $PageHost.SuspendLayout()
+    foreach ($oldCard in @($PageHost.Controls)) {
+        $PageHost.Controls.Remove($oldCard)
+        $oldCard.Dispose()
+    }
+    foreach ($cardItem in $Pages[$Index].Cards) {
+        Add-HelpCard -CardHost $PageHost -Heading ([string]$cardItem[0]) -Body ([string]$cardItem[1]) -HeadingFont $HeadingFont -BodyFont $BodyFont
+    }
+    Set-HelpCardLayout -CardHost $PageHost
+    $PageHost.AutoScrollPosition = New-Object System.Drawing.Point(0, 0)
+    $PageHost.ResumeLayout()
+    foreach ($navButton in @($NavButtons)) {
+        if ([int]$navButton.Tag -eq $Index) {
+            $navButton.BackColor = [System.Drawing.Color]::FromArgb(44,56,82)
+            $navButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(129,108,255)
+        } else {
+            $navButton.BackColor = [System.Drawing.Color]::FromArgb(26,33,47)
+            $navButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(64,78,104)
+        }
+    }
+}
+
 function Show-UsernameFinderHelp {
     $helpForm = New-Object System.Windows.Forms.Form
     $helpForm.Text = 'UUF — помощь'
     $helpForm.StartPosition = 'CenterParent'
-    $helpForm.Size = New-Object System.Drawing.Size(880,700)
-    $helpForm.MinimumSize = New-Object System.Drawing.Size(640,520)
+    $helpForm.ClientSize = New-Object System.Drawing.Size(900,680)
+    $helpForm.FormBorderStyle = 'FixedSingle'
+    $helpForm.MaximizeBox = $false
     $helpForm.BackColor = [System.Drawing.Color]::FromArgb(15,19,27)
-    $helpForm.Font = New-Object System.Drawing.Font('Segoe UI',9)
+    $helpForm.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+    $helpForm.Font = New-Object System.Drawing.Font($script:UiFontFamily,9)
     Set-WindowChrome -Window $helpForm
 
-    $guideText = @'
-КАК ПОЛЬЗОВАТЬСЯ
+    $headingFont = New-Object System.Drawing.Font($script:UiFontFamily,11,[System.Drawing.FontStyle]::Bold)
+    $bodyFont = New-Object System.Drawing.Font($script:UiFontFamily,9.5)
+    $navFont = New-Object System.Drawing.Font($script:UiFontFamily,10,[System.Drawing.FontStyle]::Bold)
 
-1. Платформа. Выбери сервис в списке слева. Программа сразу подставит минимальную и максимальную длину по правилам платформы, а для почтовых сервисов (Google, Mail.ru, Outlook) ник будет показан и проверен как адрес: ник@gmail.com, ник@mail.ru, ник@outlook.com.
+    $helpPages = @(
+        @{ Title = 'Дисклеймер'; Cards = @(
+            @('Назначение программы', 'UUF (Universal Username Finder) помогает подбирать свободные никнеймы и логины для регистрации на популярных платформах и проверять, занято ли имя, по открытым публичным признакам: страницам регистрации и публичным API.'),
+            @('Что программа не делает', 'Программа не взламывает аккаунты, не подбирает пароли, не входит в чужие учётные записи, не крадёт логины и пароли и не отправляет письма или сообщения от вашего имени.'),
+            @('Как устроена проверка', 'Проверка безопасна: это обычные запросы, похожие на открытие страницы регистрации в браузере. Программа не обходит CAPTCHA, блокировки и защитные механизмы платформ. Если платформа ограничила запросы, проверка приостанавливается.'),
+            @('Пользовательское соглашение', 'Используя программу, вы подтверждаете, что сами соблюдаете правила платформ и законы своей страны. Не используйте результаты для выдачи себя за другого человека, спама, мошенничества или обхода ограничений сервисов. Ответственность за дальнейшее использование ника и аккаунта лежит на пользователе.'),
+            @('Хранение данных', 'Пароли, созданные в программе, сохраняются только локально в зашифрованном хранилище текущего пользователя Windows.'),
+            @('Точность результатов', 'Статус «свободен» показывает состояние на момент проверки. Платформа может изменить правила или занять ник раньше вас, поэтому перед регистрацией проверяйте ник на сайте платформы.')
+        ) },
+        @{ Title = 'Пользование'; Cards = @(
+            @('1. Выбор платформы', 'Выберите платформу в списке «Платформа». У каждой платформы свои правила формата: длина, допустимые символы, запрещённые слова.'),
+            @('2. Настройка генерации', 'Отметьте стили в блоке «Настройки генерации», задайте количество и границы длины. Ручные ники и свои слова добавляются в генерацию, только если поля заполнены.'),
+            @('3. Запуск', 'Нажмите «▶ Найти свободные». Генерация и проверка идут в фоне, таблица заполняется по мере работы. Остановить можно кнопкой «■ Остановить проверку».'),
+            @('4. Возобновление', 'После остановки кнопка станет «▶ Возобновить проверку (N)», где N — сколько ников ещё не проверено. Продолжаются только ники со статусом «Ожидает»: уже проверенные не повторяются.'),
+            @('5. Свободные ники', 'Свободные ники попадают в «Последние свободные ники». Там можно выделить один или несколько ников («Выделить все» / «Снять все»), скопировать их, открыть сайт или повторить проверку.'),
+            @('6. Регистрация и пароль', 'Кнопка «Регистрация и пароль» открывает генератор пароля, страницу регистрации, поля имени и фамилии (для Google) и сохранение записи в зашифрованное хранилище. «Сохранённые аккаунты» открывает список сохранённых записей.'),
+            @('7. Проверка соединения', 'Кнопка «Проверка соединения» показывает доступность платформ: результат, время ответа (пинг) и HTTP-код.'),
+            @('8. Журнал', 'Кнопка «Развернуть журнал» поднимает журнал над таблицей, «Вернуть стандартно» возвращает прежнее положение.')
+        ) },
+        @{ Title = 'Как устроено?'; Cards = @(
+            @('Генерация', 'Программа собирает кандидатов из выбранных источников: однословные ники, сочетания слов, выдуманные слова, замену символов, цифры. Каждый кандидат проходит проверку формата выбранной платформы. Ники, не подходящие по формату, отбрасываются сразу, без запроса к сайту.'),
+            @('Проверка', 'Для каждого ника программа делает обычный запрос к публичному признаку платформы (страница регистрации или публичный API) и разбирает ответ. Проверка идёт в фоне с паузой между запросами, которую можно настроить.'),
+            @('Статусы', 'Ожидает — ещё не проверен. Проверяется — запрос выполняется. Свободен / Занят — результат проверки. Недопустимый — не проходит формат платформы. Ошибка сети — сайт не ответил, ник можно проверить снова.'),
+            @('Защита от повторов', 'Опция «Исключать проверенные» не даёт проверять один и тот же ник дважды. Свободные ники сохраняются в историю «Последние свободные ники».'),
+            @('Ограничения и CAPTCHA', 'Если платформа показывает CAPTCHA или ограничивает частоту запросов, программа не обходит это. Проверка приостанавливается: попробуйте позже, увеличьте задержку или проверьте другую платформу.'),
+            @('Почему возможны сбои', 'Некоторые платформы отвечают не сразу или по-разному в разных странах. Для YouTube, Telegram, Outlook, Google и Discord в нижней плашке появляется подсказка про VPN/Proxy.')
+        ) },
+        @{ Title = 'Настройки'; Cards = @(
+            @('Однословные ники', 'Один смысловой корень, без лишних частей.<br>  Пример: lonelesee, fine, group'),
+            @('Два осмысленных слова', 'Два понятных слова подряд. С разделителем «_» — через подчёркивание.<br>  Пример: darkriver, bluefox, silent_lake'),
+            @('Выдуманные слова', 'Произносимые несуществующие слова.<br>  Пример: lorvesh, mavitel, quendra'),
+            @('Выдуманные сочетания', 'Пары выдуманных частей.<br>  Пример: vorntiel, kasmora'),
+            @('Замена символами', 'Буквы заменяются похожими цифрами и знаками (leet).<br>  Пример: fine → f1n3, group → gr0up'),
+            @('Редкие короткие (3-6)', 'Ники длиной 3–6 символов. Такие имена обычно заняты первыми, свободных мало.<br>  Пример: xqv7, zorn, kvei'),
+            @('Использовать цифры', 'Добавляет цифры к нику.<br>  Пример: lonelesee24'),
+            @('Поиск только введенных ников', 'Ищет только слова из поля «Свои слова», как введены (с _ . -). Остальные источники отключаются. С «Использовать цифры» добавляет номера: plumer_fresh1, plumer_fresh2 и т.д. «Только короткие» здесь не ограничивает длину; действует «Макс. длина».<br>  Пример: plumer_fresh → plumer_fresh1'),
+            @('Разделитель _', 'Вставляет подчёркивание между частями. Не работает для Google и GitHub: эти платформы его не допускают.<br>  Пример: lone_see'),
+            @('Случайные символы', 'Случайные буквы и цифры.<br>  Пример: k7qzd2'),
+            @('Тонкая настройка', 'Количество — сколько ников выдать. Мин. и макс. длина — границы длины. «Только короткие (≤12)» оставляет ники не длиннее 12 символов.<br>Важно: если «Только короткие» включено, а минимальная длина больше 12, ников не будет. Программа предупредит и не запустит генерацию.'),
+            @('Свои слова и ручные ники', 'Свои слова — через запятую, точку с запятой или пробел, из них собираются варианты. Ручные ники — по одному на строке или через запятую, проверяются как есть. Пустое поле ничего не добавляет.'),
+            @('Если не выбран ни один источник', 'Программа сообщит об этом в журнале и возьмёт однословные ники как запасной вариант.'),
+            @('Скорость и сеть', 'Задержка — пауза между запросами, мс: больше значит мягче для сайтов. Таймаут — сколько ждать ответ. Потоки — число одновременных проверок. Прокси — адрес вида http://host:port, если нужен.')
+        ) },
+        @{ Title = 'Правила ввода'; Cards = @(
+            @('Общие правила', 'Вводите латиницу, цифры и символы, которые допускает платформа. Кириллица и пробелы внутри ника не принимаются.'),
+            @('Свои слова', 'Через запятую, точку с запятой или пробел.<br>  Пример: anna, blue;cloud fox'),
+            @('Ручные ники', 'По одному на строке или через запятую.<br>  Пример: alex_1990, my.nick'),
+            @('Google', 'От 6 до 30 символов: латиница, цифры и точка. Точка не в начале, не в конце и не подряд. Подчёркивание не допускается.'),
+            @('YouTube (правила YTKits)', 'От 3 до 30 символов: латиница, цифры, точка, подчёркивание и дефис. Начинается и заканчивается буквой или цифрой.'),
+            @('Telegram', 'От 5 до 32 символов: латиница, цифры и подчёркивание. Начинается с буквы.'),
+            @('Outlook', 'От 3 до 64 символов: латиница, цифры, точка, подчёркивание и дефис. Не заканчивается точкой, подчёркиванием или дефисом и не содержит их подряд.'),
+            @('GitHub', 'От 1 до 39 символов: латиница, цифры и дефис. Не начинается и не заканчивается дефисом, двух дефисов подряд нет.'),
+            @('Остальные платформы', 'Обычно 3–32 символа: латиница, цифры, подчёркивание, точка и дефис.')
+        ) }
+    )
 
-2. Категории. В списке «Единые категории» 46 тем, отсортированных по алфавиту; отметь нужные или нажми «Выделить все». Категории влияют на словарные источники генерации. Две сборки про имена: «Имя, Фамилия» (John, Birlich, Mark, Cukerberk, Mask, Ilon) и «Русские слова латиницей» (Privet, Phizik, Shizik, Cloun, Debil).
+    $navButtons = @()
+    $pageHost = New-Object System.Windows.Forms.Panel
+    $pageHost.Location = New-Object System.Drawing.Point(16,72)
+    $pageHost.Size = New-Object System.Drawing.Size(868,592)
+    $pageHost.AutoScroll = $true
+    $pageHost.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
+    $helpForm.Controls.Add($pageHost)
 
-3. Настройки генерации. Каждая галочка работает самостоятельно: включена — источник участвует, выключена — не участвует. «Однословные ники», «Два осмысленных слова», «Выдуманные слова», «Выдуманные сочетания», «Замена символами», «Редкие короткие (3-6)», «Случайные символы», «Использовать цифры», «Разделитель _», «Только короткие», «Исключать проверенные», «Генерация по порядку». При снятой галочке «Генерация по порядку» строки выводятся и проверяются вразнобой: порядок очереди проверки заново перемешивается при каждом запуске.
-
-4. Свои слова. Слова из поля «Свои слова через запятую» работают якорем: каждый сгенерированный ник содержит хотя бы одно из них, а слова категорий и стиля становятся второй частью.
-
-5. Генерация и проверка. Нажми «Сгенерировать и проверить»: таблица очистится, появится запрошенное количество ников и проверка начнётся сама. Кнопка «Найти свободные» проверяет уже имеющуюся таблицу повторно. «Остановить проверку» прерывает прогон без потери результатов.
-
-6. Результаты. Статусы: «Свободен» — публичная проверка не нашла имя занятым; «Занят», «Недопустимый», «Не подтверждено» (ответ платформы не удалось прочитать однозначно), «Ошибка сети». При наведении на ячейки «Статус» и «Причина» появляется подсказка, почему у имени такой статус и что с этим делать. Фильтр статуса, поиск и сортировка работают во время проверки; прокрутка таблицы не сбрасывается.
-
-7. История и проверенные. «Последние свободные ники» хранит найденные свободные адреса с сортировкой по нику, платформе или времени и повторной проверкой. «Проверенные ники» — постоянный список всего, что уже проверялось: он исключает повторы при включённой галочке «Исключать проверенные» и переживает перезапуск программы.
-
-8. Пароль и регистрация. Кнопка «Пароль / регистрация» открывает окно под текущую платформу: заголовок, подпись ника и кнопка «Открыть <платформа> для регистрации» соответствуют выбранному сервису. Сайт открывается в окне инкогнито (Chrome, Edge, Brave или Vivaldi); если ни один не найден — в браузере по умолчанию. Пароль содержит заглавные и строчные буквы, цифры и спецсимвол.
-
-9. Steam. Публичная проверка адреса steamcommunity.com/id/<ник>: страница профиля существует — имя занято. Занятость публичного адреса не равна занятости логина аккаунта Steam; категории и настройки генерации применяются как обычно.
-
-10. Стандартный набор. При каждом запуске выставлены: все категории, стиль «без стиля», 40 ников, длина 3–25, однословные, редкие короткие, выдуманные слова, случайные символы, исключать проверенные, только короткие, пауза 700 мс, 2 потока. Остальное выключено. Сохраняются между запусками только положение окна, фильтр статусов и сортировка.
-'@
-
-    $howText = @'
-КАК ЭТО РАБОТАЕТ
-
-Генерация. Кандидатов собирает один генератор из восьми источников: одиночные слова категорий, пары осмысленных слов, выдуманные слова из слогов, выдуманные сочетания, замена букв цифрами (leet), редкие короткие слова, случайные наборы символов и цифры у готовых ников. Каждый включённый источник получает равную долю запрошенного количества; исчерпанный источник добирается остальными, поэтому число строк всегда совпадает с запросом. Свои слова — якоря: они входят в каждый ник. Уже проверенные и занятые имена отсеиваются внутри генератора.
-
-Проверка. Запросы идут в несколько потоков (до 8, рекомендуется 2–4): все потоки разбирают одну общую очередь ников, поэтому медленный ответ не блокирует остальных. Пауза адаптивная: при HTTP 429 и 403 она растёт с учётом Retry-After, после серии успехов постепенно снижается. Под полосой прогресса показывается оценка остатка времени и время завершения. Прогон завершается, когда закончили все потоки.
-
-Платформы. Для каждой платформы используется свой регистрационный или публичный интерфейс: Roblox — валидатор регистрации, Google — валидатор доступности Gmail (резервно форма входа), Mail.ru — API существования адреса, Discord — endpoint уникального имени, Outlook — счётчик существования аккаунта Microsoft (IfExistsResult=0 — существует, 1 — не найден) с резервной проверкой формы регистрации, VK и YouTube — публичные страницы, Telegram — страница t.me, Steam — публичные профили steamcommunity.com/id, GitHub — сессия регистрации. Если сайт платформы недоступен из региона (t.me и YouTube в РФ блокируются), заполните поле «Прокси» над таблицей — все проверки пойдут через ваш HTTP-прокси.
-
-Хранилище. username_history.json держит список проверенных ников и историю свободных; accounts.dat — сохранённые пары ник/пароль, зашифрованные Windows DPAPI для текущего пользователя; settings.json — только положение окна, фильтр статусов и сортировку. Журнал UniversalUsernameFinder.log пишется в ту же папку %LOCALAPPDATA%\UniversalUsernameFinder, поэтому сборка или перенос программы его не затирают; в portable-режиме возможен журнал рядом с exe.
-
-Оболочка. UUF.exe собирается из этого скрипта модулем ps2exe: скрипт встроен в exe в открытом виде, поэтому .ps1 остаётся единственным источником правды, а exe — удобная оболочка запуска, а не защита кода.
-'@
-
-    $stylesBuilder = New-Object System.Text.StringBuilder
-    [void]$stylesBuilder.AppendLine('СТИЛИ')
-    [void]$stylesBuilder.AppendLine('Стиль добавляет к нику характерные слова своего словаря. Примеры собраны из словарей стиля и категорий.')
-    [void]$stylesBuilder.AppendLine('')
-    $styleExamples = @{
-        'Минималистичный' = 'NeoFrost, ZenRaven'
-        'Киберспортивный' = 'ClutchVortex, RiftStrafe'
-        'Футуристический' = 'QuantumPulse, VectorNova'
-        'Тёмный' = 'NoctisShadow, ObsidianVoid'
-        'Эстетичный' = 'LunarVelvet, AstraLuma'
-        'Редкий' = 'NyxVex, RynZed'
-        'Короткий' = 'KaiZen, LuxNyx'
-        'Двусловный' = 'NovaEcho, PulseOrbit (два слова даже при снятой галочке «Два осмысленных слова»)'
-        'Аниме' = 'KaiRyu, SoraKage'
-        'Готический' = 'RavenCrypt, NocturneVeil'
-        'Древний мир' = 'AtlasTitan, PharaohLegion'
-        'Космический' = 'QuasarPulsar, VegaStardust'
-        'Латинский' = 'RexLux, FortisVeritas'
-        'Милый' = 'CandyMochi, HoneyBerry'
-        'Морской' = 'AnchorTide, CorsairFjord'
-        'Неоновый' = 'NeonSynth, ChromeLaser'
-        'Природный' = 'WillowCreek, CoralMeadow'
-        'Скандинавский' = 'RuneSkald, FenrirTorvald'
-        'Хардкорный' = 'ReaperHavoc, MayhemBrutal'
-        '— без стиля —' = 'словари стилей не применяются: ник собирается только из категорий, своих слов и источников'
+    $buttonWidth = [int][Math]::Floor((868 - 8 * ($helpPages.Count - 1)) / $helpPages.Count)
+    for ($i = 0; $i -lt $helpPages.Count; $i++) {
+        $navButton = New-Object System.Windows.Forms.Button
+        $navButton.Text = [string]$helpPages[$i].Title
+        $navButton.Location = New-Object System.Drawing.Point((16 + $i * ($buttonWidth + 8)), 16)
+        $navButton.Size = New-Object System.Drawing.Size($buttonWidth, 40)
+        $navButton.FlatStyle = 'Flat'
+        $navButton.FlatAppearance.BorderSize = 1
+        $navButton.Font = $navFont
+        $navButton.ForeColor = [System.Drawing.Color]::FromArgb(235,240,248)
+        $navButton.UseVisualStyleBackColor = $false
+        $navButton.Tag = $i
+        $navButton.Add_Click({ param($clickSender, $clickArgs) Show-HelpPage -PageHost $pageHost -Pages $helpPages -Index ([int]$clickSender.Tag) -NavButtons $navButtons -HeadingFont $headingFont -BodyFont $bodyFont })
+        $helpForm.Controls.Add($navButton)
+        $navButtons += $navButton
     }
-    foreach ($styleName in @($script:StyleBox.Items | ForEach-Object { [string]$_ })) {
-        $styleExample = if ($styleExamples.ContainsKey($styleName)) { $styleExamples[$styleName] } else { 'слова стиля добавляются к никам из выбранных категорий' }
-        [void]$stylesBuilder.AppendLine(('• {0} — {1}' -f $styleName, $styleExample))
-    }
-    [void]$stylesBuilder.AppendLine('')
-    [void]$stylesBuilder.AppendLine('КАТЕГОРИИ И ПРИМЕРЫ СЛОВ')
-    foreach ($categoryName in @($script:WordCategories | Sort-Object)) {
-        $words = @($script:MeaningGroups[[string]$categoryName])
-        $sample = @($words | Select-Object -First 8) -join ', '
-        [void]$stylesBuilder.AppendLine(('• {0}: {1}' -f $categoryName, $sample))
-    }
-    $stylesText = $stylesBuilder.ToString()
 
-    $platformsBuilder = New-Object System.Text.StringBuilder
-    [void]$platformsBuilder.AppendLine('ПЛАТФОРМЫ: ПРАВИЛА, ДОМЕНЫ И РЕГИСТРАЦИЯ')
-    [void]$platformsBuilder.AppendLine('')
-    $checkNotes = @{
-        'Roblox' = 'регистрационный валидатор имён'
-        'Google' = 'валидатор доступности Gmail, резервно форма входа; ник проверяется как адрес gmail.com'
-        'Mail.ru' = 'API существования адреса; ник проверяется как адрес mail.ru'
-        'VK' = 'публичная страница и resolveScreenName'
-        'Discord' = 'endpoint уникального имени'
-        'Outlook' = 'счётчик GetCredentialType от Microsoft (IfExistsResult 0/1) и резервная проверка формы регистрации signup.live.com; ник проверяется как адрес outlook.com'
-        'Telegram' = 'публичная страница t.me'
-        'Steam' = 'публичная страница steamcommunity.com/id/<ник>; занятость vanity-адреса не равна занятости логина аккаунта'
-        'GitHub' = 'сессия страницы регистрации'
-        'YouTube' = 'публичная страница канала по handle'
-    }
-    foreach ($platformName in $script:SupportedPlatforms) {
-        $rule = Get-PlatformLengthRule -Platform $platformName
-        $domain = Get-PlatformDomain -Platform $platformName
-        $domainText = if ($domain) { ('домен @{0}' -f $domain) } else { 'без домена' }
-        [void]$platformsBuilder.AppendLine(('• {0}: {1}' -f $platformName, (Get-PlatformFormatHint -Platform $platformName)))
-        [void]$platformsBuilder.AppendLine(('  длина {0}–{1}, {2}, регистрация {3}, проверка: {4}' -f $rule.Min, $rule.Max, $domainText, (Get-RegistrationUrl -Platform $platformName), $checkNotes[[string]$platformName]))
-    }
-    $platformsText = $platformsBuilder.ToString()
-
-    $helpTabs = New-Object System.Windows.Forms.TabControl
-    $helpTabs.Dock = 'Fill'
-    $helpTabs.Font = New-Object System.Drawing.Font('Segoe UI',9.5)
-    Set-UufTabStyle -Tabs $helpTabs -TabWidth 180
-    $helpBodyFont = New-Object System.Drawing.Font('Segoe UI', 10)
-    $helpLeadFont = New-Object System.Drawing.Font('Segoe UI Semibold', 10.5, [System.Drawing.FontStyle]::Bold)
-    $helpHeadingFont = New-Object System.Drawing.Font('Segoe UI Semibold', 12.5, [System.Drawing.FontStyle]::Bold)
-    foreach ($page in @(@('Инструкция', $guideText), @('Как работает', $howText), @('Стили и категории', $stylesText), @('Платформы и домены', $platformsText))) {
-        $tabPage = New-Object System.Windows.Forms.TabPage
-        $tabPage.Text = [string]$page[0]
-        $tabPage.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)
-        $pageBox = New-Object System.Windows.Forms.RichTextBox
-        $pageBox.ReadOnly = $true
-        $pageBox.BorderStyle = 'None'
-        $pageBox.DetectUrls = $false
-        $pageBox.Dock = 'Fill'
-        $pageBox.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-        $pageBox.ForeColor = [System.Drawing.Color]::FromArgb(208,216,230)
-        $pageBox.Font = $helpBodyFont
-        $pageBox.RightMargin = 820
-        $pageBox.SelectionBullet = $false
-        foreach ($helpLine in (([string]$page[1]) -split "`n")) {
-            $helpLine = $helpLine.TrimEnd([char]13)
-            $pageBox.SelectionStart = $pageBox.TextLength
-            $pageBox.SelectionLength = 0
-            $pageBox.SelectionIndent = 14
-            $pageBox.SelectionHangingIndent = 0
-            $pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(17,23,32)
-            $pageBox.SelectionFont = $helpBodyFont
-            $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(208,216,230)
-            if ($helpLine.Trim() -eq '') {
-                $pageBox.SelectionIndent = 0
-                $pageBox.AppendText("`n")
-            } elseif ($helpLine -match '^[A-ZА-ЯЁ0-9][A-ZА-ЯЁ0-9 ,.:;«»()—…\-]+$') {
-                $pageBox.SelectionIndent = 0
-                $pageBox.SelectionFont = $helpHeadingFont
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(147,189,255)
-                $pageBox.AppendText($helpLine.Trim())
-                $pageBox.AppendText("`n")
-            } elseif ($helpLine -match '^\d+\. ') {
-                $pageBox.SelectionIndent = 30
-                $pageBox.SelectionHangingIndent = 14
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(222,228,238)
-                $pageBox.AppendText($helpLine + "`n")
-            } elseif ($helpLine.StartsWith('• ')) {
-                $pageBox.SelectionIndent = 26
-                $pageBox.SelectionHangingIndent = 12
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(186,194,207)
-                $pageBox.AppendText($helpLine + "`n")
-            } elseif ($helpLine.StartsWith('  ')) {
-                $pageBox.SelectionIndent = 38
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(168,178,196)
-                $pageBox.AppendText($helpLine.Trim() + "`n")
-            } elseif ($helpLine -match '^([А-ЯЁA-Z][\w\-]{2,20}\.)\s') {
-                $leadWord = [string]$matches[1]
-                $pageBox.SelectionFont = $helpLeadFont
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(235,240,248)
-                $pageBox.AppendText($leadWord)
-                $pageBox.SelectionFont = $helpBodyFont
-                $pageBox.SelectionColor = [System.Drawing.Color]::FromArgb(208,216,230)
-                $pageBox.AppendText($helpLine.Substring($leadWord.Length) + "`n")
-            } else {
-                $pageBox.AppendText($helpLine + "`n")
-            }
-        }
-        $pageBox.Select(0, 0)
-        $tabPage.Controls.Add($pageBox)
-        $helpTabs.TabPages.Add($tabPage) | Out-Null
-    }
-    $helpForm.Controls.Add($helpTabs)
+    Show-HelpPage -PageHost $pageHost -Pages $helpPages -Index 0 -NavButtons $navButtons -HeadingFont $headingFont -BodyFont $bodyFont
     [void]$helpForm.ShowDialog($script:Form)
 }
 
@@ -3430,15 +3842,8 @@ function Reset-CheckControls {
     if ($script:ThreadsBox) { $script:ThreadsBox.Enabled = $true }
     if ($script:PlatformBox) { $script:PlatformBox.Enabled = $true }
     if ($script:ProxyBox) { $script:ProxyBox.Enabled = $true }
-    $resumePending = $false
-    if ($null -ne $script:Candidates -and $script:Candidates.Count -gt 0) {
-        $excludeGateOn = ($script:ExcludeCheckedCheck -and $script:ExcludeCheckedCheck.Checked)
-        foreach ($resumeCand in $script:Candidates) {
-            $resumeStatus = [string]$resumeCand.Status
-            if ($resumeStatus -eq 'Ожидает' -or $resumeStatus -eq 'Ошибка сети' -or (-not $excludeGateOn -and $resumeStatus -ne 'Проверяется' -and $resumeStatus -ne 'Недопустимый')) { $resumePending = $true; break }
-        }
-    }
-    if ($resumePending) { $script:StartButton.Visible = $true; $script:StartButton.Text = '▶  Возобновить проверку' } else { $script:StartButton.Visible = $false; $script:StartButton.Text = '▶  Найти свободные' }
+    $pendingLeft = Get-PendingCandidateCount
+    if ($pendingLeft -gt 0) { $script:StartButton.Visible = $true; $script:StartButton.Text = ('▶  Возобновить проверку ({0})' -f $pendingLeft) } else { $script:StartButton.Visible = $false; $script:StartButton.Text = '▶  Найти свободные' }
 }
 
 function Close-CheckRunspace {
@@ -3492,7 +3897,7 @@ function Update-Stats {
     }
     $script:StatTotal.Text = "Всего: $total"
     $script:StatChecked.Text = "Проверено: $checked"
-    $script:StatFree.Text = "Свободно/возможно: $free"
+    $script:StatFree.Text = "Свободно: $free"
     $script:StatTaken.Text = "Занято: $taken"
     $script:StatInvalid.Text = "Недопустимо: $invalid"
     $script:StatErrors.Text = "Ошибки: $errors"
@@ -3550,14 +3955,26 @@ function Update-ResultGrid {
     Update-AvailableNames
 }
 
-# --- Запуск прогона проверки
+function Get-PendingCandidateCount {
+    $pendingPlatform = [string]$script:PlatformBox.SelectedItem
+    $pendingCount = 0
+    foreach ($pendingCandidate in $script:Candidates) {
+        if ([string]$pendingCandidate.Platform -eq $pendingPlatform -and [string]$pendingCandidate.Status -eq 'Ожидает') { $pendingCount++ }
+    }
+    return $pendingCount
+}
+
 function Start-Checking {
-    param([bool]$RetryErrorsOnly = $false)
+    param([bool]$RetryErrorsOnly = $false, [bool]$ResumePending = $false)
     if (Test-CheckRunning) { return }
     $eligible = New-Object System.Collections.ArrayList
     $selectedPlatform = [string]$script:PlatformBox.SelectedItem
     foreach ($candidate in $script:Candidates) {
         if ([string]$candidate.Platform -ne $selectedPlatform) { continue }
+        if ($ResumePending) {
+            if ([string]$candidate.Status -eq 'Ожидает') { [void]$eligible.Add($candidate) }
+            continue
+        }
         $historyKey = (($selectedPlatform + '|' + [string]$candidate.Name).ToLowerInvariant())
         if ($RetryErrorsOnly) {
             if ($candidate.Status -eq 'Ошибка сети') { [void]$eligible.Add($candidate) }
@@ -3568,7 +3985,7 @@ function Start-Checking {
         if ($candidate.Status -eq 'Ожидает' -or $candidate.Status -eq 'Ошибка сети' -or -not $script:ExcludeCheckedCheck.Checked) { [void]$eligible.Add($candidate) }
     }
     if ($eligible.Count -eq 0) {
-        $msg = if ($RetryErrorsOnly) { 'Ошибок для повторной проверки нет.' } else { 'Нет подходящих ников. Сначала сгенерируй варианты или отключи исключение уже проверенных.' }
+        $msg = if ($ResumePending) { 'Нечего возобновлять: все ники уже проверены или отсеяны.' } elseif ($RetryErrorsOnly) { 'Ошибок для повторной проверки нет.' } else { 'Нет подходящих ников. Сначала сгенерируй варианты или отключи исключение уже проверенных.' }
         [System.Windows.Forms.MessageBox]::Show($msg,'Проверка','OK','Information') | Out-Null
         return
     }
@@ -3578,6 +3995,7 @@ function Start-Checking {
             $candidate.Status = 'Недопустимый'
             $candidate.Time = (Get-Date).ToString('HH:mm:ss')
             $candidate.Reason = "Неподходящий формат для платформы $selectedPlatform"
+            Register-InvalidNick -Name ([string]$candidate.Name) -Platform $selectedPlatform
             continue
         }
         $candidate.Status = 'Проверяется'
@@ -3593,6 +4011,7 @@ function Start-Checking {
     if ($threadCount -gt 8) { $threadCount = 8 }
     if ($threadCount -gt $validCandidates.Count) { $threadCount = [Math]::Max(1,$validCandidates.Count) }
     $script:WorkerThreadCount = $threadCount
+    if ($ResumePending) { Add-Diagnostic 'Возобновление проверки: продолжаю с ников, которые ещё не проверены. Уже проверенные не повторяются.' }
     Add-Diagnostic ("Начата проверка: {0} ников; пауза {1} мс; тайм-аут {2} мс; потоков {3}; платформа {4}." -f $validCandidates.Count,[int]$script:DelayBox.Value,[int]$script:TimeoutBox.Value,$threadCount,$selectedPlatform)
     if ($script:OrderedCheck.Checked) { Add-Diagnostic 'Порядок проверки: по порядку — галочка «Генерация по порядку» включена, строки и очередь идут сверху вниз.' }
     else { Add-Diagnostic 'Порядок проверки: вразнобой — и порядок строк, и очередь проверки перемешаны; статусы появятся в случайных строках.' }
@@ -3603,7 +4022,6 @@ function Start-Checking {
     $script:CurrentBatchDone = 0
     $script:ProgressBar.Value = 0
     $script:ProgressCaption.Text = "Проверка 0 из $($script:CurrentBatchTotal) · потоков $threadCount"
-# --- Воркер: проверка платформ
     $workerScript = @'
 param($InputQueue, $Queue, $Cancellation, $DelayMs, $TimeoutMs, $Platform, $AppVersion, $WorkerId, $BatchTotal, $ProxyUrl)
 $ErrorActionPreference = 'Stop'
@@ -3613,7 +4031,7 @@ if ([string]::IsNullOrWhiteSpace([string]$ProxyUrl)) { $script:WorkerProxy = '' 
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::DefaultConnectionLimit = 10
-if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.9.3' }
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) { $AppVersion = '2.10.24' }
 $TimeoutMs = [Math]::Max(1000,[int]$TimeoutMs)
 $platformFloorMs = 400
 switch ($Platform) {
@@ -3797,7 +4215,6 @@ try {
         $r = $null
         try {
             switch ($Platform) {
-# --- Roblox Api
                 'Roblox' {
                     $payload = @{username=$name; birthday='2000-01-01T00:00:00.000Z'; context='Signup'} | ConvertTo-Json -Compress
                     $robloxHeaders = @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json'; 'Origin'='https://www.roblox.com'; 'Referer'='https://www.roblox.com/'}
@@ -3831,9 +4248,7 @@ try {
                         $status = 'Не подтверждено'; $reason = "Roblox ответил HTTP $httpStatus без распознаваемого результата валидации"; $consecutiveErrors = 0
                     }
                 }
-# --- Google Api
                 'Google' {
-                    # --- Google закрыл анонимные опросы (400 на «холодные» запросы), поэтому первым идёт signin-lookup с прогретой сессией
                     $email = $name + '@gmail.com'
                     $googleCode = ''
                     $googleHttpNote = ''
@@ -3895,7 +4310,6 @@ try {
                     elseif ($googleCode -eq '2') { $status='Занят'; $reason='Google: адрес Gmail используется'; $consecutiveErrors=0 }
                     else { $status='Не подтверждено'; if ($googleHttpNote) { $reason='Google: ' + $googleHttpNote + '; lookup тоже молчит — проверьте позже или через «Прокси»' } else { $reason='Google не вернул распознаваемого ответа — точную доступность покажет только форма регистрации' }; $consecutiveErrors=0 }
                 }
-# --- Mail.ru Api
                 'Mail.ru' {
                     $email = $name + '@mail.ru'
                     $url = 'https://account.mail.ru/api/v1/user/exists?email=' + [uri]::EscapeDataString($email)
@@ -3912,7 +4326,6 @@ try {
                         } else { $status='Не подтверждено'; $reason='Mail.ru вернул неожиданный формат ответа'; $consecutiveErrors=0 }
                     }
                 }
-# --- VK Api
                 'VK' {
                     $url = 'https://api.vk.com/method/utils.resolveScreenName?screen_name=' + [uri]::EscapeDataString($name) + '&v=5.199'
                     $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'='application/json'}
@@ -3948,7 +4361,6 @@ try {
                         } else { $status='Не подтверждено'; $reason='Discord не вернул признак занятости имени'; $consecutiveErrors=0 }
                     } elseif ($httpStatus -eq 400 -or $httpStatus -eq 422) { $status='Недопустимый'; $reason='Discord отклонил формат имени'; $consecutiveErrors=0 }
                 }
-# --- Outlook Api
                 'Outlook' {
                     $signInName = $name + '@outlook.com'
                     $credentialBody = ConvertTo-Json -InputObject @{username=$signInName; isOtherIdEntry=$false} -Compress
@@ -4033,7 +4445,6 @@ try {
                         }
                     }
                 }
-# --- GitHub Api
                 'GitHub' {
                     if ($null -eq $githubSession) {
                         $githubSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
@@ -4068,7 +4479,6 @@ try {
                         }
                     }
                 }
-# --- YouTube Api
                 'YouTube' {
                     $url = 'https://www.youtube.com/@' + [uri]::EscapeDataString($name)
                     $ytHeaders = @{'User-Agent'=$browserHeaders['User-Agent']; 'Accept'=$browserHeaders['Accept']; 'Accept-Language'='en-US,en;q=0.9'; 'Cookie'='CONSENT=YES+cb; SOCS=CAI; GPS=1'}
@@ -4078,15 +4488,14 @@ try {
                     $escapedHandle = [regex]::Escape($name)
                     $matchingCanonical = $content -match ('(?is)"canonicalBaseUrl"\s*:\s*"/@' + $escapedHandle + '"') -or $content -match ('(?is)<link[^>]+rel="canonical"[^>]+href="https?://www\.youtube\.com/@' + $escapedHandle + '"') -or $content -match ('(?is)property="og:url"[^>]+content="https?://www\.youtube\.com/@' + $escapedHandle + '"') -or $content -match ('(?is)"canonicalChannelUrl"\s*:\s*"https?://www\.youtube\.com/@' + $escapedHandle + '"')
                     $channelMetadata = $content -match '(?is)"channelMetadataRenderer"\s*:\s*\{'
-                    if ($httpStatus -eq 200 -and $matchingCanonical -and $channelMetadata) { $status='Занят'; $reason='YouTube вернул страницу канала, canonical handle совпадает с запрошенным'; $consecutiveErrors=0 }
-                    elseif (($httpStatus -eq 404 -or $content -match '(?i)channelNotFound|This page isn.t available|channel does not exist') -and -not $channelMetadata) { $status='Свободен'; $reason='YouTube не нашёл канал с этим handle'; $consecutiveErrors=0 }
-                    else { $status='Не подтверждено'; $reason='Публичная страница не подтвердила ни существование канала с этим canonical handle, ни регистрационную доступность'; $consecutiveErrors=0 }
+                    $ytNotFound = ($httpStatus -eq 404) -or ($content -match '(?i)channelNotFound|This page isn.t available|channel does not exist|"errorScreen"|Страница недоступна')
+                    if ($httpStatus -eq 200 -and $matchingCanonical -and $channelMetadata) { $status='Занят'; $reason='YouTube: канал найден, canonical handle совпадает с запрошенным'; $consecutiveErrors=0 }
+                    elseif ($ytNotFound -and -not $channelMetadata) { $status='Свободен'; $reason='YouTube: канал с этим handle не найден — подтверди в YouTube Studio (резерв и ограничения видны только там)'; $consecutiveErrors=0 }
+                    else { $status='Не подтверждено'; $reason='YouTube: результат неизвестен — страница не подтвердила ни канал с этим handle, ни его отсутствие; повтори позже или проверь на youtube.com/handle'; $consecutiveErrors=0 }
                 }
-# --- Telegram Api
                 'Telegram' {
-                    # --- Публичный метод: t.me и зеркала telegram.dog/telegram.me — первый однозначный ответ выигрывает, как в веб-версии
-                    $normalizedHandle = [regex]::Escape($name)
                     $tgResolved = $false
+                    $tgNoProfileSeen = $false
                     $tgLastNote = ''
                     foreach ($tgBase in @('https://t.me/','https://telegram.dog/','https://telegram.me/')) {
                         if ($Cancellation.IsCancellationRequested) { break }
@@ -4096,21 +4505,23 @@ try {
                         $r = Get-HttpResult -Url ($tgBase + [uri]::EscapeDataString($name)) -Timeout $tgTimeoutSec -Headers $browserHeaders
                         $httpStatus = [int]$r.Code
                         $content = [string]$r.Content
-                        $profileOwner = ($content -match ('(?is)class="tgme_page_extra"[^>]*>\s*@?' + $normalizedHandle + '\s*</')) -or ($content -match ('(?is)<meta property="og:title" content="Telegram\s*:\s*Contact @?' + $normalizedHandle + '"'))
-                        $freeHintPage = $content -match '(?i)if you have a telegram account|reserve this username|doesn.t seem to exist|username not found|tgme_page_error'
-                        $reservedPage = $content -match '(?i)username has been reserved|reserved for payment|this username is reserved|has been frozen'
                         $blockedPage = $content -match '(?i)доступ к странице ограничен|access is restricted|reestr|roskomnadzor'
+                        $profileTitle = $content -match '(?is)class="tgme_page_title"[^>]*>\s*(<span[^>]*>\s*)?[^<\s]'
+                        $channelCounters = $content -match '(?i)class="tgme_page_extra"[^<]*(subscribers|members|monthly listeners|online)'
+                        $reservedPage = $content -match '(?i)username has been reserved|reserved for payment|this username is reserved|has been frozen'
+                        $freePage = $content -match '(?i)if you have (a )?telegram( account|,)|reserve this username|doesn.t seem to exist|username not found|tgme_page_error'
                         if ($blockedPage) { $tgLastNote = $tgName + ' блокируется провайдером — задай «Прокси» над таблицей или включи VPN'; continue }
                         if ($httpStatus -eq 404) { $status='Свободен'; $reason='Telegram: ' + $tgName + ' вернул 404 — страница @' + $name + ' никем не занята'; $consecutiveErrors=0; $tgResolved=$true; break }
-                        if ($httpStatus -eq 200 -and $freeHintPage -and -not $reservedPage) { $status='Свободен'; $reason='Telegram: страница @' + $name + ' на ' + $tgName + ' предлагает настроить или забронировать ник — тег свободен'; $consecutiveErrors=0; $tgResolved=$true; break }
                         if ($httpStatus -eq 200 -and $reservedPage) { $status='Занят'; $reason='Telegram: тег @' + $name + ' зарезервирован платформой (резерв или платный ник) — регистрация закрыта'; $consecutiveErrors=0; $tgResolved=$true; break }
-                        if ($httpStatus -eq 200 -and $profileOwner) { $status='Занят'; $reason='Telegram: ' + $tgName + ' отдаёт публичную страницу @' + $name; $consecutiveErrors=0; $tgResolved=$true; break }
-                        if ($httpStatus -eq 200) { $tgLastNote = $tgName + ' ответил без распознаваемых маркеров профиля'; continue }
+                        if ($httpStatus -eq 200 -and $channelCounters) { $status='Занят'; $reason='Telegram: ' + $tgName + ' отдаёт публичную страницу канала @' + $name; $consecutiveErrors=0; $tgResolved=$true; break }
+                        if ($httpStatus -eq 200 -and $freePage) { $status='Свободен'; $reason='Telegram: страница @' + $name + ' на ' + $tgName + ' без профиля и предлагает открыть чат — тег свободен'; $consecutiveErrors=0; $tgResolved=$true; break }
+                        if ($httpStatus -eq 200 -and $profileTitle) { $status='Занят'; $reason='Telegram: ' + $tgName + ' отдаёт публичную страницу профиля @' + $name; $consecutiveErrors=0; $tgResolved=$true; break }
+                        if ($httpStatus -eq 200) { $tgNoProfileSeen = $true; $tgLastNote = $tgName + ' ответил без распознаваемых маркеров профиля'; continue }
                         if ($httpStatus -eq 0) { $tgLastNote = $tgName + ' недоступен: соединение не установлено (сетевая блокировка) — поставь «Прокси» над таблицей или включи VPN' } else { $tgLastNote = $tgName + ' вернул неожиданный HTTP ' + $httpStatus }
                     }
+                    if (-not $tgResolved -and $tgNoProfileSeen) { $status='Свободен'; $reason='Telegram: страница @' + $name + ' открылась без профиля и без признаков занятости — тег свободен'; $consecutiveErrors=0; $tgResolved=$true }
                     if (-not $tgResolved) { $status='Не подтверждено'; $reason='Telegram: ' + $tgLastNote + '; попробуй повторить или задать прокси'; $consecutiveErrors=0 }
                 }
-# --- Steam Api
                 'Steam' {
                     $url = 'https://steamcommunity.com/id/' + $name
                     $r = Get-HttpResult -Url $url -Timeout $timeoutSec -Headers $browserHeaders
@@ -4285,6 +4696,7 @@ $script:PollTimer.Add_Tick({
                     $candidate.Time = [string]$item.Time
                     $candidate.Reason = [string]$item.Reason
                     $candidate.Checked = $true
+                    Register-ProgressOutcome $candidate
                     Update-FreeHistoryFromCandidate $candidate
                     Touch-Candidates
                 }
@@ -4321,7 +4733,7 @@ $script:PollTimer.Add_Tick({
                 if ($entry.Type -eq 'Progress') {
                     $item = $entry.Item
                     $candidate = Find-Candidate -Name ([string]$item.Name) -Platform ([string]$item.Platform)
-                    if ($candidate) { $script:CheckedNames[((([string]$candidate.Platform) + '|' + [string]$candidate.Name).ToLowerInvariant())] = $true; $candidate.Status=[string]$item.Status; $candidate.Time=[string]$item.Time; $candidate.Reason=[string]$item.Reason; $candidate.Checked=$true; Update-FreeHistoryFromCandidate $candidate; Touch-Candidates }
+                    if ($candidate) { $script:CheckedNames[((([string]$candidate.Platform) + '|' + [string]$candidate.Name).ToLowerInvariant())] = $true; $candidate.Status=[string]$item.Status; $candidate.Time=[string]$item.Time; $candidate.Reason=[string]$item.Reason; $candidate.Checked=$true; Register-ProgressOutcome $candidate; Update-FreeHistoryFromCandidate $candidate; Touch-Candidates }
                     Update-BatchProgress $item
                 } elseif ($entry.Type -eq 'Log') { Add-Diagnostic ([string]$entry.Message) }
                 elseif ($entry.Type -eq 'Complete') { Add-CompletionEvent $entry; $script:CompletedWorkers = $script:CompletedWorkers + 1 }
@@ -4341,12 +4753,12 @@ $script:PollTimer.Add_Tick({
         }
         $workerErrors = ($workerErrorLines -join [Environment]::NewLine)
         Close-CheckRunspace
-        Reset-CheckControls
         if ($completed -and ($completed.Cancelled -or $completed.StopReason)) {
             foreach ($candidate in $script:Candidates) {
                 if ($candidate.Status -eq 'Проверяется') { $candidate.Status='Ожидает'; $candidate.Reason='Проверка не завершена; можно запустить повторно' }
             }
         }
+        Reset-CheckControls
         $script:GridRefreshPending = $false
         $script:LastGridRefresh = [DateTime]::UtcNow
         if ($script:HistoryDirty) { Save-UsernameHistory }
@@ -4364,13 +4776,13 @@ $script:PollTimer.Add_Tick({
             Add-Diagnostic $message
             [System.Windows.Forms.MessageBox]::Show("Произошла ошибка при проверке.`r`n`r`n$message`r`n`r`nПодробности: UniversalUsernameFinder.log",'Ошибка проверки','OK','Error') | Out-Null
         } elseif ($completed -and $completed.Cancelled) {
-            $script:SummaryLabel.Text = "Остановлено · проверено: $($completed.Checked) · свободно: $($script:AvailableNames.Count)"
+            $script:SummaryLabel.Text = "Остановлено · проверено: $($completed.Checked) · свободно: $($script:AvailableNames.Count) · осталось: $(Get-PendingCandidateCount) — нажми «Возобновить проверку»"
             Add-Diagnostic $script:SummaryLabel.Text
         } elseif ($completed -and $completed.StopReason) {
             $script:SummaryLabel.Text = "Остановлено: $($completed.StopReason) · проверено: $($completed.Checked) · свободно: $($script:AvailableNames.Count)"
             Add-Diagnostic $script:SummaryLabel.Text
         } else {
-            $script:SummaryLabel.Text = "Готово · проверено: $($completed.Checked) · свободно/возможно: $($script:AvailableNames.Count)"
+            $script:SummaryLabel.Text = "Готово · проверено: $($completed.Checked) · свободно: $($script:AvailableNames.Count)"
             Add-Diagnostic $script:SummaryLabel.Text
         }
     }
@@ -4387,6 +4799,20 @@ $script:GenerateButton.Add_Click({
     $customWords = Get-TextBoxValue $script:CustomBox
     $excludeTokens = @($script:ExcludeBox.Text -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     $requestedCount = [int]$script:CountBox.Value
+    $enabledSources = @($script:OneWordCheck, $script:TwoWordsCheck, $script:InventedWordsCheck, $script:InventedPairsCheck, $script:LeetCheck, $script:RareShortCheck, $script:RandomCharsCheck, $script:NumbersCheck) | Where-Object { $_.Checked }
+    if ([bool]$script:ExactOnlyCheck.Checked) {
+        if ([string]::IsNullOrWhiteSpace($customWords)) { Add-Diagnostic 'Режим «Поиск только введенных ников»: впиши свои слова в поле «Свои слова через запятую».' }
+        if (@($enabledSources | Where-Object { $_ -ne $script:NumbersCheck }).Count -gt 0) { Add-Diagnostic 'Режим «Поиск только введенных ников»: галочки источников игнорируются, используются только свои слова (с цифрами, если включено).' }
+    }
+    if (@($enabledSources).Count -eq 0 -and -not [bool]$script:ExactOnlyCheck.Checked) { Add-Diagnostic 'Ни один источник генерации не выбран: использую однословные ники как запасной вариант. Включи нужные галочки в «Настройки генерации».' }
+    if ([bool]$script:ShortOnlyCheck.Checked -and -not [bool]$script:ExactOnlyCheck.Checked -and [int]$script:MinLengthBox.Value -gt 12) {
+        [System.Windows.Forms.MessageBox]::Show('«Только короткие (≤12)» не совместимо с минимальной длиной больше 12 символов: ников не будет. Уменьши минимальную длину или сними галочку «Только короткие».', 'Настройки', 'OK', 'Warning') | Out-Null
+        return
+    }
+    if ([bool]$script:UnderscoreCheck.Checked -and ($platform -eq 'Google' -or $platform -eq 'GitHub')) {
+        Add-Diagnostic ('Разделитель «_» не допускает платформа ' + $platform + ': ники с подчёркиванием будут отброшены по формату. Сними галочку «Разделитель _».')
+    }
+    Update-VpnNotice
     $script:Candidates.Clear()
     Clear-CandidateIndex
     $script:AvailableNames.Clear()
@@ -4396,8 +4822,7 @@ $script:GenerateButton.Add_Click({
     if ($script:ExcludeCheckedCheck.Checked) {
         foreach ($checkedKey in $script:CheckedNames.Keys) { $excludeKeys[[string]$checkedKey] = $true }
     }
-    $candidates = @(New-AdvancedCandidatePool -SelectedWordCategories $categories -CustomWords $customWords -Style ([string]$script:StyleBox.SelectedItem) -Platform $platform -MinLength ([int]$script:MinLengthBox.Value) -MaxLength ([int]$script:MaxLengthBox.Value) -Count $requestedCount -UseNumbers ([bool]$script:NumbersCheck.Checked) -UseUnderscore ([bool]$script:UnderscoreCheck.Checked) -OneWord ([bool]$script:OneWordCheck.Checked) -TwoWords ([bool]$script:TwoWordsCheck.Checked) -InventedWords ([bool]$script:InventedWordsCheck.Checked) -InventedPairs ([bool]$script:InventedPairsCheck.Checked) -LeetWords ([bool]$script:LeetCheck.Checked) -RareShort ([bool]$script:RareShortCheck.Checked) -Ordered ([bool]$script:OrderedCheck.Checked) -RandomChars ([bool]$script:RandomCharsCheck.Checked) -OnlyShort ([bool]$script:ShortOnlyCheck.Checked) -ExcludeTokens $excludeTokens -ExcludeKeys $excludeKeys)
-    # --- Разнобой: гарантированно перемешиваем и сам вывод пула (страховка от тихого сбоя перемешивания внутри)
+    $candidates = @(New-AdvancedCandidatePool -SelectedWordCategories $categories -CustomWords $customWords -Style ([string]$script:StyleBox.SelectedItem) -Platform $platform -MinLength ([int]$script:MinLengthBox.Value) -MaxLength ([int]$script:MaxLengthBox.Value) -Count $requestedCount -UseNumbers ([bool]$script:NumbersCheck.Checked) -UseUnderscore ([bool]$script:UnderscoreCheck.Checked) -OneWord ([bool]$script:OneWordCheck.Checked) -TwoWords ([bool]$script:TwoWordsCheck.Checked) -InventedWords ([bool]$script:InventedWordsCheck.Checked) -InventedPairs ([bool]$script:InventedPairsCheck.Checked) -LeetWords ([bool]$script:LeetCheck.Checked) -RareShort ([bool]$script:RareShortCheck.Checked) -Ordered ([bool]$script:OrderedCheck.Checked) -RandomChars ([bool]$script:RandomCharsCheck.Checked) -ExactOnly ([bool]$script:ExactOnlyCheck.Checked) -OnlyShort ([bool]$script:ShortOnlyCheck.Checked) -ExcludeTokens $excludeTokens -ExcludeKeys $excludeKeys)
     if (-not $script:OrderedCheck.Checked -and @($candidates).Count -gt 1) { $candidates = @(Get-ShuffledArray -Items @($candidates)) }
     $poolStats = $script:GenerationStats
     if ($null -eq $poolStats) { $poolStats = @{} }
@@ -4405,7 +4830,8 @@ $script:GenerateButton.Add_Click({
         Add-Diagnostic ("Создано {0} из {1}: пространство имён исчерпано при текущих фильтрах. Отсеяно — по длине {2}, по формату платформы {3}, по словам-исключениям {4}, повторов {5}, уже проверено/занято {6}." -f $candidates.Count, $requestedCount, $poolStats['ByLength'], $poolStats['ByFormat'], $poolStats['ByExcludedToken'], $poolStats['ByDuplicate'], $poolStats['ByAlreadyUsed'])
         Add-Diagnostic ("По источникам — однословные {0}, двусловные {1}, выдуманные {2}, выдуманные сочетания {3}, с заменой символами {4}, редкие короткие {5}, с цифрами {6}." -f $poolStats['Single'], $poolStats['Pair'], $poolStats['Invented'], $poolStats['InventedPair'], $poolStats['Leet'], $poolStats['Rare'], $poolStats['Number'])
     }
-    $manualBoxHasText = -not [string]::IsNullOrWhiteSpace($script:ManualNickBox.Text)
+    $manualNickText = Get-TextBoxValue $script:ManualNickBox
+    $manualBoxHasText = -not [string]::IsNullOrWhiteSpace($manualNickText)
     if ($candidates.Count -eq 0 -and -not $manualBoxHasText) {
         if ($categories.Count -lt 1 -and [string]::IsNullOrWhiteSpace($customWords)) {
             $noVariantHint = 'Не выбрана ни одна категория и не введены свои слова. Нажми «Выделить все» или впиши свои слова через запятую.'
@@ -4435,14 +4861,14 @@ $script:GenerateButton.Add_Click({
         $added++
     }
     if ($dropped -gt 0) { Add-Diagnostic ("Отброшено после генерации: {0} (совпали с уже проверенными или занятыми)." -f $dropped) }
-    foreach ($nickRaw in ($script:ManualNickBox.Text -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+    foreach ($nickRaw in ($manualNickText -split '[,;\r\n]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
         $nick = Get-PlatformNickInput -Platform $platform -Raw $nickRaw
         $key = (($platform + '|' + $nick).ToLowerInvariant())
         if ($seen.ContainsKey($key) -or $script:RetiredNames.ContainsKey($key)) { continue }
         $status = 'Ожидает'; $reason = 'Ожидает проверки'
         if (-not (Test-UsernameFormat -Username $nick -Platform $platform)) { $status = 'Недопустимый'; $reason = "Неверный формат имени для платформы $platform" }
         $manualTime = ''
-        if ($status -eq 'Недопустимый') { $manualTime = (Get-Date).ToString('HH:mm:ss') }
+        if ($status -eq 'Недопустимый') { $manualTime = (Get-Date).ToString('HH:mm:ss'); Register-InvalidNick -Name $nick -Platform $platform }
         $manualCandidate = [pscustomobject]@{Name=$nick; Platform=$platform; Meaning='Введён вручную'; Category='Ручной ввод'; Structure=(Get-NickStructure -Name $nick); Status=$status; Time=$manualTime; Reason=$reason; Checked=($status -eq 'Недопустимый')}
         [void]$script:Candidates.Add($manualCandidate)
         Register-Candidate $manualCandidate
@@ -4460,7 +4886,7 @@ $script:GenerateButton.Add_Click({
     if ($added -gt 0) { Start-Checking -RetryErrorsOnly $false }
 })
 
-$script:StartButton.Add_Click({ Start-Checking -RetryErrorsOnly $false })
+$script:StartButton.Add_Click({ Start-Checking -RetryErrorsOnly $false -ResumePending $true })
 $script:RetryButton.Add_Click({ Start-Checking -RetryErrorsOnly $true })
 $script:StopButton.Add_Click({
     if ($script:Cancellation -and -not $script:Cancellation.IsCancellationRequested) {
@@ -4546,6 +4972,7 @@ $script:Grid.Add_SelectionChanged({
         }
     } catch { }
 })
+$script:PlatformBox.Add_SelectedIndexChanged({ Update-VpnNotice })
 $script:PlatformBox.Add_SelectedIndexChanged({
     if ($script:PlatformBox.SelectedItem) {
         $selectedPlatform = [string]$script:PlatformBox.SelectedItem
@@ -4575,6 +5002,7 @@ $script:PlatformBox.Add_SelectedIndexChanged({
 $script:ApiDocsButton.Add_Click({ Show-UsernameFinderHelp })
 $script:HistoryButton.Add_Click({ Open-FreeHistoryWindow })
 $script:CheckedNamesButton.Add_Click({ Open-CheckedNamesWindow })
+$script:ConnectionTestButton.Add_Click({ Open-ConnectionTestWindow })
 Update-CheckedNamesButtonText
 $script:HistoryButton.Text = "Свободные ники ($($script:FreeHistory.Count))"
 $script:AccountButton.Add_Click({ Open-AccountTools })
@@ -4610,9 +5038,133 @@ $uufResizeEdgeLeft = New-UufResizeEdge 'ResizeEdgeLeft' 0 0 6 $uufClientHeight '
 $uufResizeEdgeRight = New-UufResizeEdge 'ResizeEdgeRight' $uufEdgeRightX 0 6 $uufClientHeight 'Top, Bottom, Right' ([System.Windows.Forms.Cursors]::SizeWE) 11
 $uufResizeEdgeBottom = New-UufResizeEdge 'ResizeEdgeBottom' 0 $uufEdgeBottomY $uufClientWidth 6 'Bottom, Left, Right' ([System.Windows.Forms.Cursors]::SizeNS) 15
 
+function Get-StartupVideoPath {
+    $cacheDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
+    if ($script:EmbeddedVideoParts.Count -gt 0) {
+        $null = [System.IO.Directory]::CreateDirectory($cacheDirectory)
+        $videoBytes = [Convert]::FromBase64String((-join $script:EmbeddedVideoParts))
+        $cachedPath = Join-Path $cacheDirectory 'startup-video.mp4'
+        $cachedLength = -1
+        if ([System.IO.File]::Exists($cachedPath)) { $cachedLength = ([System.IO.FileInfo]$cachedPath).Length }
+        if ($cachedLength -ne $videoBytes.Length) { [System.IO.File]::WriteAllBytes($cachedPath, $videoBytes) }
+        return $cachedPath
+    }
+    $videoPath = Join-Path (Get-AppDirectory) 'assets\digital_word_eye.mp4'
+    if ([System.IO.File]::Exists($videoPath)) { return $videoPath }
+    return ''
+}
+
+function Show-StartupVideo {
+    $script:SplashShell = $null
+    $script:SplashRunspace = $null
+    $script:SplashAsync = $null
+    $script:SplashState = $null
+    try {
+        $videoPath = Get-StartupVideoPath
+        if ([string]::IsNullOrWhiteSpace($videoPath) -or -not [System.IO.File]::Exists($videoPath)) { return }
+
+        $logDirectory = Join-Path $env:LOCALAPPDATA 'UniversalUsernameFinder'
+        $null = [System.IO.Directory]::CreateDirectory($logDirectory)
+        $splashLog = Join-Path $logDirectory 'splash.log'
+
+        $splashBody = @'
+param($VideoPath, $LogPath, $State)
+$ErrorActionPreference = 'Stop'
+try {
+    Add-Type -AssemblyName PresentationFramework
+    Add-Type -AssemblyName PresentationCore
+    Add-Type -AssemblyName WindowsBase
+    $player = New-Object System.Windows.Controls.MediaElement
+    $player.LoadedBehavior = 'Play'
+    $player.UnloadedBehavior = 'Close'
+    $player.Stretch = 'UniformToFill'
+    $player.Source = New-Object System.Uri($VideoPath)
+    $window = New-Object System.Windows.Window
+    $window.WindowStyle = 'None'
+    $window.ResizeMode = 'NoResize'
+    $window.ShowInTaskbar = $false
+    $window.Topmost = $true
+    $window.WindowStartupLocation = 'Manual'
+    $window.Background = [System.Windows.Media.Brushes]::Black
+    $area = [System.Windows.SystemParameters]::WorkArea
+    $scale = [Math]::Min(1.0, [Math]::Min($area.Width / 1920.0, $area.Height / 1080.0))
+    $window.Width = [Math]::Round(1920 * $scale)
+    $window.Height = [Math]::Round(1080 * $scale)
+    $window.Left = $area.Left + ($area.Width - $window.Width) / 2
+    $window.Top = $area.Top + ($area.Height - $window.Height) / 2
+    $window.Content = $player
+    $player.Add_MediaEnded({ $window.Close() })
+    $player.Add_MediaFailed({ param($sender, $e) try { Add-Content -LiteralPath $LogPath -Value ('MediaFailed: ' + $e.ErrorException.Message) } catch { }; $window.Close() })
+    $stopTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $stopTimer.Interval = [TimeSpan]::FromMilliseconds(100)
+    $stopTimer.Add_Tick({ if ($State['Stop']) { $window.Close() } })
+    $window.Add_ContentRendered({ $stopTimer.Start() })
+    $app = New-Object System.Windows.Application
+    [void]$app.Run($window)
+} catch {
+    try { Add-Content -LiteralPath $LogPath -Value ('Splash error: ' + $_.Exception.ToString()) } catch { }
+}
+'@
+
+        $script:SplashState = [hashtable]::Synchronized(@{ Stop = $false })
+        $script:SplashRunspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+        $script:SplashRunspace.ApartmentState = [System.Threading.ApartmentState]::STA
+        $script:SplashRunspace.ThreadOptions = [System.Management.Automation.Runspaces.PSThreadOptions]::ReuseThread
+        $script:SplashRunspace.Open()
+        $script:SplashShell = [System.Management.Automation.PowerShell]::Create()
+        $script:SplashShell.Runspace = $script:SplashRunspace
+        $null = $script:SplashShell.AddScript($splashBody).AddArgument($videoPath).AddArgument($splashLog).AddArgument($script:SplashState)
+        $script:SplashAsync = $script:SplashShell.BeginInvoke()
+    } catch {
+        Write-StartupLog ('Заставка недоступна: ' + $_.Exception.Message)
+        $script:SplashShell = $null
+    }
+}
+
+function Wait-StartupVideo {
+    if (-not $script:SplashShell) { return }
+    $deadline = [DateTime]::UtcNow.AddSeconds(90)
+    while (-not $script:SplashAsync.IsCompleted -and [DateTime]::UtcNow -lt $deadline) {
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 50
+    }
+    if (-not $script:SplashAsync.IsCompleted) {
+        $script:SplashState['Stop'] = $true
+        $stopDeadline = [DateTime]::UtcNow.AddSeconds(2)
+        while (-not $script:SplashAsync.IsCompleted -and [DateTime]::UtcNow -lt $stopDeadline) {
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 50
+        }
+    }
+    try { $script:SplashShell.Dispose() } catch { }
+    try { $script:SplashRunspace.Close() } catch { }
+    $script:SplashShell = $null
+    $script:SplashRunspace = $null
+    $script:SplashAsync = $null
+    $script:SplashState = $null
+}
+
+function Show-AppFadeIn {
+    if (-not $script:Form) { return }
+    for ($step = 1; $step -le 12; $step++) {
+        $script:Form.Opacity = [double]$step / 12.0
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 25
+    }
+    $script:Form.Opacity = 1.0
+}
+
+function Close-StartupVideo {
+    Wait-StartupVideo
+    Show-AppFadeIn
+}
+
 try {
     Set-ButtonEdgeStyle -Root $script:Form
     try { if ($script:UufDwmAvailable) { [UufDwmCorners]::Round($script:Form.Handle) } } catch { }
+    $script:Form.Opacity = 0
+    Show-StartupVideo
+    $script:Form.Add_Shown({ Close-StartupVideo })
     [void]$script:Form.ShowDialog()
 } catch {
     Write-StartupLog ('Фатальная ошибка главного окна: ' + $_.Exception.ToString())

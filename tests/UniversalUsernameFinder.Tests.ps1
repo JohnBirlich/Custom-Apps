@@ -273,7 +273,7 @@ Describe 'Структура скрипта' {
     }
 
     It 'хранилище аккаунтов перенесено из папки RobloxNickFinder с миграцией' {
-        $global:UufMainText.Contains('$script:VaultDirectory = Join-Path $env:LOCALAPPDATA ''UniversalUsernameFinder''') | Should -BeTrue
+        $global:UufMainText.Contains('$script:VaultDirectory = Join-Path $env:APPDATA ''UniversalUsernameFinder''') | Should -BeTrue
         $global:UufMainText.Contains('$script:LegacyVaultPath = Join-Path $script:LegacyVaultDirectory ''accounts.dat''') | Should -BeTrue
         $global:UufMainText.Contains('function Migrate-LegacyVault') | Should -BeTrue
         $global:UufMainText.Contains('.migrated') | Should -BeTrue
@@ -852,7 +852,6 @@ Describe 'Новые источники генерации' {
 
 Describe 'Интерфейс и поведение версии 2.5.5' {
     It 'список категорий строится из того же массива, которым пользуется генератор' {
-        # v2.8.3: список тот же, но отсортирован по алфавиту
         $global:UufMainText.Contains('AddRange([object[]]@($script:WordCategories | Sort-Object))') | Should -BeTrue
         $global:UufMainText.Contains('$script:WordCategories = @(') | Should -BeTrue
     }
@@ -881,7 +880,7 @@ Describe 'Интерфейс и поведение версии 2.5.5' {
     }
 
     It 'число потоков задаётся в интерфейсе и ограничено восемью' {
-        $global:UufMainText.Contains('$script:ThreadsBox = New-NumberBox 254 910 110 1 8 2') | Should -BeTrue
+        $global:UufMainText.Contains('$script:ThreadsBox = New-NumberBox 254 934 110 1 8 2') | Should -BeTrue
         $global:UufMainText.Contains('Рекомендуется 2–4 потока') | Should -BeTrue
         $global:UufMainText.Contains('if ($threadCount -gt 8) { $threadCount = 8 }') | Should -BeTrue
     }
@@ -943,7 +942,6 @@ Describe 'Платформы, домены и интерфейс версии 2.
         $global:SupportedPlatforms -contains 'Microsoft' | Should -BeFalse
         $global:SupportedPlatforms -contains 'Telegram Channel' | Should -BeFalse
         $global:SupportedPlatforms -contains 'Steam' | Should -BeTrue
-        $global:UufWorkerText.Contains('# --- Steam Api') | Should -BeTrue
     }
     It 'источник случайных символов работает автономно' {
         $pool = @(New-AdvancedCandidatePool -SelectedWordCategories @() -CustomWords '' -Style '— без стиля —' -Platform 'Roblox' -MinLength 4 -MaxLength 12 -Count 10 -UseNumbers $false -UseUnderscore $false -OneWord $false -TwoWords $false -OnlyShort $false -ExcludeTokens @() -RandomChars $true)
@@ -962,7 +960,7 @@ Describe 'Платформы, домены и интерфейс версии 2.
         $global:UufMainText.Contains('$script:MaxLengthBox = New-NumberBox 216 624 80 1 64 25') | Should -BeTrue
         $global:UufMainText.Contains('$script:RandomCharsCheck = New-CheckBox ' + [char]39 + 'Случайные символы' + [char]39 + ' 14 803 180 $true') | Should -BeTrue
         $global:UufMainText.Contains('$script:TwoWordsCheck = New-CheckBox ' + [char]39 + 'Два осмысленных слова' + [char]39 + ' 194 683 170 $false') | Should -BeTrue
-        $global:UufMainText.Contains('$script:DelayBox = New-NumberBox 14 910 110 500 15000 700') | Should -BeTrue
+        $global:UufMainText.Contains('$script:DelayBox = New-NumberBox 14 934 110 500 15000 700') | Should -BeTrue
     }
     It 'интерфейс тёмный v2.5.5, кастомная строка заголовка, без анимаций' {
         $global:UufMainText.Contains('$script:Form.FormBorderStyle = ' + [char]39 + 'None' + [char]39) | Should -BeTrue
@@ -983,9 +981,11 @@ Describe 'Платформы, домены и интерфейс версии 2.
     }
     It 'помощь стала полноценным разделом с вкладками' {
         $global:UufMainText.Contains('$helpForm.Text = ' + [char]39 + 'UUF — помощь' + [char]39) | Should -BeTrue
-        $global:UufMainText.Contains('КАК ПОЛЬЗОВАТЬСЯ') | Should -BeTrue
-        $global:UufMainText.Contains('КАТЕГОРИИ И ПРИМЕРЫ СЛОВ') | Should -BeTrue
-        $global:UufMainText.Contains('ПЛАТФОРМЫ: ПРАВИЛА, ДОМЕНЫ И РЕГИСТРАЦИЯ') | Should -BeTrue
+        $global:UufMainText.Contains("@{ Title = 'Дисклеймер'") | Should -BeTrue
+        $global:UufMainText.Contains("@{ Title = 'Пользование'") | Should -BeTrue
+        $global:UufMainText.Contains("@{ Title = 'Как устроено?'") | Should -BeTrue
+        $global:UufMainText.Contains("@{ Title = 'Настройки'") | Should -BeTrue
+        $global:UufMainText.Contains("@{ Title = 'Правила ввода'") | Should -BeTrue
     }
     It 'исполняемый файл переименован в UUF и получает иконку' {
         $buildText = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\build\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
@@ -1043,8 +1043,8 @@ Describe 'Изменения версии 2.8.1' {
         $global:UufMainText.Contains('BeginInvoke({ Refresh-FreeHistoryList })') | Should -BeFalse
     }
     It 'помощь выровнена висячими отступами без плашек' {
-        $global:UufMainText.Contains('$pageBox.SelectionHangingIndent = 14') | Should -BeTrue
-        $global:UufMainText.Contains('$pageBox.SelectionHangingIndent = 12') | Should -BeTrue
+        $global:UufMainText.Contains('function Add-HelpCard {') | Should -BeTrue
+        $global:UufMainText.Contains('function Set-HelpCardLayout {') | Should -BeTrue
         $global:UufMainText.Contains('$pageBox.SelectionBackColor = [System.Drawing.Color]::FromArgb(32,41,56)') | Should -BeFalse
     }
     It 'в интерфейсе не осталось перенесённых якорей и мусора сортировки' {
@@ -1074,7 +1074,8 @@ Describe 'Изменения версии 2.8.2' {
         $global:UufMainText.Contains('$script:CopyLogButton.Anchor = ' + [char]39 + 'Bottom, Left' + [char]39) | Should -BeTrue
         $global:UufMainText.Contains('$script:ClearLogButton.Anchor = ' + [char]39 + 'Bottom, Left' + [char]39) | Should -BeTrue
         $global:UufMainText.Contains('$script:Grid.Size = New-Object System.Drawing.Size(1008,568)') | Should -BeTrue
-        $global:UufMainText.Contains('$script:DiagnosticBox.Location = New-Object System.Drawing.Point(14,742)') | Should -BeTrue
+        $global:UufMainText.Contains('function Set-UufRightLayout {') | Should -BeTrue
+        $global:UufMainText.Contains('$script:DiagnosticsToggleButton = Add-UiButton') | Should -BeTrue
     }
     It 'правила VK и YouTube запрещают повторные точки и точки по краям' {
         Test-UsernameFormat -Username 'good_nick' -Platform 'VK' | Should -BeTrue
@@ -1110,7 +1111,7 @@ Describe 'Изменения версии 2.8.3' {
         $global:UufMainText.Contains('$footer.Location = New-Object System.Drawing.Point(14,878)') | Should -BeTrue
     }
     It 'разнобой гарантирован на выдаче пула и перемешивание крипто-индексами' {
-        $global:UufMainText.Contains('try { $j = Get-CryptoRandomIndex ($i + 1) }') | Should -BeTrue  # v2.8.4: форма с резервом по диапазону проверяется в блоке 2.8.4
+        $global:UufMainText.Contains('try { $j = Get-CryptoRandomIndex ($i + 1) }') | Should -BeTrue
     }
     It 'новые категории и алфавитный список' {
         $global:UufMainText.Contains('''Имя, Фамилия'' = @(''John'',''Birlich'',''Mark'',''Cukerberk'',''Mask'',''Ilon''') | Should -BeTrue
@@ -1158,8 +1159,9 @@ Describe 'Изменения версии 2.8.3' {
         $global:UufWorkerText.Contains('property="og:url"[^>]+content="https?://www\.youtube\.com/@') | Should -BeTrue
     }
     It 'Telegram: детерминированный ответ t.me (404 — свободен, профиль — занят)' {
-        $global:UufWorkerText.Contains('$profileOwner = ($content -match') | Should -BeTrue
+        $global:UufWorkerText.Contains('$profileTitle = $content -match') | Should -BeTrue
         $global:UufWorkerText.Contains('if ($httpStatus -eq 200 -and $reservedPage)') | Should -BeTrue
+        $global:UufWorkerText.Contains('if ($httpStatus -eq 200 -and $freePage)') | Should -BeTrue
     }
     It 'региональные блокировки подсказывают прокси, воркер умеет прокси' {
         $global:UufWorkerText.Contains('сайты t.me и YouTube могут быть недоступны из региона') | Should -BeTrue
@@ -1172,7 +1174,7 @@ Describe 'Изменения версии 2.8.3' {
 
 Describe 'Доработка версии 2.8.4' {
     It 'версия не ниже 2.8.4 в скрипте' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.[89]\.\d'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:[89]|10)\.\d+'''
     }
     It 'журнал печатает режим очереди проверки' {
         $global:UufMainText.Contains('Порядок проверки: вразнобой') | Should -BeTrue
@@ -1188,7 +1190,6 @@ Describe 'Исправление версии 2.8.5' {
     It 'подсказки грида не используют несуществующее свойство ToolTip (краш запуска в 2.8.3/2.8.4)' {
         $global:UufMainText.Contains('ReselectionDelay') | Should -BeFalse
         $global:UufMainText.Contains('$script:GridToolTip.ReshowDelay = 250') | Should -BeTrue
-        $global:UufMainText.Contains('# --- Подсказки статуса: оформление не должно уметь ронять запуск') | Should -BeTrue
     }
     It 'поле прокси честно обещает только HTTP-прокси' {
         $global:UufMainText.Contains('socks5://127.0.0.1:1080') | Should -BeFalse
@@ -1198,7 +1199,7 @@ Describe 'Исправление версии 2.8.5' {
 
 Describe 'Изменения версии 2.8.6' {
     It 'версия не ниже 2.8.6 в скрипте' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.[89]\.\d'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:[89]|10)\.\d+'''
     }
     It 'статуса «Вероятно свободен» в проверках больше нет' {
         $global:UufWorkerText.Contains('Вероятно свободен') | Should -BeFalse
@@ -1255,7 +1256,7 @@ Describe 'Изменения версии 2.8.6' {
         $installBytes[2] | Should -Be 0xBF
     }
     It 'футер честно описывает смысл статусов' {
-        $global:UufMainText.Contains('финальное подтверждение — форма регистрации') | Should -BeTrue
+        $global:UufMainText.Contains('Проверка некоторых платформ возможно потребует VPN/Proxy, если вы проживаете в странах СНГ, где работают блокировки') | Should -BeTrue
     }
 }
 
@@ -1285,13 +1286,12 @@ Describe 'Версия 2.8.7: подпись сборки и антивирус�
         $signText.Contains('Get-AuthenticodeSignature') | Should -BeTrue
         $signText.Contains('EphemeralKeySet') | Should -BeTrue
     }
-    It 'CI подписывает exe и публикует sha256 вместе с публичным сертификатом' {
+    It 'CI собирает пакет из скриптов и публикует zip с sha256 (без exe)' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
-        $ciText.Contains('build\Sign-Uuf.ps1') | Should -BeTrue
-        $ciText.Contains('secrets.UUF_SIGN_PFX_BASE64') | Should -BeTrue
-        $ciText.Contains('dist/UUF.exe.sha256') | Should -BeTrue
-        $ciText.Contains('Get-FileHash') | Should -BeTrue
+        $ciText.Contains('Package-Uuf.ps1') | Should -BeTrue
+        $ciText.Contains('dist/UniversalUsernameFinder-windows.zip.sha256') | Should -BeTrue
+        $ciText.Contains('Compile UUF.exe') | Should -BeFalse
     }
     It 'установщик сообщает о подписи и копирует сертификат издателя' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
@@ -1319,14 +1319,14 @@ Describe 'Версия 2.8.8: статистика по размеру окна 
     It 'установщик умеет доверять сертификату и снимать доверие' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
-        $installText.Contains('[switch]$TrustSelfSigned') | Should -BeTrue
+        $installText.Contains('[switch]$TrustCertificate') | Should -BeTrue
         $installText.Contains('Import-Certificate -FilePath $candidatePath -CertStoreLocation ''Cert:\CurrentUser\TrustedPublisher''') | Should -BeTrue
         $installText.Contains("'Cert:\CurrentUser\Root'") | Should -BeTrue
     }
     It 'README объясняет SmartScreen и отчёт Dr.Web' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $readmeText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'README.md'), [System.Text.Encoding]::UTF8)
-        $readmeText.Contains('-TrustSelfSigned') | Should -BeTrue
+        $readmeText.Contains('-TrustCertificate') | Should -BeTrue
         $readmeText.Contains('doctor@drweb.com') | Should -BeTrue
         $readmeText.Contains('Подробнее → Выполнить в любом случае') | Should -BeTrue
     }
@@ -1336,9 +1336,9 @@ Describe 'Версия 2.8.9: SmartScreen-нюансы' {
     It 'установщик разблокирует папку распаковки и диагностирует подпись' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
-        $installText.Contains('Unblock-File -LiteralPath $uufFile.FullName') | Should -BeTrue
+        $installText.Contains('Unblock-File -LiteralPath $targetExe') | Should -BeTrue
         $installText.Contains('$trustAppliedNow') | Should -BeTrue
-        $installText.Contains('Внимание: файл не подписан') | Should -BeTrue
+        $installText.Contains('Скрипт UUF не подписан цифровой подписью') | Should -BeTrue
         $installText.Contains('Подпись проверена: издатель Hasberd') | Should -BeTrue
     }
     It 'журнал приложения фиксирует статус подписи запускаемого файла' {
@@ -1354,7 +1354,7 @@ Describe 'Версия 2.8.9: SmartScreen-нюансы' {
         $readmeText.Contains('Установить сертификат') | Should -BeTrue
     }
     It 'версия поднята' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[0-9]'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.\d+)'''
     }
 }
 
@@ -1364,11 +1364,8 @@ Describe 'Версия 2.9.0: ручной ввод, вкладки, зерка�
         $global:UufMainText.Contains('$script:ManualNickBox = New-TextBox 14 505 350 66') | Should -BeTrue
     }
     It 'вкладки рисуются вручную: без белой полоски, кнопки угла в цвете таба' {
-        $global:UufMainText.Contains('function Set-UufTabStyle {') | Should -BeTrue
-        $global:UufMainText.Contains("`$Tabs.Appearance = 'FlatButtons'") | Should -BeTrue
-        $global:UufMainText.Contains("`$Tabs.DrawMode = 'OwnerDrawFixed'") | Should -BeTrue
-        $global:UufMainText.Contains('Set-UufTabStyle -Tabs $tabs -TabWidth 190') | Should -BeTrue
-        $global:UufMainText.Contains('Set-UufTabStyle -Tabs $helpTabs -TabWidth 180') | Should -BeTrue
+        $global:UufMainText.Contains('function Set-AccountTabView {') | Should -BeTrue
+        $global:UufMainText.Contains('function Show-HelpPage {') | Should -BeTrue
     }
     It 'буфер обмена через безопасную функцию с повторами, прямых вызовов не осталось' {
         $global:UufMainText.Contains('function Copy-UufTextToClipboard {') | Should -BeTrue
@@ -1396,14 +1393,13 @@ Describe 'Версия 2.9.0: ручной ввод, вкладки, зерка�
         $global:UufWorkerText.Contains('форма регистрации подтвердила доступность') | Should -BeTrue
     }
     It 'версия поднята до 2.9.0' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[0-9]'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.\d+)'''
     }
 }
 
 Describe 'Версия 2.9.1: дорисовка вкладок, возобновление проверки, устойчивость остановок' {
     It 'обработчик вкладок привязывает аргументы через param и защищён от падения' {
-        $global:UufMainText.Contains('param($tabSender,$tabArgs)') | Should -BeTrue
-        $global:UufMainText.Contains('if ($tabIndex -lt 0 -or $tabIndex -ge $tabSender.TabPages.Count) { return }') | Should -BeTrue
+        $global:UufMainText.Contains('param($clickSender, $clickArgs) Set-AccountTabView -Index ([int]$clickSender.Tag)') | Should -BeTrue
         $global:UufMainText | Should -Not -Match '\$args\[1\]\.TabIndex'
     }
     It 'кнопки заголовка не рисуют системных рамок' {
@@ -1434,11 +1430,11 @@ Describe 'Версия 2.9.1: дорисовка вкладок, возобно�
         $installerText.Contains('trap {') | Should -BeTrue
         $installerText.Contains('Нажмите Enter, чтобы закрыть окно') | Should -BeTrue
         Test-Path ([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.bat')) | Should -BeTrue
-        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
-        $ciText.Contains('build/Install-UUF.bat') | Should -BeTrue
+        $packageText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Package-Uuf.ps1'), [System.Text.Encoding]::UTF8)
+        $packageText.Contains('Install-UUF.bat') | Should -BeTrue
     }
     It 'версия поднята до 2.9.1' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[0-9]'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[0-9]|10\.\d+)'''
     }
 }
 
@@ -1458,8 +1454,8 @@ Describe 'Версия 2.9.2: установщик зависимостей и �
     It 'доверие сертификату включено по умолчанию, старый ключ совместим, удаление делегируется' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $installText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
-        $installText.Contains('if (-not $NoTrust) {') | Should -BeTrue
-        $installText.Contains('[switch]$TrustSelfSigned') | Should -BeTrue
+        $installText.Contains('if ($TrustCertificate -and -not $NoTrust) {') | Should -BeTrue
+        $installText.Contains('[switch]$TrustCertificate') | Should -BeTrue
         $installText.Contains('& $uninstallerSource') | Should -BeTrue
         $installText.Contains('Copy-Item -LiteralPath $uninstallerExeSource -Destination $targetUninstaller -Force') | Should -BeTrue
     }
@@ -1475,25 +1471,25 @@ Describe 'Версия 2.9.2: установщик зависимостей и �
         $uninstallText.Contains('while (Get-Process -Id $p -ErrorAction SilentlyContinue)') | Should -BeTrue
         $uninstallText.Contains('Remove-UufDirectory -Path $dataDirectory -Label ''Данные''') | Should -BeTrue
     }
-    It 'bat-обёртки есть и у установки, и у удаления; артефакт их содержит' {
+    It 'bat-обёртки есть и у установки, и у удаления; пакет их содержит' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         Test-Path ([System.IO.Path]::Combine($repoRoot, 'build', 'Uninstall-UUF.bat')) | Should -BeTrue
         $uninstallBatText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Uninstall-UUF.bat'))
         $uninstallBatText.Contains('Uninstall-UUF.ps1') | Should -BeTrue
-        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
-        $ciText.Contains('build/Uninstall-UUF.ps1') | Should -BeTrue
-        $ciText.Contains('build/Uninstall-UUF.bat') | Should -BeTrue
+        $packageText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Package-Uuf.ps1'), [System.Text.Encoding]::UTF8)
+        $packageText.Contains('Uninstall-UUF.ps1') | Should -BeTrue
+        $packageText.Contains('Uninstall-UUF.bat') | Should -BeTrue
     }
     It 'README описывает автодоверие, проверку зависимостей и полное удаление' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $readmeText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'README.md'), [System.Text.Encoding]::UTF8)
         $readmeText.Contains('Uninstall-UUF.bat') | Should -BeTrue
         $readmeText.Contains('Приложения и возможности') | Should -BeTrue
-        $readmeText.Contains('-NoTrust') | Should -BeTrue
+        $readmeText.Contains('-TrustCertificate') | Should -BeTrue
         $readmeText.Contains('394802') | Should -BeFalse
     }
     It 'версия не ниже 2.9.2' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.[2-9]'''
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.(?:9\.[2-9]|10\.\d+)'''
     }
 }
 
@@ -1507,15 +1503,11 @@ Describe 'Версия 2.9.3: полное удаление — самостоя
         $builderText.Contains('Uninstall-UUF.ps1') | Should -BeTrue
         $builderText.Contains('Invoke-ps2exe') | Should -BeTrue
     }
-    It 'AppUninstaller.exe подписывается общим сертификатом и попадает в артефакт с хэшем' {
+    It 'пакет заменяет AppUninstaller.exe: CI публикует zip, а не exe' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
         $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
-        $ciText.Contains('Compile AppUninstaller.exe') | Should -BeTrue
-        $ciText.Contains('dist/AppUninstaller.exe') | Should -BeTrue
-        $ciText.Contains('dist/AppUninstaller.exe.sha256') | Should -BeTrue
-        $ciText.Contains('-ExtraExePaths') | Should -BeTrue
-        $signText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, 'build', 'Sign-Uuf.ps1'), [System.Text.Encoding]::UTF8)
-        $signText.Contains('[string[]]$ExtraExePaths = @()') | Should -BeTrue
+        $ciText.Contains('Package-Uuf.ps1') | Should -BeTrue
+        $ciText.Contains('Compile AppUninstaller.exe') | Should -BeFalse
     }
     It 'установщик кладёт AppUninstaller.exe и регистрирует его кнопкой удаления' {
         $repoRoot = Split-Path -Parent $global:UufScriptPath
@@ -1531,8 +1523,444 @@ Describe 'Версия 2.9.3: полное удаление — самостоя
         $readmeText.Contains('AppUninstaller.exe') | Should -BeTrue
         $readmeText.Contains('Build-Uninstaller.ps1') | Should -BeTrue
     }
-    It 'версия поднята до 2.9.3' {
-        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.9\.3'''
+    It 'версия поднята до 2.10.0' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.\d+'''
+    }
+}
+
+Describe 'Версия 2.10.0: поправки 1-16' {
+    It 'YouTube: правила YTKits — латиница, цифры, точка, подчёркивание, дефис; начало и конец буква или цифра' {
+        Test-UsernameFormat -Username 'cool.handle_1' -Platform 'YouTube' | Should -BeTrue
+        Test-UsernameFormat -Username 'ab' -Platform 'YouTube' | Should -BeFalse
+        Test-UsernameFormat -Username '.start' -Platform 'YouTube' | Should -BeFalse
+        Test-UsernameFormat -Username 'end-' -Platform 'YouTube' | Should -BeFalse
+        Test-UsernameFormat -Username 'a..b' -Platform 'YouTube' | Should -BeFalse
+        Test-UsernameFormat -Username ('a' * 31) -Platform 'YouTube' | Should -BeFalse
+    }
+    It 'пункт 1: пустое поле ручных ников читается через Get-TextBoxValue, служебный текст не попадает' {
+        $global:UufFullText.Contains('$manualNickText = Get-TextBoxValue $script:ManualNickBox') | Should -BeTrue
+    }
+    It 'пункт 6: VPN-подсказка только для YouTube, Telegram, Outlook, Google и Discord' {
+        $global:UufFullText.Contains("`$script:VpnNoticePlatforms = @('YouTube','Telegram','Outlook','Google','Discord')") | Should -BeTrue
+        $global:UufFullText.Contains('function Update-VpnNotice {') | Should -BeTrue
+        $global:UufFullText.Contains('$footer.Text = ' + [char]39 + [char]39) | Should -BeTrue
+    }
+    It 'пункт 8: возобновление проверки по ожидающим никам и счётчик осталось' {
+        $global:UufFullText.Contains('function Get-PendingCandidateCount {') | Should -BeTrue
+        $global:UufFullText.Contains('[bool]$ResumePending = $false') | Should -BeTrue
+        $global:UufFullText.Contains('-RetryErrorsOnly $false -ResumePending $true') | Should -BeTrue
+        $global:UufFullText.Contains('осталось: $(Get-PendingCandidateCount)') | Should -BeTrue
+    }
+    It 'пункт 9: в хранилище ник сохраняется с доменом через Get-DisplayNick' {
+        $global:UufFullText.Contains('$storedNick = Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name $nick') | Should -BeTrue
+        $global:UufFullText.Contains('Username=$storedNick') | Should -BeTrue
+    }
+    It 'пункты 10-12: кнопки и разделы помощи названы по ТЗ' {
+        $global:UufFullText.Contains("'Регистрация и пароль'") | Should -BeTrue
+        $global:UufFullText.Contains("'Сохранённые аккаунты'") | Should -BeTrue
+        $global:UufFullText.Contains("@{ Title = 'Дисклеймер'") | Should -BeTrue
+        $global:UufFullText.Contains("@{ Title = 'Правила ввода'") | Should -BeTrue
+    }
+    It 'пункт 13: история свободных — множественный выбор, Выделить все и Снять все' {
+        $global:UufFullText.Contains("`$script:HistoryListBox.SelectionMode = 'MultiExtended'") | Should -BeTrue
+        $global:UufFullText.Contains("'Выделить все'") | Should -BeTrue
+        $global:UufFullText.Contains("'Снять все'") | Should -BeTrue
+        $global:UufFullText.Contains('$selectedItems = @($script:HistoryListBox.SelectedItems)') | Should -BeTrue
+    }
+    It 'пункт 14: поля имени и фамилии и случайный выбор только для Google' {
+        $global:UufFullText.Contains('function Set-RandomGoogleNameFields {') | Should -BeTrue
+        $global:UufFullText.Contains("'Случайное имя и фамилия'") | Should -BeTrue
+        $global:UufFullText.Contains('$isGoogleAccount = ($platform -eq ' + [char]39 + 'Google' + [char]39 + ')') | Should -BeTrue
+    }
+    It 'пункт 15: кнопка «Проверка соединения», таблица HTTP-кодов и формат строки результата' {
+        $global:UufFullText.Contains("'⇄  Проверка соединения' 14 1261 350") | Should -BeTrue
+        $global:UufFullText.Contains('function Open-ConnectionTestWindow {') | Should -BeTrue
+        $global:UufFullText.Contains('$script:HttpStatusNotes = @{') | Should -BeTrue
+        $global:UufFullText.Contains('"{0}. {1}.api - {2}, ping: {3}, Error: {4}"') | Should -BeTrue
+    }
+    It 'пункт 16: журнал разворачивается вверх и возвращается в стандартное положение' {
+        $global:UufFullText.Contains("'▲  Развернуть журнал'") | Should -BeTrue
+        $global:UufFullText.Contains("'▼  Вернуть стандартно'") | Should -BeTrue
+        $global:UufFullText.Contains('$expandPx = [Math]::Max(0, [Math]::Min(300, $standardGridHeight - 180))') | Should -BeTrue
+    }
+    It 'пункт 7: предупреждения о конфликтах настроек перед генерацией' {
+        $global:UufFullText.Contains('«Только короткие (≤12)» не совместимо с минимальной длиной больше 12') | Should -BeTrue
+        $global:UufFullText.Contains('Ни один источник генерации не выбран') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.1: Telegram, белый фон и вкладки помощи' {
+    It 'Telegram: открытая страница без профиля даёт «Свободен», а не «Не подтверждено»' {
+        $global:UufWorkerText.Contains('$tgNoProfileSeen = $true') | Should -BeTrue
+        $global:UufWorkerText.Contains('if (-not $tgResolved -and $tgNoProfileSeen) { $status=''Свободен''') | Should -BeTrue
+    }
+    It 'помощь: подписи карточек с тёмным фоном, без белых полей' {
+        $global:UufMainText.Contains('$headingLabel.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)') | Should -BeTrue
+        $global:UufMainText.Contains('$bodyLabel.BackColor = [System.Drawing.Color]::FromArgb(23,30,42)') | Should -BeTrue
+        $global:UufMainText.Contains('$pageHost.BackColor = [System.Drawing.Color]::FromArgb(17,23,32)') | Should -BeTrue
+    }
+    It 'помощь: кнопки-разделы и заголовки шрифта Tahoma' {
+        $global:UufMainText.Contains('$script:UiFontFamily,11,[System.Drawing.FontStyle]::Bold') | Should -BeTrue
+        $global:UufMainText.Contains('$navButton.Text = [string]$helpPages[$i].Title') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.2: установщик не доверяет сертификату без явного ключа' {
+    It 'bat не передаёт ключ доверия' {
+        $batText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Install-UUF.bat'))
+        $batText.Contains('TrustSelfSigned') | Should -BeFalse
+        $batText.Contains('TrustCertificate') | Should -BeFalse
+    }
+    It 'метка интернета снимается только с установленного UUF.exe' {
+        $installText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $installText.Contains('try { Unblock-File -LiteralPath $targetExe } catch { }') | Should -BeTrue
+        $installText.Contains('Unblock-File -LiteralPath $uufFile.FullName') | Should -BeFalse
+    }
+}
+
+Describe 'Версия 2.10.5: окно помощи не зацикливается при перекладке' {
+    It 'Set-HelpCardLayout защищён от повторного входа' {
+        $global:UufMainText.Contains('if ($script:HelpLayoutBusy) { return }') | Should -BeTrue
+        $global:UufMainText.Contains('$script:HelpLayoutBusy = $false') | Should -BeTrue
+    }
+    It 'размеры меняются только при реальном изменении' {
+        $global:UufMainText.Contains('if ($CardHost.AutoScrollMinSize -ne $minSize) { $CardHost.AutoScrollMinSize = $minSize }') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.6: окно помощи без вкладок и без пересчёта по Resize' {
+    It 'разделы — кнопки, страница строится при выборе' {
+        $global:UufMainText.Contains('function Show-HelpPage {') | Should -BeTrue
+        $global:UufMainText.Contains('$navButton.FlatStyle = ''Flat''') | Should -BeTrue
+        $global:UufMainText.Contains('Show-HelpPage -PageHost $pageHost -Pages $helpPages -Index ([int]$clickSender.Tag)') | Should -BeTrue
+    }
+    It 'старые вкладки помощи и пересчёт размеров удалены' {
+        $global:UufMainText.Contains('Set-HelpTabSize') | Should -BeFalse
+        $global:UufMainText.Contains('$helpTabs') | Should -BeFalse
+        $global:UufMainText.Contains('SetWindowTheme') | Should -BeFalse
+        $global:UufMainText.Contains('Add_Resize({ param($resizeSender') | Should -BeFalse
+    }
+    It 'окно фиксированного размера' {
+        $global:UufMainText.Contains('$helpForm.FormBorderStyle = ''FixedSingle''') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.7: закрытие окна проверки соединения без ошибки таймера' {
+    It 'Tick проверяет, что окно закрыто, и останавливает таймер' {
+        $global:UufMainText.Contains('if ($null -eq $script:ConnGrid -or $null -eq $script:ConnQueue) { $script:ConnTimer.Stop(); return }') | Should -BeTrue
+    }
+    It 'ошибка таймера не всплывает в окно, а пишется в журнал' {
+        $global:UufMainText.Contains('Add-ErrorDiagnostic (''Ошибка проверки соединения: '' + [string]$_.Exception.Message)') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.8: закрытие окна проверки соединения без @() над обобщёнными списками' {
+    It 'Stop-ConnectionTest обходит списки по индексу' {
+        $global:UufMainText.Contains('for ($psIndex = 0; $psIndex -lt $oldPowerShells.Count; $psIndex++) {') | Should -BeTrue
+        $global:UufMainText.Contains('foreach ($connPs in @($script:ConnPowerShells))') | Should -BeFalse
+        $global:UufMainText.Contains('foreach ($connRs in @($script:ConnRunspaces))') | Should -BeFalse
+    }
+    It 'обработчик закрытия окна защищён try' {
+        $global:UufMainText.Contains('try { Stop-ConnectionTest } catch { }') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.9: стиль окна регистрации и выравнивание проверки соединения' {
+    It 'вкладки регистрации в стиле кнопок помощи' {
+        $global:UufMainText.Contains('$tabButton.FlatStyle = ''Flat''') | Should -BeTrue
+        $global:UufMainText.Contains('$tabButton.Size = New-Object System.Drawing.Size(365, 40)') | Should -BeTrue
+    }
+    It 'кнопка «Копировать отчёт» убрана из проверки соединения' {
+        $global:UufMainText.Contains('Копировать отчёт') | Should -BeFalse
+        $global:UufMainText.Contains('connCopyButton') | Should -BeFalse
+        $global:UufMainText.Contains('connCopyButton.Add_Click') | Should -BeFalse
+    }
+    It 'окно проверки соединения выровнено по сетке 868 px' {
+        $global:UufMainText.Contains('$connForm.ClientSize = New-Object System.Drawing.Size(900,660)') | Should -BeTrue
+        $global:UufMainText.Contains('$script:ConnGrid.Size = New-Object System.Drawing.Size(868,280)') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.10: свои слова сохраняют _ . -' {
+    It 'свои слова конвертируются с сохранением допустимых символов' {
+        $global:UufMainText.Contains('$word = Convert-ToNickToken -Text $rawWord -KeepSymbols') | Should -BeTrue
+        $global:UufMainText.Contains('elseif ($KeepSymbols -and $character -match ''[._-]'')') | Should -BeTrue
+    }
+    It 'обрезка краёв от разделителей' {
+        $global:UufMainText.Contains('if ($KeepSymbols) { $result = $result.Trim(''._-'') }') | Should -BeTrue
+    }
+}
+
+
+Describe 'Версия 2.10.11: разделитель _ и поиск только введенных ников' {
+    It 'генератор не удаляет _ . - из слов' {
+        $global:UufMainText.Contains('[^A-Za-z0-9._-]') | Should -BeTrue
+    }
+    It 'чекбокс режима точных ников подключён и передаётся в пул' {
+        $global:UufMainText.Contains('$script:ExactOnlyCheck = New-CheckBox ''Поиск только введенных ников''') | Should -BeTrue
+        $global:UufFullText.Contains('-ExactOnly ([bool]$script:ExactOnlyCheck.Checked)') | Should -BeTrue
+    }
+    It 'режим точных ников выдаёт свои слова с номерами по порядку' {
+        $global:UufMainText.Contains('$candidate = ([string]$item.Word).ToLowerInvariant() + [string]$number') | Should -BeTrue
+    }
+    It 'короткие ники не режут точный режим' {
+        $global:UufMainText.Contains('if ($OnlyShort -and -not $ExactOnly)') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.13: интерфейс, остановка, журнал и недопустимые ники' {
+    It 'поле «Поиск только введенных ников» стоит на своей строке во всю ширину панели' {
+        $global:UufMainText.Contains('New-CheckBox ''Поиск только введенных ников'' 14 827 360 $false') | Should -BeTrue
+    }
+    It 'после остановки «Проверяется» возвращается в «Ожидает» до обновления кнопок' {
+        $revert = $global:UufFullText.IndexOf('можно запустить повторно', [System.StringComparison]::Ordinal)
+        $revert | Should -BeGreaterThan 0
+        $resetFound = [regex]::Match($global:UufFullText, 'Reset-CheckControls\r?\n\s+if \(\$completed -and').Success
+        $resetFound | Should -BeFalse
+        $after = [regex]::Match($global:UufFullText, 'Reset-CheckControls\r?\n\s+\$script:GridRefreshPending').Index
+        $after | Should -BeGreaterThan $revert
+    }
+    It 'ошибки выводятся в диагностику с префиксом ОШИБКА' {
+        $global:UufMainText.Contains("Add-Diagnostic ('ОШИБКА: ' + `$Message)") | Should -BeTrue
+        $global:UufMainText.Contains("Add-ErrorDiagnostic ('Не удалось сохранить настройки: '") | Should -BeTrue
+        $global:UufMainText.Contains("Add-ErrorDiagnostic ('Ошибка проверки соединения: '") | Should -BeTrue
+    }
+    It 'недопустимые ники попадают в постоянный список исключений генерации' {
+        $global:UufMainText.Contains('function Register-InvalidNick') | Should -BeTrue
+        $global:UufFullText.Contains('Register-ProgressOutcome $candidate') | Should -BeTrue
+        $global:UufFullText.Contains('Register-InvalidNick -Name $nick -Platform $platform') | Should -BeTrue
+    }
+    It 'статус «Свободно/возможно» заменён на «Свободно»' {
+        $global:UufMainText.Contains('Свободно/возможно') | Should -BeFalse
+        $global:UufMainText.Contains('"Свободно: $free"') | Should -BeTrue
+    }
+    It 'обработчик выбора сохранённой записи защищён от исключений' {
+        $global:UufMainText.Contains('Выбор сохранённой записи: ') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.14: две кнопки вкладок в стиле помощи и переключение без сдвига' {
+    It 'версия не ниже 2.10.14' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(1[4-9]|[2-9][0-9])'''
+    }
+    It 'окно регистрации: вместо TabControl две кнопки и две панели' {
+        $global:UufMainText.Contains('New-Object System.Windows.Forms.TabControl') | Should -BeFalse
+        $global:UufMainText.Contains('$script:AccountTabButtons = @()') | Should -BeTrue
+        $global:UufMainText.Contains('$tabTitles = @(''Регистрация и пароль'', ''Сохранённые аккаунты'')') | Should -BeTrue
+        $global:UufMainText.Contains('New-Object System.Windows.Forms.Panel') | Should -BeTrue
+    }
+    It 'переключение вкладок и стиль кнопок как у помощи' {
+        $global:UufMainText.Contains('Set-AccountTabView -Index 1') | Should -BeTrue
+        $global:UufMainText.Contains('Set-AccountTabView -Index 0') | Should -BeTrue
+        $global:UufMainText.Contains('$tabButton.Size = New-Object System.Drawing.Size(365, 40)') | Should -BeTrue
+        $global:UufMainText.Contains('$tabButton.FlatStyle = ''Flat''') | Should -BeTrue
+    }
+}
+
+Describe 'правки 2.10.15: Telegram, ручные ники, полный адрес' {
+    It 'Telegram: страница без профиля проверяется раньше заголовка профиля' {
+        $freeIdx = [regex]::Match($global:UufWorkerText, [regex]::Escape('$httpStatus -eq 200 -and $freePage) { $status')).Index
+        $profileIdx = [regex]::Match($global:UufWorkerText, [regex]::Escape('$httpStatus -eq 200 -and $profileTitle) { $status')).Index
+        $freeIdx | Should -BeGreaterThan 0
+        $profileIdx | Should -BeGreaterThan $freeIdx
+    }
+    It 'Telegram: заголовок профиля больше не решает статус при прямом совпадении с $profileTitle или $channelCounters' {
+        $global:UufWorkerText.Contains('($profileTitle -or $channelCounters)') | Should -BeFalse
+    }
+    It 'пункт 1: подсказка ручных ников распознаётся и по цвету поля' {
+        $global:UufFullText.Contains('[System.Drawing.Color]::FromArgb(149,164,187))') | Should -BeTrue
+    }
+    It 'пункт 9: поля регистрации показывают ник с доменом через Get-DisplayNick' {
+        $global:UufMainText.Contains('Items.Add((Get-DisplayNick -Platform ([string]$script:AccountPlatform) -Name ([string]$availableNick)))') | Should -BeTrue
+        $global:UufMainText.Contains('if ($preferredNick) { $preferredNick = Get-DisplayNick') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.15: исправления ручных ников, Telegram и полного адреса' {
+    It 'версия не ниже 2.10.15' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(1[5-9]|[2-9][0-9])'''
+    }
+}
+
+Describe 'Заставка загрузки: видео digital_word_eye.mp4' {
+    It 'видео подключается и закрывается при показе главного окна' {
+        $global:UufFullText | Should -Match 'function Show-StartupVideo'
+        $global:UufFullText | Should -Match 'function Close-StartupVideo'
+        $global:UufFullText | Should -Match "digital_word_eye\.mp4"
+        $global:UufFullText | Should -Match '\$script:Form\.Add_Shown\(\{ Close-StartupVideo \}\)'
+    }
+
+    It 'сборка и установка переносят видео рядом с UUF.exe' {
+        $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Build-Exe.ps1'))
+        $buildText | Should -Match 'digital_word_eye\.mp4'
+        $installText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Install-UUF.ps1'))
+        $installText | Should -Match 'digital_word_eye\.mp4'
+    }
+}
+
+Describe 'Версия 2.10.16: заставка загрузки' {
+    It 'версия не ниже 2.10.16' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(1[6-9]|[2-9][0-9])'''
+    }
+}
+
+Describe 'Версия 2.10.18: заставка ждёт готовности и держится не меньше 3 секунд' {
+    It 'версия не ниже 2.10.18' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(1[89]|[2-9][0-9])'''
+    }
+    It 'заставка: видео 1920x1080, закрывается сразу по концу видео, затем плавное появление программы' {
+        $global:UufFullText | Should -Match 'Add_MediaEnded\(\{ \$window\.Close\(\) \}\)'
+        $global:UufFullText | Should -Match 'function Show-AppFadeIn'
+        $global:UufFullText | Should -Match 'Opacity = 0'
+    }
+}
+
+Describe 'Версия 2.10.19: заставка без дочернего powershell' {
+    It 'версия не ниже 2.10.19' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(19|[2-9][0-9])'''
+    }
+    It 'заставка не запускает powershell.exe с EncodedCommand и обходом политики' {
+        $global:UufFullText | Should -Not -Match 'EncodedCommand'
+        $global:UufFullText | Should -Not -Match 'ExecutionPolicy'
+        $global:UufFullText | Should -Match 'RunspaceFactory'
+    }
+}
+
+Describe 'Версия 2.10.20: распространение без exe' {
+    It 'версия не ниже 2.10.20' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(2[0-9]|[3-9][0-9])'''
+    }
+    It 'Start-UUF.bat запускает скрипт и не ссылается на exe' {
+        $launcherPath = Join-Path (Join-Path $PSScriptRoot '..') 'Start-UUF.bat'
+        Test-Path -LiteralPath $launcherPath | Should -BeTrue
+        $launcherText = [System.IO.File]::ReadAllText($launcherPath)
+        $launcherText.Contains('-File "%~dp0UniversalUsernameFinder.ps1"') | Should -BeTrue
+        $launcherText.Contains('UUF.exe') | Should -BeFalse
+    }
+    It 'установщик ставит скрипт, ярлык на Start-UUF.bat и иконку uuf.ico' {
+        $installText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Install-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $installText.Contains("'UniversalUsernameFinder.ps1'") | Should -BeTrue
+        $installText.Contains('$shortcut.TargetPath = $targetLauncher') | Should -BeTrue
+        $installText.Contains('-Name DisplayIcon -Value $targetIcon') | Should -BeTrue
+    }
+    It 'сборщик пакета включает скрипт, видео, иконку и установщик, без exe' {
+        $packageText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Package-Uuf.ps1'), [System.Text.Encoding]::UTF8)
+        $packageText.Contains("'UniversalUsernameFinder.ps1'") | Should -BeTrue
+        $packageText.Contains('digital_word_eye.mp4') | Should -BeTrue
+        $packageText.Contains('uuf.ico') | Should -BeTrue
+        $packageText.Contains('.exe') | Should -BeFalse
+    }
+}
+
+Describe 'Версия 2.10.22: готовый UUF.exe в релизе' {
+    It 'версия не ниже 2.10.22' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(2[2-9]|[3-9][0-9])'''
+    }
+    It 'CI собирает UUF.exe отдельной джобой и кладёт его в артефакт пакета' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
+        $ciText.Contains('Build-Exe.ps1') | Should -BeTrue
+        $ciText.Contains('name: uuf-exe') | Should -BeTrue
+        $ciText.Contains('dist/UUF.exe.sha256') | Should -BeTrue
+    }
+    It 'релиз требует UUF.exe и его sha256' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $releaseText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'release.yml'), [System.Text.Encoding]::UTF8)
+        $releaseText.Contains('UUF.exe UUF.exe.sha256') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.23: главное окно 1920x1080 на основном мониторе' {
+    It 'версия не ниже 2.10.23' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(2[3-9]|[3-9][0-9])'''
+    }
+    It 'окно масштабируется до 1920x1080 и центрируется на основном мониторе' {
+        $global:UufMainText.Contains('$script:Form.StartPosition = ''Manual''') | Should -BeTrue
+        $global:UufMainText.Contains('[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea') | Should -BeTrue
+        $global:UufMainText.Contains('$uufScale = [Math]::Min(1.0') | Should -BeTrue
+    }
+    It 'сохранённые координаты и состояние окна не восстанавливаются' {
+        $global:UufMainText.Contains('$script:Form.Bounds = $rect') | Should -BeFalse
+        $global:UufMainText.Contains('$script:Form.WindowState = [System.Windows.Forms.FormWindowState]') | Should -BeFalse
+    }
+}
+
+Describe 'Версия 2.10.24: видео заставки вшито в UUF.exe' {
+    It 'версия не ниже 2.10.24' {
+        $global:UufMainText | Should -Match '\$script:AppVersion = ''2\.10\.(2[4-9]|[3-9][0-9])'''
+    }
+    It 'скрипт умеет брать видео из вшитых частей и кэшировать его в папке приложения' {
+        $global:UufFullText.Contains('$script:EmbeddedVideoParts = @()') | Should -BeTrue
+        $global:UufFullText.Contains('function Get-StartupVideoPath') | Should -BeTrue
+        $global:UufFullText.Contains('startup-video.mp4') | Should -BeTrue
+        $global:UufFullText.Contains('[Convert]::FromBase64String((-join') | Should -BeTrue
+    }
+    It 'сборка встраивает видео во временную копию скрипта и проверяет размер exe' {
+        $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
+        $buildText.Contains('$script:EmbeddedVideoParts = @()') | Should -BeTrue
+        $buildText.Contains('uuf-embedded-') | Should -BeTrue
+        $buildText.Contains('Видео не вшилось в exe') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.25: C#-лаунчер вместо ps2exe и подпись Authenticode' {
+    It 'лаунчер на C# существует и не обходит политику выполнения' {
+        $launcherPath = Join-Path (Join-Path $PSScriptRoot '..') 'launcher\UUF.Launcher.cs'
+        [System.IO.File]::Exists($launcherPath) | Should -BeTrue
+        $launcherText = [System.IO.File]::ReadAllText($launcherPath)
+        $launcherText.Contains('UniversalUsernameFinder.ps1') | Should -BeTrue
+        $launcherText.Contains('System.Management.Automation') | Should -BeTrue
+        $launcherText.Contains('PowerShell.Create()') | Should -BeTrue
+        $launcherText.Contains('ApartmentState.STA') | Should -BeTrue
+        $launcherText.Contains('Bypass') | Should -BeFalse
+        $launcherText.Contains('-EncodedCommand') | Should -BeFalse
+        $launcherText.Contains('powershell.exe') | Should -BeFalse
+    }
+    It 'сборка компилирует лаунчер через csc.exe, а не ps2exe' {
+        $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
+        $buildText.Contains('csc.exe') | Should -BeTrue
+        $buildText.Contains('UUF.Launcher.cs') | Should -BeTrue
+        $buildText.Contains('Invoke-ps2exe') | Should -BeFalse
+        $buildText.Contains('Sign-Uuf.ps1') | Should -BeTrue
+    }
+    It 'CI передаёт секреты подписи в сборку' {
+        $ciText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') '.github\workflows\ci.yml'), [System.Text.Encoding]::UTF8)
+        $ciText.Contains('UUF_SIGN_PFX_BASE64: ${{ secrets.UUF_SIGN_PFX_BASE64 }}') | Should -BeTrue
+        $ciText.Contains('UUF_SIGN_PFX_PASSWORD: ${{ secrets.UUF_SIGN_PFX_PASSWORD }}') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.26: скрипт в процессе exe и пароли вне папки деинсталлятора' {
+    It 'лаунчер выполняет скрипт в собственном процессе, без дочернего powershell.exe' {
+        $buildText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\\Build-Exe.ps1'), [System.Text.Encoding]::UTF8)
+        $buildText.Contains('System.Management.Automation.dll') | Should -BeTrue
+        $buildText.Contains('/reference:') | Should -BeTrue
+    }
+    It 'хранилище паролей лежит в APPDATA и шифруется DPAPI' {
+        $global:UufFullText.Contains('$script:VaultDirectory = Join-Path $env:APPDATA ''UniversalUsernameFinder''') | Should -BeTrue
+        $global:UufFullText.Contains('[System.Security.Cryptography.ProtectedData]::Protect') | Should -BeTrue
+    }
+    It 'старое хранилище из LOCALAPPDATA переносится при запуске' {
+        $global:UufFullText.Contains('$script:PreviousVaultPath') | Should -BeTrue
+    }
+    It 'деинсталлятор не удаляет сохранённые пароли из APPDATA' {
+        $uninstallText = [System.IO.File]::ReadAllText((Join-Path (Join-Path $PSScriptRoot '..') 'build\\Uninstall-UUF.ps1'), [System.Text.Encoding]::UTF8)
+        $uninstallText.Contains('Сохранённые пароли не удаляются') | Should -BeTrue
+        $uninstallText.Contains('APPDATA') | Should -BeTrue
+    }
+}
+
+Describe 'Версия 2.10.27: резервная копия паролей создаётся всегда' {
+    It 'функция резервной копии пишет в папку backups с меткой времени' {
+        $global:UufFullText.Contains('function Backup-AccountVault') | Should -BeTrue
+        $global:UufFullText.Contains("'backups'") | Should -BeTrue
+        $global:UufFullText.Contains("(Get-Date).ToString('yyyyMMdd-HHmmss-fff')") | Should -BeTrue
+    }
+    It 'резервная копия делается после каждого сохранения и каждого переноса' {
+        ([regex]::Matches($global:UufFullText, 'Backup-AccountVault')).Count | Should -BeGreaterOrEqual 4
+    }
+    It 'старый перезаписываемый accounts.dat.bak больше не используется' {
+        $global:UufFullText.Contains('accounts.dat.bak') | Should -BeFalse
     }
 }
 

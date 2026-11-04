@@ -1,34 +1,12 @@
-﻿# Подписание UUF.exe сертификатом Authenticode (signtool, SHA-256 + метка времени).
-#
-# Два режима:
-#   1. Боевой сертификат: PFX из -PfxPath либо из переменной окружения
-#      UUF_SIGN_PFX_BASE64 (пароль — UUF_SIGN_PFX_PASSWORD). В GitHub Actions
-#      секреты называются так же. Только подпись центром доверия снимает у
-#      SmartScreen статус «неизвестный издатель» и заметно глушит ML-эвристики
-#      антивирусов.
-#   2. -SelfSign: если PFX нет, на лету генерируется самоподписанный сертификат
-#      CN=Hasberd (чистый .NET CertificateRequest — без хранилища сертификатов,
-#      капризничающего на чистых runner-образах); публичный ключ экспортируется
-#      рядом с exe в UUF-signing.cer, приватный PFX удаляется сразу после подписи.
-#
-# Если signtool.exe (Windows SDK) не найден, скрипт предупреждает и выходит с
-# кодом 0: сборка не должна зависеть от наличия SDK.
-#
-# Запуск:  powershell -ExecutionPolicy Bypass -File build\Sign-Uuf.ps1 [-SelfSign]
+﻿
 
 [CmdletBinding()]
 param(
-    # Подписываемый файл. По умолчанию — dist\UUF.exe в корне репозитория.
     [string]$ExePath = '',
-    # Файл PFX с боевым сертификатом подписи кода.
     [string]$PfxPath = '',
-    # Идентичность самоподписанного сертификата.
     [string]$Subject = 'CN=Hasberd',
-    # Сервер метки времени RFC 3161; при недоступности подпись ставится без неё.
     [string]$TimestampUrl = 'http://timestamp.digicert.com',
-    # Разрешить сгенерировать самоподписанный сертификат, если PFX не задан.
     [switch]$SelfSign,
-    # Дополнительные файлы (например dist\AppUninstaller.exe): подписываются тем же сертификатом.
     [string[]]$ExtraExePaths = @()
 )
 
@@ -102,7 +80,6 @@ try {
         [System.IO.File]::WriteAllBytes($cerPath, $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
         $certGeneratedInMemory = $true
         Write-Host ('Самоподписанный сертификат: ' + $certificate.Thumbprint + '; публичный ключ: ' + $cerPath)
-        # На .NET Framework у CertificateRequest нет Dispose — освобожаем только ключ и сертификат.
         $certificate.Dispose()
         $rsaKey.Dispose()
     }
