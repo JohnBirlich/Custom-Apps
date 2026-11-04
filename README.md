@@ -50,6 +50,10 @@ UUF — приложение для Windows, которое придумывае
 2. Скачайте `UUF.exe` из релиза и запустите двойным щелчком — отдельно устанавливать PowerShell не нужно. Или распакуйте `UniversalUsernameFinder-windows.zip` и запустите `Start-UUF.bat`.
 3. Либо откройте `UniversalUsernameFinder.ps1` в Windows PowerShell 5.1; если политика выполнения запрещает скрипты, разово выполните `Set-ExecutionPolicy -Scope Process Bypass`.
 
+## Канал поставки: GitHub Releases
+
+Готовые сборки публикуются на странице [Releases](https://github.com/JohnBirlich/Custom-Apps/releases): `Install-UUF.bat` и оба .exe скачиваются прямо из ассетов релиза (подписанные, с SHA-256). Релиз создаётся автоматически: push тега `vX.Y.Z` запускает CI, и шаг «Publish GitHub Release» выкладывает `UUF.exe`, `AppUninstaller.exe`, хэши, сертификат и установщики. Артефакт GitHub Actions остаётся зеркалом сборки для каждого коммита main.
+
 ## Установка на рабочий стол
 
 Артефакт `UniversalUsernameFinder-windows` (из GitHub Actions или из релиза) — архив `UniversalUsernameFinder-windows.zip` и его `.sha256`. Внутри: `UniversalUsernameFinder.ps1`, `Start-UUF.bat` (запуск), `digital_word_eye.mp4` (заставка загрузки), `uuf.ico` (иконка), установщик `Install-UUF.ps1` (с обёрткой `Install-UUF.bat`) и удаление `Uninstall-UUF.ps1` (с обёрткой `Uninstall-UUF.bat`). Исполняемый `UUF.exe` и `AppUninstaller.exe` в релиз больше не входят.

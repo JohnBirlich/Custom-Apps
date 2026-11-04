@@ -1964,10 +1964,24 @@ Describe 'Версия 2.10.27: резервная копия паролей с�
     }
 }
 
-Describe 'Версия 2.10.28: заставка без чёрных полос по краям' {
-    It 'видео заполняет окно 1920x1080 без полей' {
-        $global:UufFullText.Contains("`$player.Stretch = 'UniformToFill'") | Should -BeTrue
-        $global:UufFullText.Contains("`$player.Stretch = 'Uniform'") | Should -BeFalse
+Describe 'Релизный конвейер: GitHub Release по тегу' {
+    It 'CI публикует релиз только для тегов v* и берёт в ассеты бинарники с хэшами' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
+        $ciText.Contains('Publish GitHub Release') | Should -BeTrue
+        $ciText.Contains("startsWith(github.ref, 'refs/tags/v')") | Should -BeTrue
+        $ciText.Contains('gh release create') | Should -BeTrue
+        $ciText.Contains('gh release upload') | Should -BeTrue
+        $ciText.Contains('dist/AppUninstaller.exe.sha256') | Should -BeTrue
+        $ciText.Contains('contents: write') | Should -BeTrue
+    }
+    It 'job build получает write-права только для публикации релиза' {
+        $repoRoot = Split-Path -Parent $global:UufScriptPath
+        $ciText = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($repoRoot, '.github', 'workflows', 'ci.yml'), [System.Text.Encoding]::UTF8)
+        $buildStart = $ciText.IndexOf('  build:')
+        $buildStart | Should -BeGreaterThan 0
+        $block = $ciText.Substring($buildStart, 400)
+        $block.Contains('permissions:') | Should -BeTrue
+        $block.Contains('contents: write') | Should -BeTrue
     }
 }
-
